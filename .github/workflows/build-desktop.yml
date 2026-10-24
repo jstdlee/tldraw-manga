@@ -1,0 +1,78 @@
+name: Desktop
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  build-linux-arm64:
+    needs: lint-and-test
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install AppImage packaging libraries
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends squashfs-tools libfuse2
+      - run: npm ci
+      - run: npm run dist:linux-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tldraw-manga-linux-arm64
+          if-no-files-found: error
+          path: |
+            release/*.AppImage
+            release/*.tar.gz
+
+  build-windows-x64:
+    needs: lint-and-test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run dist:win-x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tldraw-manga-win-x64
+          if-no-files-found: error
+          path: |
+            release/*.exe
+            release/*.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-linux-arm64, build-windows-x64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**
+          generate_release_notes: true

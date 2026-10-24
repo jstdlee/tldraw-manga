@@ -1,0 +1,41 @@
+appId: com.jstdlee.tldraw-manga
+productName: tldraw-manga
+executableName: tldraw-manga
+copyright: Copyright © tldraw-manga
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - electron/**/*
+  - server/apiHandler.mjs
+  - package.json
+  - "!**/node_modules/**"
+asar: true
+npmRebuild: false
+publish: null
+linux:
+  icon: build/icon.png
+  category: Graphics
+  synopsis: Manga storyboard desk
+  syncDesktopName: true
+  target:
+    - target: AppImage
+      arch: arm64
+    - target: tar.gz
+      arch: arm64
+    - target: deb
+      arch: arm64
+win:
+  icon: build/icon.ico
+  target:
+    - target: portable
+      arch: x64
+    - target: zip
+      arch: x64
+mac:
+  icon: build/icon.icns
+  target:
+    - target: dmg
+      arch: x64
+  category: public.app-category.graphics-design
