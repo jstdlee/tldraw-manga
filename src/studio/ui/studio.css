@@ -432,7 +432,7 @@ button:disabled {
 	position: fixed;
 	inset: 0;
 	background: rgba(26, 36, 44, 0.46);
-	z-index: 80;
+	z-index: 900;
 	display: flex;
 	align-items: center;
 	justify-content: center;
