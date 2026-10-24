@@ -79,7 +79,7 @@ export function bubbleMarkup(bubble: BubbleDraw): string {
 		body = `${tailPolygon(w, h, bubble.tailX, bubble.tailY)}<polygon points="${points}" fill="#fffefb" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="miter"/>`
 	} else if (style === 'sfx') {
 		const font = Math.max(22, Math.min(46, w * 0.34 * emphasis))
-		body = `<text x="${(w / 2).toFixed(1)}" y="${(h * 0.72).toFixed(1)}" text-anchor="middle" font-family="Hiragino Sans, PingFang SC, Noto Sans SC, sans-serif" font-size="${font.toFixed(1)}" font-weight="900" fill="#d6453d" stroke="#fffefb" stroke-width="5" paint-order="stroke">${escapeXml(bubble.text || 'ドン')}</text>`
+		body = `<text x="${(w / 2).toFixed(1)}" y="${(h * 0.72).toFixed(1)}" text-anchor="middle" font-family="Hiragino Sans, PingFang SC, Noto Sans SC, sans-serif" font-size="${font.toFixed(1)}" font-weight="900" fill="#d6453d" stroke="#fffefb" stroke-width="5" paint-order="stroke">${escapeXml(bubble.text || '轰！！')}</text>`
 	} else if (style === 'thought') {
 		body = `${tailPolygon(w, h, bubble.tailX, bubble.tailY)}<ellipse cx="${w / 2}" cy="${h / 2}" rx="${w / 2 - 2}" ry="${h / 2 - 2}" fill="#fffefb" stroke="${stroke}" stroke-width="${sw}"/><circle cx="${(bubble.tailX * 0.35 + w * 0.2).toFixed(1)}" cy="${(h + 8).toFixed(1)}" r="5" fill="#fffefb" stroke="${stroke}" stroke-width="2"/><circle cx="${(bubble.tailX * 0.45 + w * 0.12).toFixed(1)}" cy="${(h + 18).toFixed(1)}" r="3" fill="#fffefb" stroke="${stroke}" stroke-width="1.6"/>`
 	} else {

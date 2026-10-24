@@ -1,4 +1,5 @@
 import type { CompiledBook } from '../spec/compile'
+import { SCENARIO_LABELS } from '../demo/book'
 
 export function readerHtml(book: CompiledBook): string {
 	const payload = {
@@ -18,7 +19,7 @@ export function readerHtml(book: CompiledBook): string {
 					width: page.layout.width,
 					height: page.layout.height,
 					panels: rendered?.panels ?? [],
-					scenario: page.scenario,
+					scenario: SCENARIO_LABELS[page.scenario] ?? page.scenario,
 					score: page.score,
 				}
 			}),

@@ -1,7 +1,8 @@
-import { polygonArea, type Genome, type Layout, type LayoutConfig } from './engine'
-import { generate } from './engine'
+import { polygonArea, type Genome, type Layout, type LayoutConfig, generate } from './engine'
 
 export type Scenario = 'establishing' | 'tension' | 'intimacy' | 'action' | 'reveal' | 'climax'
+
+export const SCENARIOS: Scenario[] = ['establishing', 'tension', 'intimacy', 'action', 'reveal', 'climax']
 
 export interface LayoutFeatures {
 	panelCount: number
@@ -71,7 +72,7 @@ function rangeFit(value: number, range: [number, number]): number {
 	return Math.max(0, 1 - distance / Math.max(1, range[1] - range[0] + 2))
 }
 
-export function layoutScore(features: LayoutFeatures, desiredPanels: number, scenario: Scenario): { score: number; reasons: string } {
+export function layoutScore(features: LayoutFeatures, desiredPanels: number, scenario: Scenario): { score: number; reasons: string[] } {
 	const profile = PROFILES[scenario] ?? PROFILES.default
 	const panelFit = 1 - Math.min(1, Math.abs(features.panelCount - desiredPanels) / Math.max(3, desiredPanels))
 	const scenarioPanelFit = rangeFit(features.panelCount, profile.idealPanels)
@@ -97,13 +98,15 @@ export function layoutScore(features: LayoutFeatures, desiredPanels: number, sce
 	if (profile.tilt >= 0.6 && features.tilt >= 0.2) reasons.push('斜切带有动势')
 	if (profile.tilt <= 0.2 && features.tilt <= 0.45) reasons.push('倾斜克制，阅读稳定')
 	if (focus >= 0.7) reasons.push('入口或落幅有焦点')
-	return { score, reasons: reasons.slice(0, 3).join('；') || '节奏与可读性平衡' }
+	if (reasons.length === 0) reasons.push('节奏与可读性平衡')
+	return { score, reasons: reasons.slice(0, 3) }
 }
 
 export interface RankedLayout {
+	seed: string
 	layout: Layout
 	score: number
-	reasons: string
+	reasons: string[]
 }
 
 export function pickTopLayouts(
@@ -116,9 +119,10 @@ export function pickTopLayouts(
 	const started = performance.now()
 	const ranked: RankedLayout[] = []
 	for (let index = 0; index < count; index += 1) {
-		const layout = generate(`${baseSeed}#${index}`, config)
+		const seed = `${baseSeed}#${index}`
+		const layout = generate(seed, config)
 		const judged = layoutScore(layoutFeatures(layout), desiredPanels, scenario)
-		ranked.push({ layout, score: judged.score, reasons: judged.reasons })
+		ranked.push({ seed, layout, score: judged.score, reasons: judged.reasons })
 	}
 	ranked.sort((a, b) => b.score - a.score || Math.abs(a.layout.panels.length - desiredPanels) - Math.abs(b.layout.panels.length - desiredPanels))
 	return { top: ranked.slice(0, 4), ms: performance.now() - started }

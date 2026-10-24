@@ -1,7 +1,7 @@
 {
   "name": "tldraw-manga",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Mouse-driven manga storyboard desk",
   "author": "jstdlee",
   "desktopName": "tldraw-manga.desktop",

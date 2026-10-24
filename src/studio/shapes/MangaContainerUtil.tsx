@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useRef } from 'react'
-import { BaseBoxShapeUtil, HTMLContainer, resizeBox, useEditor, type TLResizeInfo } from 'tldraw'
-import { useValue } from '@tldraw/state-react'
-import { ENV_IDS, ENV_LABELS, LIGHT_IDS, LIGHT_LABELS } from '../demo/book'
-import { getState, notify, patch, useStudio } from '../editor/store'
+import { useMemo, useRef } from 'react'
+import { BaseBoxShapeUtil, HTMLContainer, resizeBox, useEditor, useValue, type TLResizeInfo } from 'tldraw'
+import { ENV_LABELS, LIGHT_LABELS, SCENARIO_LABELS } from '../demo/book'
 import {
 	centroid,
+	clamp,
 	configFor,
 	dragColDivider,
 	dragRowDivider,
@@ -12,49 +11,72 @@ import {
 	realize,
 	sanitize,
 	type Divider,
-	type Layout,
+	type Genome,
 } from '../layout/engine'
 import { asScenario, layoutFeatures, layoutScore } from '../layout/score'
 import { readJson, refreshAspects, type PanelMeta } from '../model'
-import { pageModel } from '../editor/placement'
+import { energyFor } from '../editor/placement'
 import { renderPageSvg } from '../render/pageSvg'
-import { emptyContainer } from '../editor/build'
-import { isBubble, isPage } from './guards'
-import { CONTAINER, type MangaContainer } from './schema'
+import { BUBBLE, CONTAINER, type MangaBubble, type MangaContainer } from './schema'
 import { containerProps } from './props'
-import { wireShapes } from './wire'
 
 export class MangaContainerUtil extends BaseBoxShapeUtil<MangaContainer> {
 	static override type = CONTAINER
 	static override props = containerProps
 
 	override getDefaultProps(): MangaContainer['props'] {
-		return emptyContainer('chapter')
+		return {
+			w: 460,
+			h: 640,
+			role: 'page',
+			title: 'P1',
+			subtitle: '',
+			story: '',
+			worldRules: '',
+			stylePreset: '少年网点',
+			mood: '',
+			environment: 'boardwalk',
+			lighting: 'hard-noon',
+			chapterIndex: 1,
+			pageIndex: 1,
+			scenario: 'tension',
+			layoutPreset: 'std',
+			dialogueDensity: 50,
+			targetPanels: 5,
+			seed: 'p1',
+			genomeJson: '{}',
+			panelsJson: '[]',
+			scriptJson: '[]',
+			score: 0,
+			reasonsJson: '[]',
+			showFlow: false,
+			selectedPanel: -1,
+		}
 	}
 
 	override canEdit() {
 		return false
 	}
 
-	override canResize(shape: MangaContainer) {
-		return shape.props.role !== 'page'
+	override canResize() {
+		return true
 	}
 
 	override isAspectRatioLocked(shape: MangaContainer) {
 		return shape.props.role === 'page'
 	}
 
-	override canBind({ bindingType }: { bindingType: string }) {
-		return bindingType === 'arrow'
+	override canBind() {
+		return true
 	}
 
 	override canReceiveNewChildrenOfType(shape: MangaContainer, type: string) {
-		if (shape.props.role === 'page') return type === 'manga-bubble' || type === 'manga-card' || type === 'note' || type === 'text' || type === 'image' || type === 'geo'
-		return type === 'manga-card' || type === 'manga-prompt-block' || type === 'note' || type === 'text' || type === 'image' || type === 'geo'
+		if (shape.props.role === 'page') return type === BUBBLE || type === 'note' || type === 'text' || type === 'image'
+		return type !== CONTAINER
 	}
 
 	override onResize(shape: MangaContainer, info: TLResizeInfo<MangaContainer>) {
-		return resizeBox(shape, info, { minWidth: 220, minHeight: 160 })
+		return resizeBox(shape, info, { minWidth: 260, minHeight: 200 })
 	}
 
 	override getIndicatorPath(shape: MangaContainer) {
@@ -68,383 +90,277 @@ export class MangaContainerUtil extends BaseBoxShapeUtil<MangaContainer> {
 	}
 }
 
-function halt(editor: ReturnType<typeof useEditor>, event: { stopPropagation(): void; nativeEvent: Event }) {
-	event.stopPropagation()
-	editor.markEventAsHandled(event)
-}
-
 function ContainerView({ shape }: { shape: MangaContainer }) {
 	const editor = useEditor()
-	const studio = useStudio()
-	const svgRef = useRef<SVGSVGElement | null>(null)
-	const drag = useRef<{ kind: 'gutter' | 'pan'; divider?: Divider; lastX: number; lastY: number; mark: string; panel: number } | null>(null)
-	const view = useMemo(() => pageView(shape), [shape])
-	const bubbles = useValue(
-		'page-bubbles',
-		() =>
-			shape.props.role === 'page'
-				? editor
-						.getSortedChildIdsForParent(shape.id)
-						.map((id) => editor.getShape(id))
-						.filter(isBubble)
-				: [],
-		[editor, shape.id, shape.props.role],
-	)
-	const layout = view?.layout
-	const armed = studio.wiringFrom === shape.id
-	const cropping = studio.crop?.pageId === shape.id
-	useEffect(() => {
-		const node = svgRef.current
-		if (!node || shape.props.role !== 'page') return
-		const onWheel = (event: WheelEvent) => {
-			const crop = getState().crop
-			if (!crop || crop.pageId !== shape.id) return
-			event.preventDefault()
-			event.stopPropagation()
-			editor.markEventAsHandled(event)
-			const page = editor.getShape(shape.id)
-			if (!isPage(page)) return
-			const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
-			const meta = metas[crop.panel]
-			if (!meta) return
-			metas[crop.panel] = { ...meta, imageScale: clamp((meta.imageScale || 1) * (event.deltaY > 0 ? 0.92 : 1.08), 0.45, 3.4) }
-			editor.updateShape({ id: page.id, type: CONTAINER, props: { panelsJson: JSON.stringify(metas) } })
-		}
-		node.addEventListener('wheel', onWheel, { passive: false })
-		return () => node.removeEventListener('wheel', onWheel)
-	}, [editor, shape.id, shape.props.role])
-
-	const onPort = (event: React.PointerEvent, side: 'in' | 'out') => {
-		halt(editor, event)
-		if (side === 'out') {
-			patch({ wiringFrom: shape.id })
-			notify('再点下游容器左侧的圆点，把设定沿箭头送过去。')
-			return
-		}
-		const from = getState().wiringFrom
-		if (!from) {
-			notify('先点上游右侧的圆点。')
-			return
-		}
-		wireShapes(editor, from, shape.id)
-		patch({ wiringFrom: null })
-		notify('接好了。导出时会沿这根箭头收集章节和页。')
-	}
-
-	return (
-		<HTMLContainer className={`manga-root role-${shape.props.role}`}>
-			{shape.props.role === 'page' && view && layout ? (
-				<>
-					<div className="manga-art" dangerouslySetInnerHTML={{ __html: view.svg }} />
-					<svg
-						ref={svgRef}
-						className="manga-hit"
-						viewBox={`0 0 ${layout.width} ${layout.height}`}
-						onDoubleClick={(event) => {
-							const point = pointOf(svgRef.current, event)
-							if (!point) return
-							const panel = hitPanel(layout, point.x, point.y)
-							if (panel < 0) return
-							halt(editor, event)
-							const crop = getState().crop
-							if (crop && crop.pageId === shape.id && crop.panel === panel) patch({ crop: null })
-							else patch({ crop: { pageId: shape.id, panel } })
-							editor.setSelectedShapes([shape.id])
-						}}
-						onPointerDown={(event) => {
-							const svg = svgRef.current
-							const point = pointOf(svg, event)
-							if (!point || !svg) return
-							const divider = nearDivider(layout, point.x, point.y)
-							if (divider) {
-								halt(editor, event)
-								svg.setPointerCapture(event.pointerId)
-								drag.current = { kind: 'gutter', divider, lastX: point.x, lastY: point.y, mark: editor.markHistoryStoppingPoint('gutter'), panel: -1 }
-								return
-							}
-							if (!cropping) return
-							const panel = hitPanel(layout, point.x, point.y)
-							if (panel < 0) return
-							halt(editor, event)
-							svg.setPointerCapture(event.pointerId)
-							patch({ crop: { pageId: shape.id, panel } })
-							drag.current = { kind: 'pan', lastX: point.x, lastY: point.y, mark: editor.markHistoryStoppingPoint('pan'), panel }
-						}}
-						onPointerMove={(event) => {
-							const current = drag.current
-							const point = pointOf(svgRef.current, event)
-							if (!current || !point) return
-							const dx = point.x - current.lastX
-							const dy = point.y - current.lastY
-							current.lastX = point.x
-							current.lastY = point.y
-							const page = editor.getShape(shape.id)
-							if (!isPage(page)) return
-							if (current.kind === 'gutter' && current.divider) {
-								const config = configFor(page.props.layoutPreset, page.props.targetPanels)
-								const genome =
-									current.divider.kind === 'row'
-										? dragRowDivider(sanitize(readJson(page.props.genomeJson, { rowW: [1], rowTilt: [], rows: [] })), current.divider.index, dx, dy, config)
-										: dragColDivider(sanitize(readJson(page.props.genomeJson, { rowW: [1], rowTilt: [], rows: [] })), current.divider.row, current.divider.index, dx, dy, config)
-								const realized = realize(genome, config)
-								const prev = readJson<PanelMeta[]>(page.props.panelsJson, [])
-								const metas = refreshAspects(prev, realized.panels, page.props.seed)
-								const judged = layoutScore(layoutFeatures({ genome, panels: realized.panels }), realized.panels.length, asScenario(page.props.scenario))
-								editor.updateShape({
-									id: page.id,
-									type: CONTAINER,
-									props: { genomeJson: JSON.stringify(genome), panelsJson: JSON.stringify(metas), score: judged.score },
-								})
-								return
-							}
-							const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
-							const meta = metas[current.panel]
-							if (!meta) return
-							metas[current.panel] = {
-								...meta,
-								imageOffsetX: clamp(meta.imageOffsetX + dx, -420, 420),
-								imageOffsetY: clamp(meta.imageOffsetY + dy, -420, 420),
-							}
-							editor.updateShape({ id: page.id, type: CONTAINER, props: { panelsJson: JSON.stringify(metas) } })
-						}}
-						onPointerUp={() => {
-							if (drag.current) editor.squashToMark(drag.current.mark)
-							drag.current = null
-						}}
-					>
-						{layout.panels.map((panel, index) => (
-							<polygon
-								key={index}
-								points={panel.pts.map((pt) => pt.join(',')).join(' ')}
-								fill="transparent"
-								stroke={cropping && studio.crop?.panel === index ? '#d6453d' : 'transparent'}
-								strokeWidth={cropping && studio.crop?.panel === index ? 3 : 0}
-								style={{ pointerEvents: 'all' }}
-							/>
-						))}
-						{shape.props.showFlow ? <FlowOverlay layout={layout} metas={view.metas} bubbles={bubbles} pageW={shape.props.w} pageH={shape.props.h} /> : null}
-						{layout.dividers.map((divider) => (
-							<g key={`${divider.kind}-${divider.row}-${divider.index}`} style={{ pointerEvents: 'all' }}>
-								<line
-									x1={divider.kind === 'row' ? divider.x - 34 : divider.x}
-									y1={divider.kind === 'row' ? divider.y : divider.y - 34}
-									x2={divider.kind === 'row' ? divider.x + 34 : divider.x}
-									y2={divider.kind === 'row' ? divider.y : divider.y + 34}
-									stroke="#d6453d"
-									strokeWidth={4}
-								/>
-								<circle cx={divider.x} cy={divider.y} r={12} fill="#fffefb" stroke="#d6453d" strokeWidth={2} />
-							</g>
-						))}
-					</svg>
-					<div className="page-chip">
-						{shape.props.title} · {shape.props.score.toFixed(2)}
-						{cropping ? ` · 格内 ${((studio.crop?.panel ?? 0) + 1)}` : ''}
-					</div>
-				</>
-			) : (
+	if (shape.props.role !== 'page') {
+		const roleLabel = shape.props.role === 'bible' ? '📖 设定集' : `📑 第${shape.props.chapterIndex}话`
+		const envLabel = ENV_LABELS[shape.props.environment] ?? shape.props.environment
+		const lightLabel = LIGHT_LABELS[shape.props.lighting] ?? shape.props.lighting
+		return (
+			<HTMLContainer className={`manga-container role-${shape.props.role}`}>
+				<header className="container-bar">
+					<span className="role-pill">{roleLabel}</span>
+					<strong>{shape.props.title}</strong>
+					<span className="container-sub">
+						{shape.props.role === 'bible' ? shape.props.stylePreset : `${envLabel} · ${lightLabel}`}
+					</span>
+				</header>
 				<div className="container-body">
-					<div className="container-kicker">{shape.props.role === 'bible' ? '设定母容器' : '章节容器'}</div>
-					<h2>{shape.props.title}</h2>
-					<p className="container-sub">{shape.props.subtitle}</p>
-					{shape.props.role === 'bible' ? (
-						<label className="field">
-							画风
-							<select
-								value={shape.props.stylePreset}
-								onPointerDown={(event) => halt(editor, event)}
-								onChange={(event) => editor.updateShape({ id: shape.id, type: CONTAINER, props: { stylePreset: event.target.value } })}
-							>
-								{['少年网点', '少女淡彩', '硬诺瓦尔', '港风水墨'].map((preset) => (
-									<option key={preset}>{preset}</option>
-								))}
-							</select>
-						</label>
-					) : (
-						<div className="field-row">
-							<label className="field">
-								场景
-								<select
-									value={shape.props.environment}
-									onPointerDown={(event) => halt(editor, event)}
-									onChange={(event) => setChapterEnvironment(editor, shape, event.target.value)}
-								>
-									{ENV_IDS.map((id) => (
-										<option key={id} value={id}>
-											{ENV_LABELS[id]}
-										</option>
-									))}
-								</select>
-							</label>
-							<label className="field">
-								光
-								<select
-									value={shape.props.lighting}
-									onPointerDown={(event) => halt(editor, event)}
-									onChange={(event) => setChapterLighting(editor, shape, event.target.value)}
-								>
-									{LIGHT_IDS.map((id) => (
-										<option key={id} value={id}>
-											{LIGHT_LABELS[id]}
-										</option>
-									))}
-								</select>
-							</label>
-						</div>
-					)}
-					<p className="container-hint">{shape.props.role === 'bible' ? '把角色卡拖进来，或从左侧放下一块新的。' : shape.props.mood}</p>
+					<p>{shape.props.subtitle || shape.props.mood || '把文字设定卡、图像参考卡或 AI 节点放入此容器，或用箭头连向下游容器。'}</p>
 				</div>
-			)}
-			<button type="button" className={`port port-in ${studio.wiringFrom ? 'listen' : ''}`} aria-label="输入端口" onPointerDown={(event) => onPort(event, 'in')} />
-			<button type="button" className={`port port-out ${armed ? 'armed' : ''}`} aria-label="输出端口" onPointerDown={(event) => onPort(event, 'out')} />
-		</HTMLContainer>
-	)
+			</HTMLContainer>
+		)
+	}
+	return <PageView shape={shape} editor={editor} />
 }
 
-function FlowOverlay({
-	layout,
-	metas,
-	bubbles,
-	pageW,
-	pageH,
-}: {
-	layout: Layout
-	metas: PanelMeta[]
-	bubbles: Array<{ x: number; y: number; props: { w: number; h: number; panelIndex: number } }>
-	pageW: number
-	pageH: number
-}) {
+function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType<typeof useEditor> }) {
+	const dragRef = useRef<{
+		mode: 'divider' | 'pan'
+		divider?: Divider
+		panelIndex?: number
+		startX: number
+		startY: number
+		genome: Genome
+		metas: PanelMeta[]
+		mark: string
+	} | null>(null)
+
+	const genome = useMemo(() => sanitize(readJson<Genome>(shape.props.genomeJson, { rowW: [], rowTilt: [], rows: [] })), [shape.props.genomeJson])
+	const config = useMemo(() => configFor(shape.props.layoutPreset, shape.props.targetPanels), [shape.props.layoutPreset, shape.props.targetPanels])
+	const layout = useMemo(() => realize(genome, config), [genome, config])
+	const metas = useMemo(() => readJson<PanelMeta[]>(shape.props.panelsJson, []), [shape.props.panelsJson])
+
+	const childBubbles = useValue(
+		'page-bubbles',
+		() =>
+			editor
+				.getSortedChildIdsForParent(shape.id)
+				.map((id) => editor.getShape(id))
+				.filter((item): item is MangaBubble => item?.type === BUBBLE),
+		[editor, shape.id],
+	)
+
+	const artSvg = useMemo(
+		() =>
+			renderPageSvg({
+				uid: shape.id.replace(/[^a-zA-Z0-9]/g, ''),
+				title: shape.props.title,
+				width: layout.width,
+				height: layout.height,
+				inner: layout.inner,
+				panels: layout.panels.map((panel, index) => {
+					const meta = metas[index] ?? {
+						imageSeed: `${shape.props.seed}-p${index}`,
+						imageOffsetX: 0,
+						imageOffsetY: 0,
+						imageScale: 1,
+						imageRotation: 0,
+						aspect: '1:1',
+						shot: 'MS' as const,
+						angle: 'eye' as const,
+						focal: '50mm' as const,
+						beat: '',
+						who: [],
+						fries: 'none' as const,
+						eyeline: [8, -4] as [number, number],
+						imageDataUrl: '',
+						environment: '',
+					}
+					return {
+						pts: panel.pts,
+						meta,
+						environment: meta.environment || shape.props.environment,
+						lighting: shape.props.lighting,
+						energy: energyFor(shape.props.scenario, meta.fries),
+					}
+				}),
+				bubbles: [],
+				numbers: 'on',
+				director: shape.props.showFlow,
+				part: 'all',
+			}),
+		[layout, metas, shape.id, shape.props.environment, shape.props.lighting, shape.props.scenario, shape.props.seed, shape.props.showFlow, shape.props.title],
+	)
+
+	const toLocalLayout = (clientX: number, clientY: number) => {
+		const pagePoint = editor.screenToPage({ x: clientX, y: clientY })
+		const local = editor.getPointInShapeSpace(shape, pagePoint)
+		const headerH = 36
+		const stageH = Math.max(1, shape.props.h - headerH - 24)
+		return {
+			x: (local.x / shape.props.w) * layout.width,
+			y: ((local.y - headerH) / stageH) * layout.height,
+		}
+	}
+
+	const selected = shape.props.selectedPanel
+	const reasons = readJson<string[]>(shape.props.reasonsJson, [])
+	const scenarioZh = SCENARIO_LABELS[shape.props.scenario] ?? shape.props.scenario
+
 	const centers = layout.panels.map((panel) => centroid(panel.pts))
-	const sx = layout.width / pageW
-	const sy = layout.height / pageH
-	const chain = bubbles
+	const sx = layout.width / shape.props.w
+	const sy = layout.height / Math.max(1, shape.props.h - 60)
+	const bubbleChain = childBubbles
 		.slice()
 		.sort((a, b) => a.props.panelIndex - b.props.panelIndex || a.y - b.y)
 		.map((bubble) => `${((bubble.x + bubble.props.w / 2) * sx).toFixed(1)},${((bubble.y + bubble.props.h / 2) * sy).toFixed(1)}`)
-		.join(' ')
+
 	return (
-		<g style={{ pointerEvents: 'none' }}>
-			<rect x={layout.inner.x0} y={layout.inner.y0} width={layout.inner.x1 - layout.inner.x0} height={layout.inner.y1 - layout.inner.y0} fill="none" stroke="#1e78c8" strokeDasharray="7 5" strokeWidth={1.6} />
-			<polyline points={centers.map((point) => `${point[0].toFixed(1)},${point[1].toFixed(1)}`).join(' ')} fill="none" stroke="#d6453d" strokeWidth={2.4} />
-			{chain ? <polyline points={chain} fill="none" stroke="#1e78c8" strokeWidth={2} strokeDasharray="7 5" /> : null}
-			{centers.map((center, index) => {
-				const [dx, dy] = metas[index]?.eyeline ?? [0, 0]
-				return <line key={index} x1={center[0]} y1={center[1]} x2={center[0] + dx} y2={center[1] + dy} stroke="#1f9d55" strokeWidth={2.4} />
-			})}
-		</g>
+		<HTMLContainer className="manga-container role-page">
+			<header className="container-bar">
+				<span className="role-pill">📄 {shape.props.title}</span>
+				<span className="badge">{scenarioZh}</span>
+				<span className="badge">{layout.panels.length}格</span>
+				<span className="badge score" title={reasons.join(' · ')}>
+					评分 {Math.round(shape.props.score * 100)}
+				</span>
+			</header>
+			<div
+				className="page-stage"
+				onWheel={(event) => {
+					if (selected < 0 || !metas[selected]) return
+					event.stopPropagation()
+					const next = metas.slice()
+					const factor = event.deltaY < 0 ? 1.07 : 0.93
+					next[selected] = { ...next[selected], imageScale: clamp((next[selected].imageScale || 1) * factor, 0.6, 2.6) }
+					editor.updateShape({ id: shape.id, type: CONTAINER, props: { panelsJson: JSON.stringify(next) } })
+				}}
+			>
+				<div className="page-art" dangerouslySetInnerHTML={{ __html: artSvg }} />
+				<svg
+					className="page-overlay"
+					viewBox={`0 0 ${layout.width} ${layout.height}`}
+					preserveAspectRatio="none"
+					onPointerMove={(event) => {
+						const state = dragRef.current
+						if (!state) return
+						event.stopPropagation()
+						const pos = toLocalLayout(event.clientX, event.clientY)
+						const dx = pos.x - state.startX
+						const dy = pos.y - state.startY
+						if (state.mode === 'divider' && state.divider) {
+							const nextGenome =
+								state.divider.kind === 'row'
+									? dragRowDivider(state.genome, state.divider.index, dx, dy, config)
+									: dragColDivider(state.genome, state.divider.row, state.divider.index, dx, dy, config)
+							const nextLayout = realize(nextGenome, config)
+							const nextMetas = refreshAspects(state.metas, nextLayout.panels, shape.props.seed)
+							const judged = layoutScore(layoutFeatures(nextLayout), shape.props.targetPanels, asScenario(shape.props.scenario))
+							editor.updateShape({
+								id: shape.id,
+								type: CONTAINER,
+								props: {
+									genomeJson: JSON.stringify(nextGenome),
+									panelsJson: JSON.stringify(nextMetas),
+									score: judged.score,
+									reasonsJson: JSON.stringify(judged.reasons),
+								},
+							})
+						} else if (state.mode === 'pan' && state.panelIndex !== undefined) {
+							const next = state.metas.slice()
+							const base = next[state.panelIndex]
+							if (!base) return
+							next[state.panelIndex] = { ...base, imageOffsetX: Math.round(base.imageOffsetX + dx), imageOffsetY: Math.round(base.imageOffsetY + dy) }
+							editor.updateShape({ id: shape.id, type: CONTAINER, props: { panelsJson: JSON.stringify(next) } })
+						}
+					}}
+					onPointerUp={() => {
+						if (dragRef.current) editor.squashToMark(dragRef.current.mark)
+						dragRef.current = null
+					}}
+					onDoubleClick={(event) => {
+						event.stopPropagation()
+						editor.markEventAsHandled(event)
+						const pos = toLocalLayout(event.clientX, event.clientY)
+						const hit = layout.panels.findIndex((panel) => pointInPoly(pos.x, pos.y, panel.pts))
+						editor.updateShape({ id: shape.id, type: CONTAINER, props: { selectedPanel: hit === selected ? -1 : hit } })
+					}}
+					onPointerDown={(event) => {
+						if (selected < 0) return
+						const pos = toLocalLayout(event.clientX, event.clientY)
+						if (!layout.panels[selected] || !pointInPoly(pos.x, pos.y, layout.panels[selected].pts)) return
+						event.stopPropagation()
+						editor.markEventAsHandled(event)
+						event.currentTarget.setPointerCapture(event.pointerId)
+						dragRef.current = {
+							mode: 'pan',
+							panelIndex: selected,
+							startX: pos.x,
+							startY: pos.y,
+							genome,
+							metas,
+							mark: editor.markHistoryStoppingPoint('pan-panel'),
+						}
+					}}
+				>
+					{selected >= 0 && layout.panels[selected] ? (
+						<polygon
+							points={layout.panels[selected].pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')}
+							fill="rgba(201,61,53,0.08)"
+							stroke="#c93d35"
+							strokeWidth={5}
+							strokeDasharray="10 5"
+						/>
+					) : null}
+
+					{shape.props.showFlow ? (
+						<g className="flow-overlay" pointerEvents="none">
+							{centers.length > 1 ? (
+								<polyline
+									points={centers.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')}
+									fill="none"
+									stroke="#c93d35"
+									strokeWidth={4}
+									strokeLinecap="round"
+								/>
+							) : null}
+							{centers.map(([cx, cy], index) => {
+								const eye = metas[index]?.eyeline ?? [12, -4]
+								return (
+									<g key={index}>
+										<circle cx={cx} cy={cy} r={14} fill="#c93d35" />
+										<text x={cx} y={cy + 5} textAnchor="middle" fontSize="13" fontWeight="900" fill="#fff">
+											{index + 1}
+										</text>
+										<line x1={cx} y1={cy} x2={cx + eye[0] * 3} y2={cy + eye[1] * 3} stroke="#1f8a5b" strokeWidth={3.5} />
+									</g>
+								)
+							})}
+							{bubbleChain.length > 1 ? <polyline points={bubbleChain.join(' ')} fill="none" stroke="#1e78c8" strokeWidth={3} strokeDasharray="8 6" /> : null}
+						</g>
+					) : null}
+
+					{layout.dividers.map((divider, index) => (
+						<g
+							key={index}
+							style={{ cursor: divider.kind === 'row' ? 'ns-resize' : 'ew-resize', pointerEvents: 'all' }}
+							onPointerDown={(event) => {
+								event.stopPropagation()
+								editor.markEventAsHandled(event)
+								const svg = event.currentTarget.ownerSVGElement
+								svg?.setPointerCapture(event.pointerId)
+								const pos = toLocalLayout(event.clientX, event.clientY)
+								dragRef.current = {
+									mode: 'divider',
+									divider,
+									startX: pos.x,
+									startY: pos.y,
+									genome,
+									metas,
+									mark: editor.markHistoryStoppingPoint('drag-gutter'),
+								}
+							}}
+						>
+							<circle cx={divider.x} cy={divider.y} r={16} fill="rgba(201,61,53,0.16)" />
+							<circle cx={divider.x} cy={divider.y} r={7} fill="#c93d35" stroke="#fffefb" strokeWidth={2} />
+						</g>
+					))}
+				</svg>
+			</div>
+			<footer className="page-foot">
+				<span>{reasons.slice(0, 2).join(' · ') || '拖拽红点改斜切分格 · 双击格内推拉构图'}</span>
+			</footer>
+		</HTMLContainer>
 	)
-}
-
-function pageView(shape: MangaContainer) {
-	if (shape.props.role !== 'page') return null
-	const layout: Layout = {
-		...realize(sanitize(readJson(shape.props.genomeJson, { rowW: [1], rowTilt: [], rows: [] })), configFor(shape.props.layoutPreset, shape.props.targetPanels)),
-		seed: shape.props.seed,
-	}
-	const metas = readJson<PanelMeta[]>(shape.props.panelsJson, [])
-	const svg = renderPageSvg(
-		pageModel({
-			uid: shape.id,
-			title: shape.props.title,
-			width: layout.width,
-			height: layout.height,
-			inner: layout.inner,
-			panels: layout.panels.map((panel, index) => ({
-				pts: panel.pts,
-				meta: metas[index] ?? {
-					imageSeed: `${shape.props.seed}-p${index}`,
-					imageOffsetX: 0,
-					imageOffsetY: 0,
-					imageScale: 1,
-					imageRotation: 0,
-					aspect: '1:1',
-					shot: 'MS',
-					angle: 'eye',
-					focal: '50mm',
-					beat: '',
-					who: [],
-					fries: 'none',
-					eyeline: [8, -4],
-					imageDataUrl: '',
-					environment: '',
-				},
-			})),
-			environment: shape.props.environment,
-			lighting: shape.props.lighting,
-			scenario: shape.props.scenario,
-			bubbles: [],
-			pageW: shape.props.w,
-			pageH: shape.props.h,
-			numbers: 'on',
-			director: false,
-		}),
-	)
-	return { svg, layout, metas }
-}
-
-function pointOf(svg: SVGSVGElement | null, event: { clientX: number; clientY: number }) {
-	if (!svg) return null
-	const rect = svg.getBoundingClientRect()
-	if (!rect.width || !rect.height) return null
-	const view = svg.viewBox.baseVal
-	return {
-		x: ((event.clientX - rect.left) / rect.width) * (view.width || 1),
-		y: ((event.clientY - rect.top) / rect.height) * (view.height || 1),
-	}
-}
-
-function hitPanel(layout: Layout, x: number, y: number) {
-	for (let index = layout.panels.length - 1; index >= 0; index -= 1) {
-		if (pointInPoly(x, y, layout.panels[index].pts)) return index
-	}
-	return -1
-}
-
-function nearDivider(layout: Layout, x: number, y: number) {
-	let best: Divider | null = null
-	let distance = 20
-	for (const divider of layout.dividers) {
-		const next = Math.hypot(divider.x - x, divider.y - y)
-		if (next < distance) {
-			best = divider
-			distance = next
-		}
-	}
-	return best
-}
-
-function setChapterEnvironment(editor: ReturnType<typeof useEditor>, shape: MangaContainer, environment: string) {
-	editor.run(() => {
-		editor.updateShape({ id: shape.id, type: CONTAINER, props: { environment } })
-		for (const id of editor.getSortedChildIdsForParent(shape.id)) {
-			const card = editor.getShape(id)
-			if (card?.type === 'manga-card' && (card.props as { kind: string }).kind === 'environment') {
-				editor.updateShape({
-					id,
-					type: 'manga-card',
-					props: { tag: environment, title: environment, body: ENV_LABELS[environment] ?? environment },
-				})
-			}
-		}
-		for (const page of editor.getCurrentPageShapes().filter(isPage)) {
-			if (page.props.chapterIndex !== shape.props.chapterIndex) continue
-			const metas = readJson<PanelMeta[]>(page.props.panelsJson, []).map((meta) => ({ ...meta, imageDataUrl: '' }))
-			editor.updateShape({ id: page.id, type: CONTAINER, props: { environment, panelsJson: JSON.stringify(metas) } })
-		}
-	})
-	notify(`第 ${shape.props.chapterIndex} 话场景改为 ${ENV_LABELS[environment] ?? environment}。`)
-}
-
-function setChapterLighting(editor: ReturnType<typeof useEditor>, shape: MangaContainer, lighting: string) {
-	editor.run(() => {
-		editor.updateShape({ id: shape.id, type: CONTAINER, props: { lighting } })
-		for (const page of editor.getCurrentPageShapes().filter(isPage)) {
-			if (page.props.chapterIndex !== shape.props.chapterIndex) continue
-			editor.updateShape({ id: page.id, type: CONTAINER, props: { lighting } })
-		}
-	})
-}
-
-function clamp(value: number, min: number, max: number) {
-	return Math.min(max, Math.max(min, value))
 }

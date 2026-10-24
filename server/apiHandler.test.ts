@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { startMangaServer } from './apiHandler.mjs'
 
 describe('shared manga API server', () => {
-	it('serves health, rejects unknown routes, and reads the built files', async () => {
+	it('serves health, complete, vision, image fallback, and reads the built files', async () => {
 		const root = mkdtempSync(path.join(tmpdir(), 'manga-static-'))
 		writeFileSync(path.join(root, 'index.html'), '<!doctype html><title>desk</title>')
 		writeFileSync(path.join(root, 'app.js'), 'console.log("page")')
@@ -14,6 +14,7 @@ describe('shared manga API server', () => {
 			const health = await fetch(`${server.url}api/health`).then((response) => response.json())
 			expect(health.ok).toBe(true)
 			expect(health.offlineReady).toBe(true)
+			expect(health.capabilities).toContain('vision')
 			const missing = await fetch(`${server.url}api/nope`)
 			expect(missing.status).toBe(404)
 			const complete = await fetch(`${server.url}api/complete`, {
@@ -22,7 +23,14 @@ describe('shared manga API server', () => {
 				body: JSON.stringify({ provider: 'openai', user: 'ping' }),
 			}).then((response) => response.json())
 			expect(complete.text).toBe('')
-			expect(complete.error).toContain('API key')
+			expect(complete.error).toContain('API Key')
+			const vision = await fetch(`${server.url}api/vision`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ provider: 'openai', prompt: '分析这张图' }),
+			}).then((response) => response.json())
+			expect(vision.text).toBe('')
+			expect(vision.error).toContain('API Key')
 			const page = await fetch(`${server.url}app.js`).then((response) => response.text())
 			expect(page).toContain('page')
 			const spa = await fetch(`${server.url}missing/route`).then((response) => response.text())

@@ -1,7 +1,7 @@
-import { T } from '@tldraw/validate'
+import { T, type RecordProps } from 'tldraw'
 import type { MangaBubble, MangaCard, MangaContainer, MangaPrompt } from './schema'
 
-export const containerProps: { [K in keyof MangaContainer['props']]: T.Validatable<MangaContainer['props'][K]> } = {
+export const containerProps: RecordProps<MangaContainer> = {
 	w: T.number,
 	h: T.number,
 	role: T.literalEnum('bible', 'chapter', 'page'),
@@ -13,35 +13,46 @@ export const containerProps: { [K in keyof MangaContainer['props']]: T.Validatab
 	mood: T.string,
 	environment: T.string,
 	lighting: T.string,
-	scenario: T.string,
-	targetPanels: T.number,
-	layoutPreset: T.string,
-	dialogueDensity: T.number,
-	seed: T.string,
-	variant: T.number,
-	mutation: T.number,
-	showFlow: T.boolean,
-	score: T.number,
 	chapterIndex: T.number,
 	pageIndex: T.number,
+	scenario: T.string,
+	layoutPreset: T.string,
+	dialogueDensity: T.number,
+	targetPanels: T.number,
+	seed: T.string,
 	genomeJson: T.string,
 	panelsJson: T.string,
 	scriptJson: T.string,
+	score: T.number,
+	reasonsJson: T.string,
+	showFlow: T.boolean,
+	selectedPanel: T.number,
 }
 
-export const cardProps: { [K in keyof MangaCard['props']]: T.Validatable<MangaCard['props'][K]> } = {
+export const cardProps: RecordProps<MangaCard> = {
 	w: T.number,
 	h: T.number,
-	kind: T.literalEnum('character', 'story', 'world', 'environment', 'note'),
-	tag: T.string,
+	kind: T.literalEnum('character', 'story', 'world', 'environment', 'note', 'image'),
 	title: T.string,
+	tag: T.string,
 	body: T.string,
 	voice: T.string,
 	locked: T.boolean,
-	imageSeed: T.string,
+	imageDataUrl: T.string,
+	customPrompt: T.string,
+	aiStatus: T.string,
 }
 
-export const bubbleProps: { [K in keyof MangaBubble['props']]: T.Validatable<MangaBubble['props'][K]> } = {
+export const promptProps: RecordProps<MangaPrompt> = {
+	w: T.number,
+	h: T.number,
+	block: T.literalEnum('extract', 'chapterize', 'name', 'camera', 'random', 'render'),
+	title: T.string,
+	paramsJson: T.string,
+	preview: T.string,
+}
+
+export const bubbleProps: RecordProps<MangaBubble> = {
 	w: T.number,
 	h: T.number,
 	bubble: T.literalEnum('speech', 'thought', 'caption', 'whisper', 'shout', 'broadcast', 'sfx'),
@@ -52,13 +63,4 @@ export const bubbleProps: { [K in keyof MangaBubble['props']]: T.Validatable<Man
 	tailY: T.number,
 	panelIndex: T.number,
 	spin: T.number,
-}
-
-export const promptProps: { [K in keyof MangaPrompt['props']]: T.Validatable<MangaPrompt['props'][K]> } = {
-	w: T.number,
-	h: T.number,
-	block: T.literalEnum('extract', 'chapterize', 'name', 'camera', 'random', 'render'),
-	title: T.string,
-	paramsJson: T.string,
-	preview: T.string,
 }

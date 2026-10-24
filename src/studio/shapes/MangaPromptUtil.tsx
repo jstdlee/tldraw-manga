@@ -1,7 +1,7 @@
 import { BaseBoxShapeUtil, HTMLContainer, resizeBox, useEditor, type TLResizeInfo } from 'tldraw'
 import { readJson } from '../model'
 import { ANGLES, FOCALS, PROMPT_BLOCKS, SHOTS, STYLE_PRESETS, defaultParams, type BlockId } from '../prompts/library'
-import { ENV_IDS, ENV_LABELS, LIGHT_IDS, LIGHT_LABELS } from '../demo/book'
+import { ANGLE_LABELS, ENV_IDS, ENV_LABELS, FOCAL_LABELS, LIGHT_IDS, LIGHT_LABELS, SHOT_LABELS } from '../demo/book'
 import { runBlock } from '../editor/pipeline'
 import { PROMPT, type MangaPrompt } from './schema'
 import { promptProps } from './props'
@@ -12,8 +12,8 @@ export class MangaPromptUtil extends BaseBoxShapeUtil<MangaPrompt> {
 
 	override getDefaultProps(): MangaPrompt['props'] {
 		return {
-			w: 260,
-			h: 188,
+			w: 270,
+			h: 196,
 			block: 'extract',
 			title: '⚡ 设定集提炼',
 			paramsJson: JSON.stringify(defaultParams('extract')),
@@ -30,7 +30,7 @@ export class MangaPromptUtil extends BaseBoxShapeUtil<MangaPrompt> {
 	}
 
 	override onResize(shape: MangaPrompt, info: TLResizeInfo<MangaPrompt>) {
-		return resizeBox(shape, info, { minWidth: 200, minHeight: 140 })
+		return resizeBox(shape, info, { minWidth: 210, minHeight: 150 })
 	}
 
 	override getIndicatorPath(shape: MangaPrompt) {
@@ -51,14 +51,25 @@ function PromptView({ shape }: { shape: MangaPrompt }) {
 	const setParam = (key: string, value: string | number | boolean) => {
 		editor.updateShape({ id: shape.id, type: PROMPT, props: { paramsJson: JSON.stringify({ ...params, [key]: value }) } })
 	}
+	const engineLabel = shape.props.block === 'render' ? 'Image LLM + 网点引擎' : 'Text + Vision LLM'
 	return (
 		<HTMLContainer className="manga-prompt">
-			<header>{shape.props.title}</header>
+			<header>
+				<span>{shape.props.title}</span>
+				<em className="prompt-engine-tag">{engineLabel}</em>
+			</header>
 			<p>{block?.summary}</p>
 			<div className="prompt-chips" onPointerDown={(event) => event.stopPropagation()}>
 				<Chips block={shape.props.block} params={params} onChange={setParam} />
 			</div>
-			{shape.props.preview ? <pre>{shape.props.preview}</pre> : <details onPointerDown={(event) => event.stopPropagation()}><summary>提示词</summary><p>{block?.template}</p></details>}
+			{shape.props.preview ? (
+				<pre>{shape.props.preview}</pre>
+			) : (
+				<details onPointerDown={(event) => event.stopPropagation()}>
+					<summary>查看内置提示词模板</summary>
+					<p>{block?.template}</p>
+				</details>
+			)}
 			<button
 				type="button"
 				onPointerDown={(event) => {
@@ -67,7 +78,7 @@ function PromptView({ shape }: { shape: MangaPrompt }) {
 				}}
 				onClick={() => void runBlock(editor, shape.props.block, params, shape.id)}
 			>
-				跑这块
+				🤖 调用 LLM 执行节点
 			</button>
 		</HTMLContainer>
 	)
@@ -95,11 +106,11 @@ function Chips({
 		return (
 			<>
 				<label>
-					话
+					话数
 					<input type="number" min={1} max={4} value={Number(params.chapters ?? 2)} onChange={(event) => onChange('chapters', Number(event.target.value))} />
 				</label>
 				<label>
-					页
+					每话页数
 					<input type="number" min={1} max={4} value={Number(params.pages ?? 2)} onChange={(event) => onChange('pages', Number(event.target.value))} />
 				</label>
 			</>
@@ -128,22 +139,28 @@ function Chips({
 				) : null}
 				<select value={String(params.shot ?? 'MS')} onChange={(event) => onChange('shot', event.target.value)}>
 					{SHOTS.map((shot) => (
-						<option key={shot}>{shot}</option>
+						<option key={shot} value={shot}>
+							{SHOT_LABELS[shot] ?? shot}
+						</option>
 					))}
 				</select>
 				<select value={String(params.angle ?? 'low')} onChange={(event) => onChange('angle', event.target.value)}>
 					{ANGLES.map((angle) => (
-						<option key={angle}>{angle}</option>
+						<option key={angle} value={angle}>
+							{ANGLE_LABELS[angle] ?? angle}
+						</option>
 					))}
 				</select>
 				<select value={String(params.focal ?? '18mm')} onChange={(event) => onChange('focal', event.target.value)}>
 					{FOCALS.map((focal) => (
-						<option key={focal}>{focal}</option>
+						<option key={focal} value={focal}>
+							{FOCAL_LABELS[focal] ?? focal}
+						</option>
 					))}
 				</select>
 			</>
 		)
 	}
-	if (block === 'name') return <span>静帧在高潮前 · 末格留钩子</span>
-	return <span>无字 · 安全留白 · 网点</span>
+	if (block === 'name') return <span>高潮前静帧 · 左下角翻页钩子</span>
+	return <span>禁止AI乱码字 · 安全留白 · 黑白网点</span>
 }

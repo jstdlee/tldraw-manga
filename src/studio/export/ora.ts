@@ -100,3 +100,24 @@ export function readZipText(archive: Uint8Array, name: string): string {
 	const file = files[name]
 	return file ? strFromU8(file) : ''
 }
+
+export async function exportOpenRaster(model: PageRenderModel): Promise<Uint8Array> {
+	const result = await pageToOra(model, model.title || "page")
+	return result.ora
+}
+
+export function downloadText(name: string, content: string, type = "text/plain;charset=utf-8"): void {
+	downloadBlob(name, new Blob([content], { type }))
+}
+
+export function downloadBlob(name: string, data: Blob | Uint8Array, type = "application/octet-stream"): void {
+	const blob = data instanceof Blob ? data : new Blob([data.buffer as ArrayBuffer], { type })
+	const url = URL.createObjectURL(blob)
+	const link = document.createElement('a')
+	link.href = url
+	link.download = name
+	document.body.appendChild(link)
+	link.click()
+	link.remove()
+	setTimeout(() => URL.revokeObjectURL(url), 1000)
+}

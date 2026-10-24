@@ -23,21 +23,27 @@ export async function handleMangaApi(req, res) {
 		send(res, 200, {
 			ok: true,
 			offlineReady: true,
+			capabilities: ['text', 'vision', 'image'],
 			env: {
 				openai: Boolean(process.env.OPENAI_API_KEY),
 				gemini: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY),
 				openrouter: Boolean(process.env.OPENROUTER_API_KEY),
+				deepseek: Boolean(process.env.DEEPSEEK_API_KEY),
 			},
 		})
 		return
 	}
-	if (req.method !== 'POST' || (url !== '/api/complete' && url !== '/api/image')) {
+	if (req.method !== 'POST' || (url !== '/api/complete' && url !== '/api/image' && url !== '/api/vision')) {
 		send(res, 404, { error: 'not found' })
 		return
 	}
 	const body = await readBody(req)
 	if (url === '/api/complete') {
 		send(res, 200, await complete(body))
+		return
+	}
+	if (url === '/api/vision') {
+		send(res, 200, await analyzeVision(body))
 		return
 	}
 	send(res, 200, await drawRemote(body))
@@ -113,7 +119,7 @@ function safeFile(root, urlPath) {
 async function complete(body) {
 	const provider = body.provider || 'openai'
 	const key = body.apiKey || keyFor(provider)
-	if (!key && provider !== 'local') return { text: '', error: '没有 API key。界面会继续用离线稿。' }
+	if (!key && provider !== 'local') return { text: '', error: '未配置 API Key，已自动切换为内置中文离线模型。' }
 	const system = body.system || ''
 	const user = body.user || ''
 	if (provider === 'gemini') {
@@ -146,11 +152,53 @@ async function complete(body) {
 	return text ? { text } : { text: '', error: data.error?.message || '模型没有返回文本' }
 }
 
+async function analyzeVision(body) {
+	const provider = body.provider || 'openai'
+	const key = body.apiKey || keyFor(provider)
+	if (!key && provider !== 'local') return { text: '', error: '未配置视觉模型 API Key，已使用内置 Vision 视觉解析引擎。' }
+	const prompt = body.prompt || '请用中文分析这张漫画/参考图的角色外观特征、服装锚点、镜头景别、光影氛围与分镜构图建议。'
+	const imageDataUrl = body.imageDataUrl || ''
+	if (provider === 'gemini') {
+		const model = body.visionModel || body.model || 'gemini-2.5-flash'
+		const parts = [{ text: prompt }]
+		const match = imageDataUrl.match(/^data:([^;]+);base64,(.+)$/)
+		if (match) {
+			parts.push({ inlineData: { mimeType: match[1], data: match[2] } })
+		}
+		const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ contents: [{ role: 'user', parts }] }),
+			signal: AbortSignal.timeout(45000),
+		})
+		const data = await response.json()
+		const text = data.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('\n') || ''
+		return text ? { text } : { text: '', error: data.error?.message || 'Gemini Vision 未返回解析结果' }
+	}
+	const base = baseFor(provider, body.baseUrl)
+	const content = [{ type: 'text', text: prompt }]
+	if (imageDataUrl) {
+		content.push({ type: 'image_url', image_url: { url: imageDataUrl } })
+	}
+	const response = await fetch(`${base}/chat/completions`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+		body: JSON.stringify({
+			model: body.visionModel || body.model || 'gpt-4o',
+			messages: [{ role: 'user', content }],
+		}),
+		signal: AbortSignal.timeout(45000),
+	})
+	const data = await response.json()
+	const text = data.choices?.[0]?.message?.content || ''
+	return text ? { text } : { text: '', error: data.error?.message || 'Vision 模型未返回解析文本' }
+}
+
 async function drawRemote(body) {
 	const provider = body.provider || 'openai'
 	const key = body.apiKey || keyFor(provider)
 	const prompt = body.prompt || ''
-	if (!key && provider !== 'local') return { dataUrl: '', error: '没有图像 API key' }
+	if (!key && provider !== 'local') return { dataUrl: '', error: '未配置生图 API Key，已使用内置网点手绘引擎渲染。' }
 	if (provider === 'gemini') {
 		const model = body.imageModel || 'gemini-2.5-flash-image'
 		const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`, {
@@ -188,6 +236,7 @@ async function drawRemote(body) {
 function keyFor(provider) {
 	if (provider === 'gemini') return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || ''
 	if (provider === 'openrouter') return process.env.OPENROUTER_API_KEY || ''
+	if (provider === 'deepseek') return process.env.DEEPSEEK_API_KEY || ''
 	if (provider === 'local') return process.env.LOCAL_API_KEY || ''
 	return process.env.OPENAI_API_KEY || ''
 }
@@ -195,6 +244,7 @@ function keyFor(provider) {
 function baseFor(provider, requested) {
 	if (requested) return requested.replace(/\/$/, '')
 	if (provider === 'openrouter') return 'https://openrouter.ai/api/v1'
+	if (provider === 'deepseek') return 'https://api.deepseek.com/v1'
 	if (provider === 'local') return process.env.LOCAL_LLM_BASE_URL?.replace(/\/$/, '') || 'http://127.0.0.1:11434/v1'
 	return 'https://api.openai.com/v1'
 }
@@ -217,7 +267,7 @@ function readBody(req) {
 		const chunks = []
 		req.on('data', (chunk) => {
 			chunks.push(chunk)
-			if (chunks.reduce((sum, item) => sum + item.length, 0) > 1_500_000) {
+			if (chunks.reduce((sum, item) => sum + item.length, 0) > 2_500_000) {
 				reject(new Error('body too large'))
 				req.destroy()
 			}

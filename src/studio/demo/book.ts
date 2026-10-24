@@ -1,213 +1,227 @@
-import { mulberry32, strHash } from '../layout/engine'
-import type { Beat, BookDraft, BubbleLine, ChapterDraft, PageDraft } from '../model'
-import { asScenario, type Scenario } from '../layout/score'
+import type { Beat, BookDraft, CharacterDraft, PageDraft } from '../model'
+import type { Scenario } from '../layout/score'
 
-const speech = (text: string, prosody?: BubbleLine['prosody'], placement?: BubbleLine['placement']): BubbleLine => ({
-	type: 'speech',
-	text,
-	prosody,
-	placement,
-})
-
-export const SEAGULL_TEXT = `勘太在靠海的板道上买了最后一盒薯条。风从画面右侧吹来。一只带着红疤的海鸥头目俯冲而下，把盒子叫成“海的税”。摊主芽衣早准备了第二盒。两人后来在屋顶放了一只税罐子，第二天罐子里只剩一根羽毛。`
-
-export function isSeagullStory(text: string): boolean {
-	const value = text.toLowerCase()
-	return value.includes('海鸥') || value.includes('薯条') || value.includes('seagull') || value.includes('fries')
-}
-
-function page(
-	scenario: Scenario,
-	preset: string,
-	density: number,
-	seed: string,
-	showFlow: boolean,
-	beats: Beat[],
-): PageDraft {
-	return {
-		scenario,
-		layoutPreset: preset,
-		dialogueDensity: density,
-		targetPanels: beats.length,
-		seed,
-		showFlow,
-		beats,
-	}
-}
-
-export function seagullBook(): BookDraft {
-	const chapter1: ChapterDraft = {
-		title: '第1话 盐风',
-		mood: '盐风、明亮、压迫',
-		environment: 'boardwalk',
-		lighting: 'hard-noon',
-		pages: [
-			page('establishing', 'seizen', 40, 'seagull-c1-p1', true, [
-				{ shot: 'EWS', angle: 'eye', focal: '18mm', beat: '板道尽头，红白棚在风里鼓起来。', who: [], fries: 'none', lines: [{ type: 'caption', text: '风从海面来。', placement: 'top-right' }], eyeline: [20, 0] },
-				{ shot: 'WS', angle: 'eye', focal: '35mm', beat: '勘太拎着最后一盒薯条，影子比人长。', who: ['kanta'], fries: 'kanta', lines: [speech('就这一盒。', '停顿', 'top-right')], eyeline: [18, -6] },
-				{ shot: 'CU', angle: 'high', focal: '85mm', beat: '翅膀的影子盖住薯条。', who: ['boss'], fries: 'kanta', lines: [{ type: 'sfx', text: 'パサ…', placement: 'bottom-right' }], eyeline: [-10, 16] },
-				{ shot: 'MCU', angle: 'low', focal: '35mm', beat: '勘太抬头，刘海被风掀开。', who: ['kanta'], fries: 'kanta', lines: [speech('别想。', '冷笑', 'top-left')], eyeline: [8, -24] },
-			]),
-			page('action', 'action', 62, 'seagull-c1-p2', false, [
-				{ shot: 'MS', angle: 'low', focal: '18mm', beat: '头目鸥贴着棚子俯冲。', who: ['boss'], fries: 'gull', lines: [{ type: 'sfx', text: 'シュッ', placement: 'top-right' }], eyeline: [-20, 18] },
-				{ shot: 'CU', angle: 'eye', focal: '85mm', beat: '勘太的眼睛瞪圆。', who: ['kanta'], fries: 'kanta', lines: [{ type: 'shout', text: '喂！', prosody: '怒吼', placement: 'center' }], eyeline: [6, -8] },
-				{ shot: 'ECU', angle: 'low', focal: '18mm', beat: '喙和纸盒撞在一起。', who: ['boss'], fries: 'gull', lines: [{ type: 'sfx', text: 'バサッ', placement: 'bottom-left' }], eyeline: [14, 4] },
-				{ shot: 'MS', angle: 'dutch', focal: '18mm', beat: '薯条整盒腾空。', who: ['kanta', 'boss'], fries: 'air', lines: [{ type: 'sfx', text: 'ドン!!', placement: 'center' }], eyeline: [22, -12] },
-				{ shot: 'WS', angle: 'eye', focal: '35mm', beat: '芽衣从摊后冲出来，勘太沿栏杆追。', who: ['kanta', 'mei'], fries: 'gull', lines: [speech('那是最后一筐！', '颤抖', 'top-left')], eyeline: [16, -4] },
-				{ shot: 'MCU', angle: 'eye', focal: '85mm', beat: '勘太的手抓空。', who: ['kanta'], fries: 'none', lines: [], eyeline: [4, 10] },
-			]),
-			page('climax', 'std', 48, 'seagull-c1-p3', false, [
-				{ shot: 'WS', angle: 'low', focal: '18mm', beat: '头目鸥落在灯柱上，盒子扣在爪里。', who: ['boss'], fries: 'gull', lines: [{ type: 'shout', text: '这是海的税。', placement: 'top-right' }], eyeline: [0, 20] },
-				{ shot: 'MS', angle: 'eye', focal: '50mm', beat: '芽衣抱着胳膊，并不提高音量。', who: ['mei'], fries: 'none', lines: [speech('你每天都来。', '', 'top-left')], eyeline: [-12, -2] },
-				{ shot: 'CU', angle: 'eye', focal: '85mm', beat: '勘太拈起一根薯条。', who: ['kanta'], fries: 'kanta', lines: [speech('一根。讲和。', '停顿', 'bottom-right')], eyeline: [10, -6] },
-				{ shot: 'ECU', angle: 'eye', focal: '85mm', beat: '一根薯条停在风里，谁都没接话。', who: [], fries: 'air', lines: [], eyeline: [0, -4] },
-				{ shot: 'WS', angle: 'high', focal: '35mm', beat: '芽衣从柜台下又托出一盒。', who: ['mei'], fries: 'kanta', lines: [{ type: 'caption', text: '她早就准备了第二盒。', placement: 'top-right' }, speech('屋顶见。', '', 'bottom-left')], eyeline: [12, 8] },
-			]),
-		],
-	}
-	const chapter2: ChapterDraft = {
-		title: '第2话 屋顶',
-		mood: '夕照，转暴风雨',
-		environment: 'sunset-roof',
-		lighting: 'rim',
-		pages: [
-			page('intimacy', 'seizen', 42, 'seagull-c2-p1', false, [
-				{ shot: 'EWS', angle: 'eye', focal: '85mm', beat: '夕阳把两个人压成屋顶上的剪影。', who: ['kanta', 'mei'], fries: 'none', lines: [{ type: 'caption', text: '夕阳把两个人压成剪影。', placement: 'top-right' }], eyeline: [18, 0] },
-				{ shot: 'MS', angle: 'eye', focal: '50mm', beat: '他们分着第二盒薯条。', who: ['mei', 'kanta'], fries: 'kanta', lines: [speech('海鸥工会没有发票。', '', 'top-left')], eyeline: [-8, -4] },
-				{ shot: 'CU', angle: 'eye', focal: '85mm', beat: '勘太笑了一下，不像在开玩笑。', who: ['kanta'], fries: 'none', lines: [speech('那就收会员费。', '冷笑', 'top-right')], eyeline: [8, -6] },
-				{ shot: 'MCU', angle: 'eye', focal: '50mm', beat: '一只空罐子放在两人之间。', who: ['kanta', 'mei'], fries: 'jar', lines: [{ type: 'caption', text: '他们决定设一个海鸥税罐子。', placement: 'bottom-left' }], eyeline: [0, 12] },
-			]),
-			page('climax', 'action', 58, 'seagull-c2-p2', true, [
-				{ shot: 'EWS', angle: 'high', focal: '18mm', beat: '天边站满了海鸥。', who: ['boss'], fries: 'none', lines: [{ type: 'caption', text: '第二天，天边站满了海鸥。', placement: 'top-right' }], eyeline: [0, 16] },
-				{ shot: 'MS', angle: 'low', focal: '35mm', beat: '勘太把罐子举到风口。', who: ['kanta'], fries: 'jar', lines: [speech('罐子在这儿。', '', 'top-left')], eyeline: [6, -20] },
-				{ shot: 'CU', angle: 'high', focal: '85mm', beat: '罐子是空的，只剩一根羽毛。', who: [], fries: 'feather', lines: [{ type: 'sfx', text: 'ポカーン!', placement: 'center' }], eyeline: [0, 14] },
-				{ shot: 'MCU', angle: 'eye', focal: '50mm', beat: '芽衣看着羽毛，声音放得很低。', who: ['mei'], fries: 'feather', lines: [{ type: 'whisper', text: '它来过了。', prosody: '低语', placement: 'bottom-left' }], eyeline: [-6, 4] },
-				{ shot: 'WS', angle: 'dutch', focal: '18mm', beat: '羽毛吹向画外，鸥群压下来。', who: ['kanta', 'mei', 'boss'], fries: 'feather', lines: [{ type: 'caption', text: '税，已经收走了。', placement: 'top-right' }, { type: 'sfx', text: 'ゴゴゴ…', placement: 'bottom-left' }], eyeline: [20, -10] },
-			]),
-		],
-	}
-	return {
-		title: '海鸥抢薯条',
-		subtitle: 'Seagull Fries Heist',
-		story: SEAGULL_TEXT,
-		world: '靠海的板道镇。海鸥组成了没有发票的工会，炸薯条摊是中立地带。风从画面右侧吹向左侧，阅读从右上开始。',
-		stylePreset: '少年网点',
-		characters: [
-			{ tag: '@kanta', name: '勘太', appearance: '17岁，乱黑发，红防风外套，白T恤，深蓝裤，左耳一枚银钉。三视图锁定发型轮廓。', voice: '短句，嘴硬，停顿多。', locked: true },
-			{ tag: '@mei', name: '芽衣', appearance: '齐肩黑褐波波头，蓝衬衫，红白条纹围裙，眼下一颗小痣。', voice: '干、轻，不抬高音量。', locked: true },
-			{ tag: '@boss', name: '头目鸥', appearance: '白羽海鸥，黄喙，左眼上一道红疤，翼展夸张。', voice: '舞台腔，把抢东西说成收税。', locked: true },
-		],
-		chapters: [chapter1, chapter2],
-	}
-}
-
-const SHOTS = ['EWS', 'WS', 'MS', 'MCU', 'CU', 'ECU'] as const
-const ANGLES = ['eye', 'low', 'high', 'dutch', 'bird'] as const
-const FOCALS = ['18mm', '35mm', '50mm', '85mm'] as const
-const SCENES: Scenario[] = ['establishing', 'tension', 'intimacy', 'action', 'reveal', 'climax']
-const PRESETS = ['seizen', 'std', 'action', 'tobira']
-const ENVS = ['dawn-beach', 'boardwalk', 'neon-rain', 'sunset-roof', 'noir', 'konbini', 'platform', 'shrine', 'classroom', 'storm-pier']
-const LIGHTS = ['hard-noon', 'rim', 'backlight', 'underlight', 'neon-bounce', 'screentone']
-
-function sentencesOf(text: string): string[] {
-	const parts = text
-		.split(/[。！？\n]/)
-		.map((item) => item.trim())
-		.filter((item) => item.length > 1)
-	return parts.length ? parts : ['有人推开了门。']
-}
-
-export function bookFromText(text: string): BookDraft {
-	const source = text.trim()
-	if (!source || isSeagullStory(source)) return { ...seagullBook(), story: source || SEAGULL_TEXT }
-	const random = mulberry32(strHash(source))
-	const lines = sentencesOf(source)
-	const tags = Array.from(source.matchAll(/@([a-zA-Z0-9_\u4e00-\u9fff]+)/g)).map((match) => match[1])
-	const cast = tags.length ? tags.slice(0, 3) : ['kanta', 'mei']
-	const characters = cast.map((tag, index) => ({
-		tag: `@${tag}`,
-		name: tag,
-		appearance: index === 0 ? '黑发，外套轮廓锁定，三视图不变。' : '配角，服装与发型锁定。',
-		voice: index === 0 ? '短句。' : '压低声音。',
-		locked: true,
-	}))
-	const chapterCount = lines.length > 8 ? 2 : 1
-	const perChapter = Math.ceil(lines.length / chapterCount)
-	const chapters: ChapterDraft[] = []
-	for (let chapterIndex = 0; chapterIndex < chapterCount; chapterIndex += 1) {
-		const slice = lines.slice(chapterIndex * perChapter, (chapterIndex + 1) * perChapter)
-		const pageCount = Math.max(1, Math.min(3, Math.ceil(slice.length / 3)))
-		const pages: PageDraft[] = []
-		for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
-			const beatsSrc = slice.slice(
-				Math.floor((pageIndex * slice.length) / pageCount),
-				Math.floor(((pageIndex + 1) * slice.length) / pageCount),
-			)
-			const scenario = SCENES[(chapterIndex * 2 + pageIndex) % SCENES.length]
-			const count = Math.max(3, Math.min(6, beatsSrc.length + 2))
-			const beats: Beat[] = Array.from({ length: count }, (_, index) => {
-				const sentence = beatsSrc[index] ?? beatsSrc[beatsSrc.length - 1] ?? '风停了一下。'
-				const last = index === count - 1
-				const silent = index === count - 2
-				const linesForBeat: BubbleLine[] = []
-				if (last) linesForBeat.push({ type: 'caption', text: sentence.slice(0, 18), placement: 'bottom-left' })
-				else if (!silent && sentence.length < 16) linesForBeat.push(speech(sentence, index % 2 ? '低语' : '', index % 2 ? 'top-right' : 'top-left'))
-				else if (!silent) linesForBeat.push({ type: 'caption', text: sentence.slice(0, 20), placement: 'top-right' })
-				return {
-					shot: SHOTS[Math.min(SHOTS.length - 1, index === 0 ? 0 : index === count - 1 ? 1 : 2 + (index % 3))],
-					angle: ANGLES[index % ANGLES.length],
-					focal: last || index === 0 ? '18mm' : FOCALS[(index + 1) % FOCALS.length],
-					beat: sentence,
-					who: silent ? [] : [cast[index % cast.length]],
-					fries: 'none',
-					lines: linesForBeat,
-					eyeline: [12, index % 2 ? -8 : 6],
-				}
-			})
-			pages.push(
-				page(asScenario(scenario), PRESETS[pageIndex % PRESETS.length], 40 + Math.floor(random() * 30), `story-c${chapterIndex + 1}-p${pageIndex + 1}-${strHash(source).toString(16)}`, pageIndex === 0, beats),
-			)
-		}
-		chapters.push({
-			title: `第${chapterIndex + 1}话`,
-			mood: chapterIndex === 0 ? '开场' : '收束',
-			environment: ENVS[Math.floor(random() * ENVS.length)],
-			lighting: LIGHTS[Math.floor(random() * LIGHTS.length)],
-			pages,
-		})
-	}
-	return {
-		title: lines[0]?.slice(0, 12) || '未命名漫画',
-		subtitle: 'Local draft',
-		story: source,
-		world: lines.slice(0, 2).join('。'),
-		stylePreset: '少年网点',
-		characters,
-		chapters,
-	}
-}
+export const ENV_IDS = ['boardwalk', 'rooftop', 'neon-rain', 'shrine', 'subway'] as const
+export const LIGHT_IDS = ['hard-noon', 'golden-dusk', 'neon-bounce', 'overcast'] as const
 
 export const ENV_LABELS: Record<string, string> = {
-	boardwalk: '盐风板道',
-	'dawn-beach': '黎明海滩',
-	'neon-rain': '霓虹雨巷',
-	'sunset-roof': '夕照屋顶',
-	noir: '高反差黑白',
-	konbini: '便利店冷光',
-	platform: '黄昏月台',
-	shrine: '雾中鸟居',
-	classroom: '午后教室',
-	'storm-pier': '暴风雨码头',
+	boardwalk: '海岸防波堤',
+	rooftop: '夕照屋顶',
+	'neon-rain': '雨夜霓虹巷',
+	shrine: '山道石阶',
+	subway: '末班月台',
 }
 
 export const LIGHT_LABELS: Record<string, string> = {
 	'hard-noon': '正午硬光',
-	rim: '轮廓光',
-	backlight: '逆光',
-	underlight: '底光',
+	'golden-dusk': '暮色逆光',
 	'neon-bounce': '霓虹反光',
-	screentone: '网点渐变',
+	overcast: '阴云漫射',
 }
 
-export const ENV_IDS = Object.keys(ENV_LABELS)
-export const LIGHT_IDS = Object.keys(LIGHT_LABELS)
+export const SCENARIO_LABELS: Record<string, string> = {
+	establishing: '开场铺垫',
+	tension: '悬念蓄力',
+	intimacy: '人物文戏',
+	action: '动作爆发',
+	reveal: '真相揭晓',
+	climax: '高潮决战',
+}
+
+export const PRESET_LABELS: Record<string, string> = {
+	seizen: '规整叙事',
+	std: '标准日漫',
+	action: '斜切动作',
+	tobira: '大跨页扉页',
+}
+
+export const BUBBLE_LABELS: Record<string, string> = {
+	speech: '普通对白',
+	thought: '内心独白',
+	caption: '旁白方框',
+	whisper: '虚线低语',
+	shout: '炸裂呐喊',
+	broadcast: '广播折线',
+	sfx: '拟声音效',
+}
+
+export const SHOT_LABELS: Record<string, string> = {
+	EWS: '大远景 (EWS)',
+	WS: '远景 (WS)',
+	MS: '中景 (MS)',
+	MCU: '中近景 (MCU)',
+	CU: '特写 (CU)',
+	ECU: '大特写 (ECU)',
+}
+
+export const ANGLE_LABELS: Record<string, string> = {
+	eye: '平视',
+	low: '仰拍',
+	high: '俯拍',
+	dutch: '倾斜镜头',
+	bird: '鸟瞰',
+}
+
+export const FOCAL_LABELS: Record<string, string> = {
+	'18mm': '18mm 广角张力',
+	'35mm': '35mm 人文叙事',
+	'50mm': '50mm 标准视角',
+	'85mm': '85mm 压缩特写',
+}
+
+export const SEAGULL_STORY =
+	'海边防波堤的正午，少年勘太护着最后一盒热薯条，少女芽衣举着旧相机等风。独眼海鸥头目从护栏上方俯冲下来，一场围绕咸香薯条与屋顶落日的两话短篇就此展开。'
+
+const CHARACTERS: CharacterDraft[] = [
+	{
+		tag: '@kanta',
+		name: '勘太',
+		appearance: '凌乱黑发，深蓝连帽卫衣，领口挂旧护目镜，右颊一贴创可贴',
+		voice: '嘴硬心软，护食如命，句尾常带感叹号',
+		locked: true,
+	},
+	{
+		tag: '@mei',
+		name: '芽衣',
+		appearance: '利落短发配发卡，浅色长风衣，斜挎老胶片相机，眼神冷静',
+		voice: '冷幽默旁观者，说话简短，总在关键帧按快门',
+		locked: true,
+	},
+	{
+		tag: '@boss',
+		name: '头目鸥',
+		appearance: '体型硕大的银背海鸥，左眼一道旧疤，左脚套着金属环，翼展极宽',
+		voice: '不发人言，只用短促鸣叫和压迫感控场',
+		locked: true,
+	},
+]
+
+const C1_P1: Beat[] = [
+	{ shot: 'EWS', angle: 'high', focal: '35mm', beat: '海风吹过防波堤，勘太捧着刚出锅的薯条，芽衣在旁边调焦。', who: ['kanta', 'mei'], fries: 'kanta', lines: [{ type: 'caption', text: '正午 · 盐风防波堤', placement: 'top-right' }, { type: 'speech', text: '最后一份现炸薯条，谁也别想碰。', placement: 'bottom-left' }] },
+	{ shot: 'MS', angle: 'eye', focal: '50mm', beat: '芽衣举起相机对准海面护栏，提醒勘太头顶有动静。', who: ['mei'], fries: 'none', lines: [{ type: 'speech', text: '别立旗。上面那位已经盯你三分钟了。', placement: 'top-right' }] },
+	{ shot: 'CU', angle: 'low', focal: '85mm', beat: '独眼头目鸥立在灯柱顶端，阴影压下来。', who: ['boss'], fries: 'none', lines: [{ type: 'sfx', text: '扑棱…', placement: 'top-left' }], eyeline: [-18, 22] },
+	{ shot: 'MCU', angle: 'eye', focal: '35mm', beat: '勘太把薯条盒往怀里一护，抬头迎视。', who: ['kanta'], fries: 'kanta', lines: [{ type: 'thought', text: '这眼神……是老手。', placement: 'top-right' }] },
+]
+
+const C1_P2: Beat[] = [
+	{ shot: 'WS', angle: 'low', focal: '18mm', beat: '头目鸥收拢双翼垂直俯冲，速度线撕开海空。', who: ['boss'], fries: 'none', lines: [{ type: 'sfx', text: '唰——！', placement: 'top-right' }] },
+	{ shot: 'MCU', angle: 'dutch', focal: '35mm', beat: '勘太侧身急退，薯条高高抛起。', who: ['kanta'], fries: 'air', lines: [{ type: 'shout', text: '休想得逞！', prosody: '怒吼', placement: 'top-left' }] },
+	{ shot: 'ECU', angle: 'eye', focal: '85mm', beat: '芽衣食指压下快门，取景框锁死一人一鸟。', who: ['mei'], fries: 'none', lines: [{ type: 'sfx', text: '咔嚓！', placement: 'bottom-right' }] },
+	{ shot: 'CU', angle: 'low', focal: '18mm', beat: '鸥喙在半空精准叼走最长的那根薯条。', who: ['boss', 'kanta'], fries: 'gull', lines: [{ type: 'sfx', text: '轰——！！', placement: 'top-right' }, { type: 'shout', text: '最脆的那根——！', prosody: '颤抖', placement: 'bottom-left' }] },
+	{ shot: 'MS', angle: 'high', focal: '35mm', beat: '头目鸥掠过护栏扬长而去，只留下一片白羽。', who: ['kanta', 'mei'], fries: 'feather', lines: [{ type: 'speech', text: '构图满分。谢谢你的诱饵。', prosody: '冷笑', placement: 'top-right' }] },
+]
+
+const C2_P1: Beat[] = [
+	{ shot: 'WS', angle: 'eye', focal: '35mm', beat: '傍晚的旧商店街屋顶，两人顺着铁梯爬上来。', who: ['kanta', 'mei'], fries: 'none', lines: [{ type: 'caption', text: '同日傍晚 · 商店街屋顶', placement: 'top-right' }] },
+	{ shot: 'MS', angle: 'eye', focal: '50mm', beat: '勘太把一个装满脆薯条的玻璃罐拍在通风箱上。', who: ['kanta'], fries: 'jar', lines: [{ type: 'speech', text: '看好了，这叫密封防空罐。', placement: 'top-left' }] },
+	{ shot: 'MCU', angle: 'eye', focal: '50mm', beat: '芽衣翻看刚冲出来的黑白照片，嘴角微扬。', who: ['mei'], fries: 'none', lines: [{ type: 'whisper', text: '它左脚有编号环，住在这片屋顶。', prosody: '低语', placement: 'top-right' }] },
+	{ shot: 'CU', angle: 'low', focal: '85mm', beat: '水塔高处，三只海鸥并排投下长影。', who: ['boss'], fries: 'none', lines: [] },
+]
+
+const C2_P2: Beat[] = [
+	{ shot: 'EWS', angle: 'low', focal: '18mm', beat: '暮色逆光里，头目鸥落在通风箱正对面，气场全开。', who: ['boss', 'kanta', 'mei'], fries: 'jar', lines: [{ type: 'broadcast', text: '夕阳广播：海风七级，注意高空掠食者。', placement: 'top-right' }] },
+	{ shot: 'CU', angle: 'eye', focal: '85mm', beat: '勘太与头目鸥四目相对，谁也不退。', who: ['kanta', 'boss'], fries: 'none', lines: [] },
+	{ shot: 'MCU', angle: 'high', focal: '35mm', beat: '头目鸥低头，把一枚亮闪闪的汽水瓶盖推到玻璃罐前。', who: ['boss'], fries: 'jar', lines: [{ type: 'speech', text: '……它是来以物易物的？', prosody: '停顿', placement: 'top-right' }] },
+	{ shot: 'MS', angle: 'eye', focal: '50mm', beat: '勘太拧开罐盖递出一根薯条，芽衣在夕照里按下最后一张快门。', who: ['kanta', 'mei', 'boss'], fries: 'kanta', lines: [{ type: 'speech', text: '行吧，下不为例。', placement: 'bottom-left' }, { type: 'caption', text: '——完——', placement: 'bottom-right' }] },
+]
+
+export function defaultBook(): BookDraft {
+	return {
+		title: '海鸥抢薯条',
+		subtitle: '海岸防波堤 · 双话完稿演示',
+		story: SEAGULL_STORY,
+		world: '近海小城，防波堤与旧商店街相连；黑白网点画风，保留局部朱红作重点色；分镜严格按日漫右起左读。',
+		stylePreset: '少年网点',
+		characters: structuredClone(CHARACTERS),
+		chapters: [
+			{
+				title: '第一话：防波堤的俯冲',
+				mood: '盐风 · 喜剧交锋',
+				environment: 'boardwalk',
+				lighting: 'hard-noon',
+				pages: [
+					{ scenario: 'establishing', layoutPreset: 'std', dialogueDensity: 0.45, targetPanels: 4, seed: 'seagull-c1-p1', showFlow: false, beats: structuredClone(C1_P1) },
+					{ scenario: 'action', layoutPreset: 'action', dialogueDensity: 0.35, targetPanels: 5, seed: 'seagull-c1-p2', showFlow: false, beats: structuredClone(C1_P2) },
+				],
+			},
+			{
+				title: '第二话：屋顶的赎金',
+				mood: '夕照 · 和解',
+				environment: 'rooftop',
+				lighting: 'golden-dusk',
+				pages: [
+					{ scenario: 'tension', layoutPreset: 'std', dialogueDensity: 0.5, targetPanels: 4, seed: 'seagull-c2-p1', showFlow: false, beats: structuredClone(C2_P1) },
+					{ scenario: 'climax', layoutPreset: 'tobira', dialogueDensity: 0.4, targetPanels: 4, seed: 'seagull-c2-p2', showFlow: false, beats: structuredClone(C2_P2) },
+				],
+			},
+		],
+	}
+}
+
+export function bookFromText(raw: string): BookDraft {
+	const text = raw.trim()
+	if (!text || text.includes('海鸥') || text.includes('薯条')) return defaultBook()
+	const sentences = text
+		.split(/[。！？!?\n]+/)
+		.map((line) => line.trim())
+		.filter(Boolean)
+	const chunks = sentences.length >= 4 ? sentences : [text, '风声忽然收紧。', '两人同时回头。', '巷口亮起一盏红灯。']
+	const makePage = (slice: string[], scenario: Scenario, preset: string, seed: string): PageDraft => ({
+		scenario,
+		layoutPreset: preset,
+		dialogueDensity: 0.45,
+		targetPanels: Math.min(6, Math.max(3, slice.length)),
+		seed,
+		showFlow: false,
+		beats: slice.map((line, index) => ({
+			shot: (['WS', 'MS', 'CU', 'ECU'] as const)[index % 4],
+			angle: (['eye', 'low', 'high', 'dutch'] as const)[index % 4],
+			focal: (['35mm', '50mm', '85mm', '18mm'] as const)[index % 4],
+			beat: line,
+			who: index % 2 === 0 ? ['kanta'] : ['mei'],
+			fries: 'none',
+			lines: index === slice.length - 1 ? [{ type: 'sfx', text: '盯——！', placement: 'top-right' }] : [{ type: 'speech', text: line.slice(0, 26), placement: index % 2 ? 'top-left' : 'top-right' }],
+		})),
+	})
+	const half = Math.ceil(chunks.length / 2)
+	const first = chunks.slice(0, half)
+	const second = chunks.slice(half)
+	return {
+		title: text.slice(0, 10),
+		subtitle: 'AI 智能拆解漫剧分镜稿',
+		story: text,
+		world: '黑白墨线 + 灰网点 + 局部朱红；右起左读；气泡尾尖指向说话人。',
+		stylePreset: '青年写实',
+		characters: structuredClone(CHARACTERS),
+		chapters: [
+			{
+				title: '第一话：起风',
+				mood: '悬念铺垫',
+				environment: 'neon-rain',
+				lighting: 'neon-bounce',
+				pages: [
+					makePage(first.slice(0, Math.ceil(first.length / 2)), 'establishing', 'std', 'custom-c1-p1'),
+					makePage(first.slice(Math.ceil(first.length / 2)), 'action', 'action', 'custom-c1-p2'),
+				],
+			},
+			{
+				title: '第二话：回响',
+				mood: '真相揭晓',
+				environment: 'rooftop',
+				lighting: 'golden-dusk',
+				pages: [
+					makePage(second.slice(0, Math.max(1, Math.ceil(second.length / 2))), 'tension', 'std', 'custom-c2-p1'),
+					makePage(second.slice(Math.max(1, Math.ceil(second.length / 2))), 'climax', 'tobira', 'custom-c2-p2'),
+				],
+			},
+		],
+	}
+}
+
+export const SAMPLE_STORIES: Array<{ label: string; text: string }> = [
+	{ label: '海鸥抢薯条（默认双话）', text: SEAGULL_STORY },
+	{
+		label: '雨夜的伞（双话悬疑）',
+		text: '末班电车到站时下起暴雨。勘太在站台捡到一把写着旧屋顶坐标的透明伞。芽衣认出那是三年前失踪社团留下的暗记。两人顺着霓虹雨巷追到天台，推门却看见一只戴脚环的海鸥守着录音机。',
+	},
+]

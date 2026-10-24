@@ -394,3 +394,25 @@ export function characterSheetSvg(tag: string): string {
 		<text x="300" y="146" text-anchor="middle" font-size="11" fill="#5c6b76">背</text>
 	</svg>`
 }
+
+export function referenceCardSvg(tag: string, title: string, seed: string): string {
+	const isRoof = tag.includes('rooftop') || title.includes('屋顶') || title.includes('夕照')
+	const isNeon = tag.includes('neon') || title.includes('雨') || title.includes('霓虹')
+	const env = isRoof ? 'rooftop' : isNeon ? 'neon-rain' : 'boardwalk'
+	const light = isRoof ? 'golden-dusk' : isNeon ? 'neon-bounce' : 'hard-noon'
+	const who = tag.includes('boss') ? ['boss', 'kanta'] : isRoof ? ['kanta', 'mei', 'boss'] : ['kanta', 'mei']
+	const art = renderIllustration({
+		idPrefix: `ref-${ Math.abs(strHash(seed + title)) }`,
+		environment: env,
+		lighting: light,
+		shot: seed.includes('cu') ? 'CU' : 'WS',
+		angle: seed.includes('low') ? 'low' : 'eye',
+		focal: '35mm',
+		aspect: '16:9',
+		who,
+		fries: isRoof ? 'jar' : 'kanta',
+		energy: seed.includes('act') ? 'burst' : 'calm',
+		seed: seed || 'ref-default',
+	})
+	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${art.viewBox}">${art.markup}</svg>`
+}
