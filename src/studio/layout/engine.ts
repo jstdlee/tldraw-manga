@@ -1,26 +1,34 @@
 export type Pt = [number, number]
 
-export type PanelGene = {
-	nest: { u: number } | null
+export interface NestedGene {
+	t: number
+	s: number
+	g: number
+	u?: number
+}
+
+export interface PanelGene {
+	nest: NestedGene | null
 	bT: boolean
 	bB: boolean
 	bR: boolean
 	bL: boolean
 }
 
-export type RowGene = {
-	colW: number[]
-	colTilt: number[]
-	panels: PanelGene[]
+export interface RowGene {
+	h: number
+	s: number
+	g: number
+	w: number[]
+	vs: { s: number; g: number }[]
+	p: PanelGene[]
 }
 
-export type Genome = {
-	rowW: number[]
-	rowTilt: number[]
+export interface Genome {
 	rows: RowGene[]
 }
 
-export type LayoutConfig = {
+export interface LayoutConfig {
 	ratio: number
 	rowMin: number
 	rowMax: number
@@ -28,17 +36,48 @@ export type LayoutConfig = {
 	bleed: number
 	nest: number
 	big: number
+	lineW?: number
 }
 
 export type LayoutPreset = 'seizen' | 'std' | 'action' | 'tobira'
 
-export type RealizedPanel = {
+export interface ParametricOverrides {
+	ratio?: number
+	rowRange?: '1-3' | '2-3' | '2-4' | '3-4'
+	tilt?: number
+	bleed?: number
+	nest?: number
+	big?: number
+	lineW?: number
+	mutationStrength?: number
+	showInnerFrame?: boolean
+	showRuleOfThirds?: boolean
+	showAxis180?: boolean
+}
+
+export const PAGE_RATIOS: { id: string; label: string; ratio: number }[] = [
+	{ id: 'b4', label: 'B4 日漫原稿 (0.708)', ratio: 0.708 },
+	{ id: 'a4', label: 'A4 标准刊物 (0.707)', ratio: 0.707 },
+	{ id: 'webtoon', label: '竖屏条漫 (0.563)', ratio: 0.5625 },
+	{ id: 'yonkoma', label: '四格窄幅 (0.500)', ratio: 0.5 },
+	{ id: 'wide', label: '宽银幕跨页 (1.333)', ratio: 1.333 },
+]
+
+export const ROW_RANGES: { id: '1-3' | '2-3' | '2-4' | '3-4'; label: string; min: number; max: number }[] = [
+	{ id: '1-3', label: '1–3 段 (疏朗扉页)', min: 1, max: 3 },
+	{ id: '2-3', label: '2–3 段 (动作冲击)', min: 2, max: 3 },
+	{ id: '2-4', label: '2–4 段 (标准叙事)', min: 2, max: 4 },
+	{ id: '3-4', label: '3–4 段 (密集对白)', min: 3, max: 4 },
+]
+
+export interface RealizedPanel {
 	pts: Pt[]
 	row: number
 	col: number
+	sub: number
 }
 
-export type Divider = {
+export interface Divider {
 	kind: 'row' | 'col'
 	index: number
 	row: number
@@ -46,400 +85,134 @@ export type Divider = {
 	y: number
 }
 
-export type Layout = {
+export interface Layout {
 	seed: string
-	genome: Genome
 	width: number
 	height: number
-	inner: { x0: number; y0: number; x1: number; y1: number }
+	inner: {
+		x: number
+		y: number
+		w: number
+		h: number
+		x0: number
+		y0: number
+		x1: number
+		y1: number
+	}
 	panels: RealizedPanel[]
 	dividers: Divider[]
+	genome: Genome
 }
 
-const PAGE_H = 1000
-const MARGIN_X = 50
-const MARGIN_Y = 56
+const eps = 1e-6
 
-export function strHash(value: string): number {
-	let hash = 2166136261
-	for (let i = 0; i < value.length; i += 1) {
-		hash ^= value.charCodeAt(i)
-		hash = Math.imul(hash, 16777619)
+export function strHash(text: string): number {
+	let h = 2166136261 >>> 0
+	for (let i = 0; i < text.length; i += 1) {
+		h ^= text.charCodeAt(i)
+		h = Math.imul(h, 16777619)
 	}
-	return hash >>> 0
+	return h >>> 0
 }
 
-export function mulberry32(value: number): () => number {
-	let state = value
-	return function random() {
-		state |= 0
-		state = (state + 0x6d2b79f5) | 0
-		let t = Math.imul(state ^ (state >>> 15), 1 | state)
-		t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+export function mulberry32(seed: number): () => number {
+	let a = seed >>> 0
+	return () => {
+		a = (a + 0x6d2b79f5) >>> 0
+		let t = a
+		t = Math.imul(t ^ (t >>> 15), t | 1)
+		t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
 		return ((t ^ (t >>> 14)) >>> 0) / 4294967296
 	}
 }
 
-export function clamp(value: number, min: number, max: number): number {
-	return Math.min(max, Math.max(min, value))
+export function clamp(v: number, lo: number, hi: number): number {
+	return Math.max(lo, Math.min(hi, v))
 }
 
-function irnd(random: () => number, min: number, max: number): number {
-	return min + Math.floor(random() * (max - min + 1))
+function clone<T>(value: T): T {
+	return JSON.parse(JSON.stringify(value)) as T
 }
 
-function wpick(random: () => number, weights: number[]): number {
-	const total = weights.reduce((sum, item) => sum + item, 0)
-	let value = random() * total
-	for (let i = 0; i < weights.length; i += 1) {
-		value -= weights[i]
-		if (value < 0) return i
-	}
-	return weights.length - 1
+function norm(values: number[]): number[] {
+	const cleaned = values.map((v) => Math.max(0.08, Number.isFinite(v) ? v : 0.25))
+	const total = cleaned.reduce((acc, item) => acc + item, 0) || 1
+	return cleaned.map((v) => v / total)
 }
 
-function hLine(yLeft: number, yRight: number, width: number) {
-	return { y0: yLeft, m: (yRight - yLeft) / width }
-}
-
-function vLine(xa: number, ya: number, xb: number, yb: number) {
-	const k = (xb - xa) / (yb - ya || 1e-6)
-	return { x0: xa - k * ya, k }
-}
-
-function vVert(x: number) {
-	return { x0: x, k: 0 }
-}
-
-function isect(horizontal: { y0: number; m: number }, vertical: { x0: number; k: number }): Pt {
-	const denom = 1 - vertical.k * horizontal.m
-	const x = Math.abs(denom) < 1e-6 ? vertical.x0 : (vertical.x0 + vertical.k * horizontal.y0) / denom
-	const y = horizontal.y0 + horizontal.m * x
-	return [Number.isFinite(x) ? x : 0, Number.isFinite(y) ? y : 0]
-}
-
-function offH(line: { y0: number; m: number }, distance: number) {
-	return { y0: line.y0 + distance, m: line.m }
-}
-
-function offV(line: { x0: number; k: number }, distance: number) {
-	return { x0: line.x0 + distance, k: line.k }
-}
-
-function quad(
-	top: { y0: number; m: number },
-	bottom: { y0: number; m: number },
-	right: { x0: number; k: number },
-	left: { x0: number; k: number },
-): Pt[] {
-	return [isect(top, left), isect(top, right), isect(bottom, right), isect(bottom, left)]
-}
-
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t
-
-export function blankPanel(): PanelGene {
-	return { nest: null, bT: false, bB: false, bR: false, bL: false }
-}
-
-export function sanitize(genome: Genome | null | undefined): Genome {
-	const source = genome?.rows?.length ? genome : fallbackGenome()
-	const rows = source.rows.map((row) => {
-		const count = Math.max(1, Math.min(4, row?.colW?.length || row?.panels?.length || 1))
-		return {
-			colW: Array.from({ length: count }, (_, index) => positive(row.colW?.[index], 1)),
-			colTilt: Array.from({ length: Math.max(0, count - 1) }, (_, index) => clamp(row.colTilt?.[index] ?? 0, -1, 1)),
-			panels: Array.from({ length: count }, (_, index) => cleanPanel(row.panels?.[index])),
-		}
-	})
-	return {
-		rowW: rows.map((_, index) => positive(source.rowW?.[index], 1)),
-		rowTilt: rows.slice(1).map((_, index) => clamp(source.rowTilt?.[index] ?? 0, -1, 1)),
-		rows,
-	}
-}
-
-function positive(value: number | undefined, fallback: number): number {
-	return Number.isFinite(value) && (value as number) > 0.05 ? (value as number) : fallback
-}
-
-function cleanPanel(panel: Partial<PanelGene> | undefined): PanelGene {
-	const u = panel?.nest?.u
-	return {
-		nest: Number.isFinite(u) ? { u: clamp(u as number, 0.3, 0.7) } : null,
-		bT: Boolean(panel?.bT),
-		bB: Boolean(panel?.bB),
-		bR: Boolean(panel?.bR),
-		bL: Boolean(panel?.bL),
-	}
-}
-
-function fallbackGenome(): Genome {
-	return {
-		rowW: [1, 1],
-		rowTilt: [0],
-		rows: [
-			{ colW: [1, 1], colTilt: [0], panels: [blankPanel(), blankPanel()] },
-			{ colW: [1], colTilt: [], panels: [blankPanel()] },
-		],
-	}
-}
-
-export function randomGenome(random: () => number, config: LayoutConfig): Genome {
-	const rowCount = irnd(random, config.rowMin, config.rowMax)
-	const rowW = Array.from({ length: rowCount }, () => 0.65 + random())
-	let bigRow = -1
-	if (rowCount > 1 && random() < config.big) {
-		bigRow = irnd(random, 0, rowCount - 1)
-		rowW[bigRow] *= 1.8 + config.big * 1.5
-	}
-	const rowTilt = Array.from({ length: Math.max(0, rowCount - 1) }, () => (random() * 2 - 1) * config.tilt)
-	const sum = rowW.reduce((total, weight) => total + weight, 0)
-	const rows: RowGene[] = []
-	for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
-		const share = rowW[rowIndex] / sum
-		const w1 = 0.55 + config.big * 2.2 + (rowIndex === bigRow ? 2.6 : 0) + (share > 0.45 ? 1.3 : 0)
-		const columnCount = wpick(random, [w1, 1.5, 1.05]) + 1
-		const colW = Array.from({ length: columnCount }, () => 0.7 + random())
-		const colTilt = Array.from({ length: Math.max(0, columnCount - 1) }, () => (random() * 2 - 1) * config.tilt)
-		const panels = Array.from({ length: columnCount }, () => ({
-			nest: random() < config.nest * (columnCount === 1 ? 0.45 : 1) ? { u: 0.38 + random() * 0.24 } : null,
-			bT: random() < config.bleed,
-			bB: random() < config.bleed,
-			bR: random() < config.bleed * 0.9,
-			bL: random() < config.bleed * 0.9,
-		}))
-		rows.push({ colW, colTilt, panels })
-	}
-	return { rowW, rowTilt, rows }
-}
-
-export function realize(raw: Genome, config: LayoutConfig): Omit<Layout, 'seed'> {
-	const genome = sanitize(raw)
-	const height = PAGE_H
-	const width = Math.round(height * config.ratio)
-	const outside = 14
-	const rowGap = 16
-	const colGap = 9
-	const inner = { x0: MARGIN_X, y0: MARGIN_Y, x1: width - MARGIN_X, y1: height - MARGIN_Y }
-	const innerHeight = inner.y1 - inner.y0
-	const innerWidth = inner.x1 - inner.x0
-	const rowCount = genome.rows.length
-	const sum = genome.rowW.reduce((total, weight) => total + weight, 0)
-	const rowHeights = genome.rowW.map((weight) => (weight / sum) * innerHeight)
-	const rowBounds = [inner.y0]
-	rowHeights.forEach((rowHeight) => rowBounds.push(rowBounds[rowBounds.length - 1] + rowHeight))
-	const rowLines = [hLine(inner.y0, inner.y0, width)]
-	for (let i = 1; i < rowCount; i += 1) {
-		const distance = (genome.rowTilt[i - 1] || 0) * 0.42 * Math.min(rowHeights[i - 1], rowHeights[i])
-		rowLines.push(hLine(rowBounds[i] - distance, rowBounds[i] + distance, width))
-	}
-	rowLines.push(hLine(inner.y1, inner.y1, width))
-
-	const panels: RealizedPanel[] = []
-	const dividers: Divider[] = []
-	for (let i = 1; i < rowCount; i += 1) {
-		const line = rowLines[i]
-		const x = width / 2
-		dividers.push({ kind: 'row', index: i - 1, row: i - 1, x, y: line.y0 + line.m * x })
-	}
-
-	for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
-		const row = genome.rows[rowIndex]
-		const topLine = rowLines[rowIndex]
-		const bottomLine = rowLines[rowIndex + 1]
-		const columnCount = row.colW.length
-		const columnSum = row.colW.reduce((total, weight) => total + weight, 0)
-		const widths = row.colW.map((weight) => (weight / columnSum) * innerWidth)
-		const xBounds = [inner.x1]
-		widths.forEach((columnWidth) => xBounds.push(xBounds[xBounds.length - 1] - columnWidth))
-		const topY = topLine.y0 + (topLine.m * width) / 2
-		const bottomY = bottomLine.y0 + (bottomLine.m * width) / 2
-		const verticalLines = [vVert(inner.x1)]
-		for (let columnIndex = 1; columnIndex < columnCount; columnIndex += 1) {
-			const distance = (row.colTilt[columnIndex - 1] || 0) * 0.3 * Math.min(widths[columnIndex - 1], widths[columnIndex])
-			verticalLines.push(vLine(xBounds[columnIndex] - distance, topY, xBounds[columnIndex] + distance, bottomY))
-			const line = verticalLines[verticalLines.length - 1]
-			const midY = (topY + bottomY) / 2
-			dividers.push({
-				kind: 'col',
-				index: columnIndex - 1,
-				row: rowIndex,
-				x: line.x0 + line.k * midY,
-				y: midY,
-			})
-		}
-		verticalLines.push(vVert(inner.x0))
-
-		for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
-			const panel = row.panels[columnIndex]
-			const isTop = rowIndex === 0
-			const isBottom = rowIndex === rowCount - 1
-			const isRight = columnIndex === 0
-			const isLeft = columnIndex === columnCount - 1
-			const top = isTop && panel.bT ? hLine(-outside, -outside, width) : offH(topLine, rowIndex > 0 ? rowGap / 2 : 0)
-			const bottom = isBottom && panel.bB ? hLine(height + outside, height + outside, width) : offH(bottomLine, rowIndex < rowCount - 1 ? -rowGap / 2 : 0)
-			const right = isRight && panel.bR ? vVert(width + outside) : offV(verticalLines[columnIndex], columnIndex > 0 ? -colGap / 2 : 0)
-			const left = isLeft && panel.bL ? vVert(-outside) : offV(verticalLines[columnIndex + 1], columnIndex < columnCount - 1 ? colGap / 2 : 0)
-			if (panel.nest && rowHeights[rowIndex] > 160) {
-				const split = panel.nest.u
-				const gap = (columnCount === 1 ? rowGap : colGap) / 2
-				const middle = hLine(
-					lerp(top.y0, bottom.y0, split),
-					lerp(top.y0 + top.m * width, bottom.y0 + bottom.m * width, split),
-					width,
-				)
-				panels.push({ pts: quad(top, offH(middle, -gap), right, left), row: rowIndex, col: columnIndex })
-				panels.push({ pts: quad(offH(middle, gap), bottom, right, left), row: rowIndex, col: columnIndex })
-			} else {
-				panels.push({ pts: quad(top, bottom, right, left), row: rowIndex, col: columnIndex })
-			}
+export function clipHalf(poly: Pt[], nx: number, ny: number, c: number): Pt[] {
+	if (!poly.length) return []
+	const out: Pt[] = []
+	const count = poly.length
+	for (let i = 0; i < count; i += 1) {
+		const a = poly[i]
+		const b = poly[(i + 1) % count]
+		const da = nx * a[0] + ny * a[1] - c
+		const db = nx * b[0] + ny * b[1] - c
+		if (da <= eps) out.push(a)
+		if ((da < -eps && db > eps) || (da > eps && db < -eps)) {
+			const t = da / (da - db)
+			out.push([a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])])
 		}
 	}
-	return { genome, width, height, inner, panels, dividers }
+	return out
 }
 
-export function generate(seed: string, config: LayoutConfig): Layout {
-	const random = mulberry32(strHash(seed))
-	const genome = randomGenome(random, config)
-	return { seed, ...realize(genome, config) }
+export function splitPoly(poly: Pt[], nx: number, ny: number, c: number, gap: number): [Pt[], Pt[]] {
+	const len = Math.hypot(nx, ny) || 1
+	const ux = nx / len
+	const uy = ny / len
+	const d = c / len
+	const half = gap / 2
+	return [clipHalf(poly, ux, uy, d - half), clipHalf(poly, -ux, -uy, -(d + half))]
 }
 
-function jit(random: () => number, value: number, amount: number, min: number, max: number): number {
-	return clamp(value + (random() * 2 - 1) * amount, min, max)
-}
-
-export function mutate(genome: Genome, random: () => number, strength: number): Genome {
-	const next = sanitize(structuredClone(genome))
-	next.rowW = next.rowW.map((weight) => jit(random, weight, 0.55 * strength, 0.3, 3.2))
-	next.rowTilt = next.rowTilt.map((tilt) => jit(random, tilt, 0.55 * strength, -1, 1))
-	next.rows.forEach((row) => {
-		row.colW = row.colW.map((weight) => jit(random, weight, 0.5 * strength, 0.35, 3))
-		row.colTilt = row.colTilt.map((tilt) => jit(random, tilt, 0.5 * strength, -1, 1))
-		row.panels.forEach((panel) => {
-			if (panel.nest) panel.nest.u = jit(random, panel.nest.u, 0.14 * strength, 0.3, 0.7)
-		})
-	})
-	const pickRow = () => irnd(random, 0, next.rows.length - 1)
-	if (random() < strength * 0.55) {
-		const row = next.rows[pickRow()]
-		const panel = row.panels[irnd(random, 0, row.panels.length - 1)]
-		panel.nest = panel.nest ? null : { u: 0.38 + random() * 0.24 }
+export function polyArea(poly: Pt[]): number {
+	let area = 0
+	for (let i = 0, n = poly.length; i < n; i += 1) {
+		const [x1, y1] = poly[i]
+		const [x2, y2] = poly[(i + 1) % n]
+		area += x1 * y2 - x2 * y1
 	}
-	if (random() < strength * 0.5) {
-		const row = next.rows[pickRow()]
-		const columnCount = row.colW.length
-		const canAdd = columnCount < 3
-		const canRemove = columnCount > 1
-		if (canRemove && (!canAdd || random() < 0.5)) {
-			const columnIndex = irnd(random, 0, columnCount - 1)
-			row.colW.splice(columnIndex, 1)
-			row.panels.splice(columnIndex, 1)
-			if (row.colTilt.length) row.colTilt.splice(Math.min(columnIndex, row.colTilt.length - 1), 1)
-		} else if (canAdd) {
-			const columnIndex = irnd(random, 0, columnCount)
-			row.colW.splice(columnIndex, 0, 0.7 + random())
-			row.panels.splice(columnIndex, 0, { nest: null, bT: random() < 0.2, bB: random() < 0.2, bR: random() < 0.2, bL: random() < 0.2 })
-			row.colTilt.splice(Math.min(columnIndex, row.colTilt.length), 0, (random() * 2 - 1) * 0.4)
-		}
+	return Math.abs(area) / 2
+}
+
+export const polygonArea = polyArea
+
+export function centroid(poly: Pt[]): Pt {
+	let cx = 0
+	let cy = 0
+	let area2 = 0
+	for (let i = 0, n = poly.length; i < n; i += 1) {
+		const [x1, y1] = poly[i]
+		const [x2, y2] = poly[(i + 1) % n]
+		const cross = x1 * y2 - x2 * y1
+		cx += (x1 + x2) * cross
+		cy += (y1 + y2) * cross
+		area2 += cross
 	}
-	if (random() < strength * 0.6) {
-		const rowIndex = pickRow()
-		const row = next.rows[rowIndex]
-		const columnIndex = irnd(random, 0, row.panels.length - 1)
-		const panel = row.panels[columnIndex]
-		const sides: Array<'bT' | 'bB' | 'bR' | 'bL'> = []
-		if (rowIndex === 0) sides.push('bT')
-		if (rowIndex === next.rows.length - 1) sides.push('bB')
-		if (columnIndex === 0) sides.push('bR')
-		if (columnIndex === row.panels.length - 1) sides.push('bL')
-		if (sides.length) {
-			const side = sides[irnd(random, 0, sides.length - 1)]
-			panel[side] = !panel[side]
-		}
+	if (Math.abs(area2) < eps) return poly[0] ?? [0, 0]
+	return [cx / (3 * area2), cy / (3 * area2)]
+}
+
+export function boundsOf(poly: Pt[]): { minX: number; minY: number; maxX: number; maxY: number; w: number; h: number } {
+	let minX = Number.POSITIVE_INFINITY
+	let minY = Number.POSITIVE_INFINITY
+	let maxX = Number.NEGATIVE_INFINITY
+	let maxY = Number.NEGATIVE_INFINITY
+	for (const [x, y] of poly) {
+		if (x < minX) minX = x
+		if (y < minY) minY = y
+		if (x > maxX) maxX = x
+		if (y > maxY) maxY = y
 	}
-	if (random() < strength * strength * 0.45) {
-		if (next.rows.length > 1 && random() < 0.5) {
-			const rowIndex = irnd(random, 0, next.rows.length - 1)
-			next.rows.splice(rowIndex, 1)
-			next.rowW.splice(rowIndex, 1)
-			if (next.rowTilt.length) next.rowTilt.splice(Math.min(rowIndex, next.rowTilt.length - 1), 1)
-		} else if (next.rows.length < 4) {
-			const source = structuredClone(next.rows[irnd(random, 0, next.rows.length - 1)])
-			const rowIndex = irnd(random, 0, next.rows.length)
-			next.rows.splice(rowIndex, 0, source)
-			next.rowW.splice(rowIndex, 0, 0.65 + random())
-			next.rowTilt.splice(Math.min(rowIndex, next.rowTilt.length), 0, (random() * 2 - 1) * 0.4)
-		}
-	}
-	return sanitize(next)
+	return { minX, minY, maxX, maxY, w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY) }
 }
 
-export function dragRowDivider(genome: Genome, index: number, dx: number, dy: number, config: LayoutConfig): Genome {
-	const next = sanitize(genome)
-	if (index < 0 || index >= next.rowW.length - 1) return next
-	const height = PAGE_H
-	const innerH = height - MARGIN_Y * 2
-	const sum = next.rowW.reduce((total, weight) => total + weight, 0)
-	const h0 = (next.rowW[index] / sum) * innerH
-	const h1 = (next.rowW[index + 1] / sum) * innerH
-	const nh0 = clamp(h0 + dy, 72, h0 + h1 - 72)
-	const nh1 = h0 + h1 - nh0
-	next.rowW[index] = nh0
-	next.rowW[index + 1] = nh1
-	const scale = 0.42 * Math.min(h0, h1)
-	next.rowTilt[index] = clamp((next.rowTilt[index] ?? 0) + dx / Math.max(24, scale), -1, 1)
-	void config
-	return next
-}
-
-export function dragColDivider(
-	genome: Genome,
-	rowIndex: number,
-	index: number,
-	dx: number,
-	dy: number,
-	config: LayoutConfig,
-): Genome {
-	const next = sanitize(genome)
-	const row = next.rows[rowIndex]
-	if (!row || index < 0 || index >= row.colW.length - 1) return next
-	const width = Math.round(PAGE_H * config.ratio)
-	const innerW = width - MARGIN_X * 2
-	const sum = row.colW.reduce((total, weight) => total + weight, 0)
-	const right = (row.colW[index] / sum) * innerW
-	const left = (row.colW[index + 1] / sum) * innerW
-	const nextRight = clamp(right + dx, 48, right + left - 48)
-	const nextLeft = right + left - nextRight
-	row.colW[index] = nextRight
-	row.colW[index + 1] = nextLeft
-	const scale = 0.3 * Math.min(right, left)
-	row.colTilt[index] = clamp((row.colTilt[index] ?? 0) + dy / Math.max(24, scale), -1, 1)
-	return next
-}
-
-export function boundsOf(pts: Pt[]): { minX: number; maxX: number; minY: number; maxY: number } {
-	let minX = Infinity
-	let maxX = -Infinity
-	let minY = Infinity
-	let maxY = -Infinity
-	for (const [x, y] of pts) {
-		minX = Math.min(minX, x)
-		maxX = Math.max(maxX, x)
-		minY = Math.min(minY, y)
-		maxY = Math.max(maxY, y)
-	}
-	return { minX, maxX, minY, maxY }
-}
-
-export function polygonArea(pts: Pt[]): number {
-	const sum = pts.reduce((total, point, index) => {
-		const next = pts[(index + 1) % pts.length]
-		return total + point[0] * next[1] - next[0] * point[1]
-	}, 0)
-	return Math.abs(sum) / 2
-}
-
-export function pointInPoly(x: number, y: number, pts: Pt[]): boolean {
+export function pointInPoly(xOrPt: number | Pt, yOrPts: number | Pt[], maybePts?: Pt[]): boolean {
+	const x = typeof xOrPt === 'number' ? xOrPt : xOrPt[0]
+	const y = typeof xOrPt === 'number' ? (yOrPts as number) : xOrPt[1]
+	const pts = typeof xOrPt === 'number' ? (maybePts ?? []) : (yOrPts as Pt[])
 	let inside = false
 	for (let i = 0, j = pts.length - 1; i < pts.length; j = i, i += 1) {
 		const xi = pts[i][0]
@@ -452,61 +225,435 @@ export function pointInPoly(x: number, y: number, pts: Pt[]): boolean {
 	return inside
 }
 
-export function centroid(pts: Pt[]): Pt {
-	const xs = pts.reduce((sum, point) => sum + point[0], 0) / pts.length
-	const ys = pts.reduce((sum, point) => sum + point[1], 0) / pts.length
-	return [xs, ys]
+export function sanitize(raw: Genome | null | undefined): Genome {
+	const genome = raw && typeof raw === 'object' ? clone(raw) : ({ rows: [] } as Genome)
+	if (!Array.isArray(genome.rows) || !genome.rows.length) {
+		genome.rows = [
+			{
+				h: 0.55,
+				s: 0,
+				g: 12,
+				w: [0.5, 0.5],
+				vs: [{ s: 0, g: 10 }],
+				p: [
+					{ nest: null, bT: false, bB: false, bR: false, bL: false },
+					{ nest: null, bT: false, bB: false, bR: false, bL: false },
+				],
+			},
+			{
+				h: 0.45,
+				s: 0,
+				g: 12,
+				w: [1],
+				vs: [],
+				p: [{ nest: null, bT: false, bB: false, bR: false, bL: false }],
+			},
+		]
+	}
+	const heights = norm(genome.rows.map((row) => row.h ?? 1))
+	genome.rows.forEach((row, index) => {
+		row.h = heights[index]
+		row.s = clamp(+row.s || 0, -0.25, 0.25)
+		row.g = clamp(+row.g || 13, 4, 28)
+		const count = clamp(Array.isArray(row.w) ? row.w.length : Array.isArray(row.p) ? row.p.length : 1, 1, 4)
+		row.w = norm((row.w ?? []).slice(0, count))
+		while (row.w.length < count) row.w.push(1 / count)
+		row.w = norm(row.w)
+		row.vs = Array.from({ length: count - 1 }, (_, splitIndex) => ({
+			s: clamp(+(row.vs?.[splitIndex]?.s ?? 0), -0.25, 0.25),
+			g: clamp(+(row.vs?.[splitIndex]?.g ?? 9), 4, 24),
+		}))
+		row.p = Array.from({ length: count }, (_, panelIndex) => {
+			const cell = row.p?.[panelIndex] ?? ({} as PanelGene)
+			const nest = cell.nest
+				? {
+						t: clamp(+(cell.nest.t ?? cell.nest.u ?? 0.5), 0.3, 0.7),
+						s: clamp(+(cell.nest.s ?? 0), -0.22, 0.22),
+						g: clamp(+(cell.nest.g ?? 10), 4, 22),
+					}
+				: null
+			return {
+				nest,
+				bT: index === 0 ? Boolean(cell.bT) : false,
+				bB: index === genome.rows.length - 1 ? Boolean(cell.bB) : false,
+				bR: panelIndex === 0 ? Boolean(cell.bR) : false,
+				bL: panelIndex === count - 1 ? Boolean(cell.bL) : false,
+			}
+		})
+	})
+	genome.rows[genome.rows.length - 1].s = 0
+	return genome
 }
 
-const ASPECTS = [
+export function defaultOverridesForPreset(preset: string): Required<ParametricOverrides> {
+	if (preset === 'seizen') {
+		return {
+			ratio: 0.708,
+			rowRange: '3-4',
+			tilt: 0.04,
+			bleed: 0.05,
+			nest: 0.08,
+			big: 0.08,
+			lineW: 3.0,
+			mutationStrength: 0.35,
+			showInnerFrame: false,
+			showRuleOfThirds: false,
+			showAxis180: false,
+		}
+	}
+	if (preset === 'action') {
+		return {
+			ratio: 0.708,
+			rowRange: '2-3',
+			tilt: 0.55,
+			bleed: 0.45,
+			nest: 0.28,
+			big: 0.35,
+			lineW: 4.0,
+			mutationStrength: 0.55,
+			showInnerFrame: false,
+			showRuleOfThirds: false,
+			showAxis180: false,
+		}
+	}
+	if (preset === 'tobira') {
+		return {
+			ratio: 0.708,
+			rowRange: '1-3',
+			tilt: 0.4,
+			bleed: 0.75,
+			nest: 0.1,
+			big: 0.7,
+			lineW: 3.6,
+			mutationStrength: 0.45,
+			showInnerFrame: false,
+			showRuleOfThirds: false,
+			showAxis180: false,
+		}
+	}
+	return {
+		ratio: 0.708,
+		rowRange: '2-4',
+		tilt: 0.25,
+		bleed: 0.2,
+		nest: 0.2,
+		big: 0.2,
+		lineW: 3.2,
+		mutationStrength: 0.45,
+		showInnerFrame: false,
+		showRuleOfThirds: false,
+		showAxis180: false,
+	}
+}
+
+export function configFor(preset: string, targetPanels = 4, overrides?: ParametricOverrides): LayoutConfig {
+	const base = defaultOverridesForPreset(preset)
+	const merged = { ...base, ...(overrides ?? {}) }
+	const rangeSpec = ROW_RANGES.find((r) => r.id === merged.rowRange)
+	const autoMin = targetPanels <= 3 ? 2 : 3
+	const autoMax = targetPanels >= 6 ? 4 : 3
+	const rowMin = overrides?.rowRange && rangeSpec ? rangeSpec.min : preset === 'tobira' ? 1 : autoMin
+	const rowMax = overrides?.rowRange && rangeSpec ? rangeSpec.max : preset === 'seizen' ? 4 : autoMax
+	return {
+		ratio: clamp(Number(merged.ratio) || 0.708, 0.45, 1.4),
+		rowMin,
+		rowMax: Math.max(rowMin, rowMax),
+		tilt: clamp(Number(merged.tilt ?? base.tilt), 0, 1),
+		bleed: clamp(Number(merged.bleed ?? base.bleed), 0, 1),
+		nest: clamp(Number(merged.nest ?? base.nest), 0, 1),
+		big: clamp(Number(merged.big ?? base.big), 0, 1),
+		lineW: clamp(Number(merged.lineW ?? base.lineW), 1.5, 8),
+	}
+}
+
+export function generate(seed: string, config: LayoutConfig): Layout {
+	const r = mulberry32(strHash(String(seed)))
+	const pick = <T,>(items: T[], weights: number[]): T => {
+		const sum = weights.reduce((a, b) => a + b, 0)
+		let roll = r() * sum
+		for (let i = 0; i < items.length; i += 1) {
+			roll -= weights[i]
+			if (roll <= 0) return items[i]
+		}
+		return items[items.length - 1]
+	}
+	const rowOptions: number[] = []
+	const rowWeights: number[] = []
+	for (let k = config.rowMin; k <= config.rowMax; k += 1) {
+		rowOptions.push(k)
+		rowWeights.push(k === 3 ? 4 : k === 4 ? 3 : 1.6)
+	}
+	const rowCount = pick(rowOptions, rowWeights)
+	const rawH = Array.from({ length: rowCount }, () => 0.65 + r() * 0.75)
+	if (r() < 0.4 + config.big * 0.5) rawH[Math.floor(r() * rowCount)] *= 1.5 + config.big * 0.8
+	const h = norm(rawH)
+	const rows: RowGene[] = []
+	for (let i = 0; i < rowCount; i += 1) {
+		const isBigRow = h[i] > 0.37
+		const cols = pick([1, 2, 3], isBigRow ? [2.8 + config.big * 3, 3.2, 1] : [1, 4.2, 2.3])
+		const rawW = Array.from({ length: cols }, () => 0.65 + r() * 0.75)
+		if (cols > 1 && r() < 0.5) rawW[Math.floor(r() * cols)] *= 1.55
+		const w = norm(rawW)
+		const slope = () => (r() < config.tilt ? (r() - 0.5) * 0.34 * (0.45 + config.tilt * 0.75) : 0)
+		const vs = Array.from({ length: cols - 1 }, () => ({ s: slope(), g: 9 }))
+		const p = Array.from({ length: cols }, (_, col) => {
+			const canNest = cols >= 2 && w[col] < 0.55 && h[i] > 0.23
+			const nest = canNest && r() < config.nest ? { t: 0.42 + r() * 0.16, s: slope() * 0.6, g: 10 } : null
+			return {
+				nest,
+				bT: i === 0 && r() < config.bleed * 0.65,
+				bB: i === rowCount - 1 && r() < config.bleed * 0.65,
+				bR: col === 0 && r() < config.bleed,
+				bL: col === cols - 1 && r() < config.bleed,
+			}
+		})
+		rows.push({ h: h[i], s: i < rowCount - 1 ? slope() : 0, g: 13, w, vs, p })
+	}
+	return { ...realize(sanitize({ rows }), config), seed }
+}
+
+export function mutate(base: Genome, r: () => number, strength = 0.45): Genome {
+	const g = sanitize(base)
+	const rows = g.rows
+	if (r() < strength * 0.32 && rows.length < 4) {
+		const at = Math.floor(r() * rows.length)
+		rows.splice(at, 0, {
+			h: 0.24,
+			s: (r() - 0.5) * 0.2 * strength,
+			g: 13,
+			w: [0.5, 0.5],
+			vs: [{ s: 0, g: 9 }],
+			p: [
+				{ nest: null, bT: false, bB: false, bR: false, bL: false },
+				{ nest: null, bT: false, bB: false, bR: false, bL: false },
+			],
+		})
+	} else if (r() < strength * 0.28 && rows.length > 2) {
+		rows.splice(Math.floor(r() * rows.length), 1)
+	}
+	rows.forEach((row) => {
+		row.h *= Math.exp((r() - 0.5) * 0.72 * strength)
+		row.s += (r() - 0.5) * 0.2 * strength
+		if (r() < 0.12 * strength) row.s = 0
+		if (r() < strength * 0.34 && row.w.length < 3) {
+			row.w.push(0.45)
+		} else if (r() < strength * 0.28 && row.w.length > 1) {
+			row.w.pop()
+		}
+		row.w = row.w.map((v) => v * Math.exp((r() - 0.5) * 0.75 * strength))
+		row.vs = (row.vs ?? []).map((v) => ({
+			s: r() < 0.14 ? 0 : v.s + (r() - 0.5) * 0.2 * strength,
+			g: v.g,
+		}))
+		row.p = (row.p ?? []).map((cell) => {
+			const c = { ...(cell ?? { nest: null, bT: false, bB: false, bR: false, bL: false }) }
+			if (r() < 0.2 * strength) {
+				c.nest = c.nest ? null : { t: 0.44 + r() * 0.12, s: (r() - 0.5) * 0.15, g: 10 }
+			} else if (c.nest) {
+				c.nest = {
+					...c.nest,
+					t: c.nest.t + (r() - 0.5) * 0.14 * strength,
+					s: c.nest.s + (r() - 0.5) * 0.14 * strength,
+				}
+			}
+			for (const k of ['bT', 'bB', 'bR', 'bL'] as const) {
+				if (r() < 0.15 * strength) c[k] = !c[k]
+			}
+			return c
+		})
+	})
+	return sanitize(g)
+}
+
+export function realize(raw: Genome, config?: LayoutConfig): Omit<Layout, 'seed'> {
+	const genome = sanitize(raw)
+	const height = 980
+	const width = Math.round(height * (config?.ratio ?? 0.708))
+	const padX = Math.round(width * 0.056)
+	const padT = Math.round(height * 0.049)
+	const padB = Math.round(height * 0.055)
+	const inner = {
+		x: padX,
+		y: padT,
+		w: width - padX * 2,
+		h: height - padT - padB,
+		x0: padX,
+		y0: padT,
+		x1: width - padX,
+		y1: height - padB,
+	}
+	const rows = genome.rows
+	const rowCuts: { y: number; s: number; g: number }[] = []
+	const dividers: Divider[] = []
+	let accY = inner.y
+	for (let i = 0; i < rows.length - 1; i += 1) {
+		accY += rows[i].h * inner.h
+		rowCuts.push({ y: accY, s: rows[i].s, g: rows[i].g })
+		dividers.push({ kind: 'row', index: i, row: i, x: width / 2, y: accY })
+	}
+	const panels: RealizedPanel[] = []
+	for (let i = 0; i < rows.length; i += 1) {
+		const row = rows[i]
+		const yTop = i === 0 ? inner.y : rowCuts[i - 1].y
+		const yBottom = i === rows.length - 1 ? inner.y + inner.h : rowCuts[i].y
+		const yMid = (yTop + yBottom) / 2
+		const cols = row.w.length
+		const colCuts: { x: number; ym: number; s: number; g: number }[] = []
+		let accX = inner.x + inner.w
+		for (let j = 0; j < cols - 1; j += 1) {
+			accX -= row.w[j] * inner.w
+			colCuts.push({ x: accX, ym: yMid, s: row.vs[j].s, g: row.vs[j].g })
+			dividers.push({ kind: 'col', index: j, row: i, x: accX, y: yMid })
+		}
+		for (let j = 0; j < cols; j += 1) {
+			const p = row.p[j]
+			const x0 = j === cols - 1 ? (p.bL ? 0 : inner.x) : inner.x
+			const x1 = j === 0 ? (p.bR ? width : inner.x + inner.w) : inner.x + inner.w
+			const y0 = i === 0 ? (p.bT ? 0 : inner.y) : inner.y
+			const y1 = i === rows.length - 1 ? (p.bB ? height : inner.y + inner.h) : inner.y + inner.h
+			let poly: Pt[] = [
+				[x0, y0],
+				[x1, y0],
+				[x1, y1],
+				[x0, y1],
+			]
+			if (i > 0) {
+				const c = rowCuts[i - 1]
+				poly = splitPoly(poly, -c.s, 1, c.y - c.s * (width / 2), c.g)[1]
+			}
+			if (i < rows.length - 1) {
+				const c = rowCuts[i]
+				poly = splitPoly(poly, -c.s, 1, c.y - c.s * (width / 2), c.g)[0]
+			}
+			if (j > 0) {
+				const c = colCuts[j - 1]
+				poly = splitPoly(poly, 1, -c.s, c.x - c.s * c.ym, c.g)[0]
+			}
+			if (j < cols - 1) {
+				const c = colCuts[j]
+				poly = splitPoly(poly, 1, -c.s, c.x - c.s * c.ym, c.g)[1]
+			}
+			if (poly.length < 3) continue
+			if (p.nest) {
+				const box = boundsOf(poly)
+				const cy = box.minY + box.h * p.nest.t
+				const cx = (box.minX + box.maxX) / 2
+				const [top, bottom] = splitPoly(poly, -p.nest.s, 1, cy - p.nest.s * cx, p.nest.g)
+				if (top.length >= 3 && bottom.length >= 3) {
+					panels.push({ pts: top, row: i, col: j, sub: 0 })
+					panels.push({ pts: bottom, row: i, col: j, sub: 1 })
+					continue
+				}
+			}
+			panels.push({ pts: poly, row: i, col: j, sub: 0 })
+		}
+	}
+	return { width, height, inner, panels, dividers, genome }
+}
+
+export function dragRowDivider(genome: Genome, index: number, dx: number, dy: number, config?: LayoutConfig): Genome {
+	const next = sanitize(genome)
+	if (index < 0 || index >= next.rows.length - 1) return next
+	const innerH = 878
+	const h0 = next.rows[index].h * innerH
+	const h1 = next.rows[index + 1].h * innerH
+	const nh0 = clamp(h0 + dy, 72, h0 + h1 - 72)
+	const nh1 = h0 + h1 - nh0
+	next.rows[index].h = nh0 / innerH
+	next.rows[index + 1].h = nh1 / innerH
+	next.rows[index].s = clamp(next.rows[index].s + dx / 420, -0.25, 0.25)
+	void config
+	return sanitize(next)
+}
+
+export function dragColDivider(
+	genome: Genome,
+	rowIndex: number,
+	index: number,
+	dx: number,
+	dy: number,
+	config?: LayoutConfig,
+): Genome {
+	const next = sanitize(genome)
+	const row = next.rows[rowIndex]
+	if (!row || index < 0 || index >= row.w.length - 1) return next
+	const innerW = Math.round(980 * (config?.ratio ?? 0.708) * 0.888)
+	const right = row.w[index] * innerW
+	const left = row.w[index + 1] * innerW
+	const nextRight = clamp(right - dx, 48, right + left - 48)
+	const nextLeft = right + left - nextRight
+	row.w[index] = nextRight / innerW
+	row.w[index + 1] = nextLeft / innerW
+	if (row.vs[index]) {
+		row.vs[index].s = clamp(row.vs[index].s + dy / 360, -0.25, 0.25)
+	}
+	return sanitize(next)
+}
+
+export function locatePanelGene(genome: Genome, flatPanelIndex: number): { rowIdx: number; colIdx: number; gene: PanelGene } | null {
+	let cursor = 0
+	for (let r = 0; r < genome.rows.length; r += 1) {
+		const row = genome.rows[r]
+		for (let c = 0; c < row.p.length; c += 1) {
+			const gene = row.p[c]
+			const span = gene.nest ? 2 : 1
+			if (flatPanelIndex >= cursor && flatPanelIndex < cursor + span) {
+				return { rowIdx: r, colIdx: c, gene }
+			}
+			cursor += span
+		}
+	}
+	return null
+}
+
+export function togglePanelBleed(
+	raw: Genome,
+	flatPanelIndex: number,
+	edge: 'bT' | 'bB' | 'bL' | 'bR',
+): Genome {
+	const g = sanitize(raw)
+	const hit = locatePanelGene(g, flatPanelIndex)
+	if (!hit) return g
+	hit.gene[edge] = !hit.gene[edge]
+	return sanitize(g)
+}
+
+export function togglePanelNest(raw: Genome, flatPanelIndex: number): Genome {
+	const g = sanitize(raw)
+	const hit = locatePanelGene(g, flatPanelIndex)
+	if (!hit) return g
+	hit.gene.nest = hit.gene.nest ? null : { t: 0.5, s: 0, g: 10 }
+	return sanitize(g)
+}
+
+export type AspectId = '16:9' | '4:3' | '1:1' | '3:4' | '9:16'
+
+const ASPECTS: { id: AspectId; value: number }[] = [
 	{ id: '16:9', value: 16 / 9 },
 	{ id: '4:3', value: 4 / 3 },
 	{ id: '1:1', value: 1 },
 	{ id: '3:4', value: 3 / 4 },
 	{ id: '9:16', value: 9 / 16 },
-] as const
-
-export type AspectId = (typeof ASPECTS)[number]['id']
+]
 
 export function closestAspect(width: number, height: number): AspectId {
-	const ratio = Math.max(width, 1) / Math.max(height, 1)
-	let best: (typeof ASPECTS)[number] = ASPECTS[2]
-	let bestDistance = Infinity
-	for (const item of ASPECTS) {
-		const distance = Math.abs(Math.log(item.value) - Math.log(ratio))
-		if (distance < bestDistance) {
-			best = item
-			bestDistance = distance
+	const ratio = width / Math.max(1, height)
+	let best = ASPECTS[0]
+	let bestDelta = Number.POSITIVE_INFINITY
+	for (const candidate of ASPECTS) {
+		const delta = Math.abs(Math.log(ratio / candidate.value))
+		if (delta < bestDelta) {
+			best = candidate
+			bestDelta = delta
 		}
 	}
 	return best.id
 }
 
-export function aspectValue(id: string): number {
-	return ASPECTS.find((item) => item.id === id)?.value ?? 1
-}
-
-const PRESETS: Record<LayoutPreset, Omit<LayoutConfig, 'ratio'>> = {
-	seizen: { rowMin: 2, rowMax: 3, tilt: 0.08, bleed: 0.05, nest: 0.04, big: 0.18 },
-	std: { rowMin: 2, rowMax: 3, tilt: 0.36, bleed: 0.22, nest: 0.28, big: 0.55 },
-	action: { rowMin: 2, rowMax: 4, tilt: 0.84, bleed: 0.42, nest: 0.36, big: 0.78 },
-	tobira: { rowMin: 1, rowMax: 2, tilt: 0.2, bleed: 0.7, nest: 0.1, big: 0.95 },
-}
-
-export function configFor(preset: string, targetPanels: number): LayoutConfig {
-	const key: LayoutPreset = preset === 'seizen' || preset === 'action' || preset === 'tobira' || preset === 'std' ? preset : 'std'
-	const base = PRESETS[key]
-	if (key === 'tobira') return { ...base, ratio: 0.708 }
-	const rows = clamp(Math.round(Math.max(3, targetPanels) / 2.15), 1, 4)
-	return {
-		...base,
-		ratio: 0.708,
-		rowMin: Math.max(1, rows - (key === 'seizen' ? 0 : 1)),
-		rowMax: Math.min(4, Math.max(base.rowMax, rows + (key === 'action' ? 1 : 0))),
-	}
+export function aspectValue(aspect: string): number {
+	return ASPECTS.find((item) => item.id === aspect)?.value ?? 1
 }
 
 export function pagePixelSize(): { w: number; h: number } {
-	const h = 640
-	return { w: Math.round(h * 0.708), h }
+	return { w: 460, h: 650 }
 }

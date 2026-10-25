@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import { BaseBoxShapeUtil, HTMLContainer, resizeBox, useEditor, type TLResizeInfo } from 'tldraw'
 import { askImage, askVision, cardToPanelPrompt, polishCardText, regenerateCardText } from '../ai/client'
+import { getCardDiff, revertCardDiff } from '../editor/pipeline'
 import { characterSheetSvg, referenceCardSvg } from '../render/illustrator'
-import { CARD, type MangaCard } from './schema'
+import { IconEye, IconFileText, IconImage, IconLock, IconRefresh, IconSend, IconSparkles, IconUpload, IconUser } from '../ui/icons'
 import { cardProps } from './props'
+import { CARD, type MangaCard } from './schema'
 
 const KIND_LABELS: Record<MangaCard['props']['kind'], string> = {
-	character: '👤 角色视觉卡',
-	image: '🖼️ 图像参考卡',
-	story: '📝 剧本文字卡',
-	world: '📝 世界观文字卡',
-	environment: '📝 场景设定卡',
-	note: '📝 分镜文字卡',
+	character: '角色视觉卡',
+	image: '图像参考卡',
+	story: '剧本文字卡',
+	world: '世界观文字卡',
+	environment: '场景设定卡',
+	note: '分镜文字卡',
 }
 
 export class MangaCardUtil extends BaseBoxShapeUtil<MangaCard> {
@@ -97,7 +99,7 @@ function CardView({ shape }: { shape: MangaCard }) {
 			props: {
 				body: result.text,
 				customPrompt: overridePrompt ?? customPrompt,
-				aiStatus: `✨ ${result.modelUsed} 已美化`,
+				aiStatus: `${result.modelUsed} 已美化`,
 			},
 		})
 		setBusy('')
@@ -121,7 +123,7 @@ function CardView({ shape }: { shape: MangaCard }) {
 			type: CARD,
 			props: {
 				body: result.text,
-				aiStatus: `🔄 ${result.modelUsed} 已重新生成`,
+				aiStatus: `${result.modelUsed} 已重新生成`,
 			},
 		})
 		setBusy('')
@@ -141,7 +143,7 @@ function CardView({ shape }: { shape: MangaCard }) {
 			type: CARD,
 			props: {
 				body: result.prompt,
-				aiStatus: `🎬 ${result.modelUsed} 已生成分镜词`,
+				aiStatus: `${result.modelUsed} 已生成分镜词`,
 			},
 		})
 		setBusy('')
@@ -162,7 +164,7 @@ function CardView({ shape }: { shape: MangaCard }) {
 			type: CARD,
 			props: {
 				body: result.analysis,
-				aiStatus: `👁️ ${result.modelUsed} 识图完成`,
+				aiStatus: `${result.modelUsed} 识图完成`,
 			},
 		})
 		setBusy('')
@@ -173,7 +175,7 @@ function CardView({ shape }: { shape: MangaCard }) {
 		const nextCount = seedCount + 1
 		setSeedCount(nextCount)
 		const promptText = `${title} ${shape.props.tag} ${body} ${customPrompt}`.trim()
-		const remoteUrl = await askImage(promptText, shape.props.kind === 'character' ? '16:9' : '16:9')
+		const remoteUrl = await askImage(promptText, '16:9')
 		const nextVoiceSeed = `seed-${nextCount}-${nextCount % 2 === 0 ? 'cu-low-act' : 'ws-eye'}`
 		editor.updateShape({
 			id: shape.id,
@@ -181,7 +183,7 @@ function CardView({ shape }: { shape: MangaCard }) {
 			props: {
 				imageDataUrl: remoteUrl || shape.props.imageDataUrl,
 				voice: shape.props.kind === 'image' ? nextVoiceSeed : shape.props.voice,
-				aiStatus: remoteUrl ? '🎨 Image LLM 已重绘图像' : `🎨 生图引擎已重绘 (变体#${nextCount})`,
+				aiStatus: remoteUrl ? 'Image LLM 已重绘图像' : `生图引擎已重绘 (变体#${nextCount})`,
 			},
 		})
 		setBusy('')
@@ -199,7 +201,7 @@ function CardView({ shape }: { shape: MangaCard }) {
 				type: CARD,
 				props: {
 					imageDataUrl: dataUrl,
-					aiStatus: '📤 已载入本地参考图 · 可点 Vision 反推',
+					aiStatus: '已载入本地参考图 · 可点 Vision 反推',
 				},
 			})
 		}
@@ -220,12 +222,17 @@ function CardView({ shape }: { shape: MangaCard }) {
 		await handlePolish(trimmed || '深化漫画镜头张力与细节设定')
 	}
 
+	const diff = getCardDiff(shape.id)
+	const KindIcon = shape.props.kind === 'character' ? IconUser : isImageCard ? IconImage : IconFileText
+
 	return (
 		<HTMLContainer className={`manga-card kind-${shape.props.kind} ${isImageCard ? 'is-image-card' : 'is-text-card'}`}>
 			<div className="card-head">
-				<span className="card-kind">{KIND_LABELS[shape.props.kind] ?? shape.props.kind}</span>
+				<span className="card-kind">
+					<KindIcon /> {KIND_LABELS[shape.props.kind] ?? shape.props.kind}
+				</span>
 				{shape.props.tag ? <span className="card-tag">{shape.props.tag}</span> : null}
-				<span className="card-ai-badge">{busy || shape.props.aiStatus || (isImageCard ? 'Vision + Image LLM' : 'Text LLM')}</span>
+				<span className="card-ai-badge">{busy || shape.props.aiStatus || (isImageCard ? 'Vision + Image' : 'Text LLM')}</span>
 				{shape.props.kind === 'character' ? (
 					<button
 						type="button"
@@ -233,7 +240,7 @@ function CardView({ shape }: { shape: MangaCard }) {
 						onPointerDown={stopEvent}
 						onClick={() => editor.updateShape({ id: shape.id, type: CARD, props: { locked: !shape.props.locked } })}
 					>
-						{shape.props.locked ? '已锁定' : '未锁定'}
+						<IconLock /> {shape.props.locked ? '锁定' : '未锁'}
 					</button>
 				) : null}
 			</div>
@@ -280,7 +287,7 @@ function CardView({ shape }: { shape: MangaCard }) {
 			<textarea
 				className="card-body"
 				value={body}
-				placeholder={isImageCard ? '图像提示词 / Vision 识图反推描述…' : '输入角色、世界观、剧情或分镜描述，可用下方 LLM 按钮一键润色或改写…'}
+				placeholder={isImageCard ? '图像提示词 / Vision 识图反推描述…' : '输入角色、世界观、剧情或分镜描述…'}
 				onChange={(event) => setBody(event.target.value)}
 				onFocus={() => {
 					focused.current = true
@@ -292,32 +299,41 @@ function CardView({ shape }: { shape: MangaCard }) {
 				onPointerDown={stopEvent}
 			/>
 
+			{diff ? (
+				<div className="card-diff-bar" onPointerDown={stopEvent}>
+					<span>已应用 {diff.label}</span>
+					<button type="button" onClick={() => revertCardDiff(editor, shape)}>
+						一键回退原版
+					</button>
+				</div>
+			) : null}
+
 			<div className="card-llm-toolbar" onPointerDown={stopEvent}>
 				{isImageCard ? (
 					<>
-						<button type="button" className="card-llm-btn primary" onClick={() => void handleRedrawImage()} title="调用图像大模型或内置生图引擎重新生成图像">
-							🎨 AI 重绘
+						<button type="button" className="card-llm-btn primary" onClick={() => void handleRedrawImage()} title="重新生成参考图像">
+							<IconRefresh /> AI 重绘
 						</button>
-						<button type="button" className="card-llm-btn accent" onClick={() => void handleVisionAnalyze()} title="调用 Vision 视觉模型反推画面人设、服装与构图">
-							👁️ Vision 反推
+						<button type="button" className="card-llm-btn accent" onClick={() => void handleVisionAnalyze()} title="调用 Vision 视觉模型反推画面人设与构图">
+							<IconEye /> Vision 反推
 						</button>
 						<button type="button" className="card-llm-btn" onClick={() => void handlePolish()} title="调用文本 LLM 美化扩写生图提示词">
-							✨ 美化词
+							<IconSparkles /> 美化词
 						</button>
-						<button type="button" className="card-llm-btn" onClick={() => fileInputRef.current?.click()} title="上传本地参考图并用 Vision 解析">
-							📤 换图
+						<button type="button" className="card-llm-btn" onClick={() => fileInputRef.current?.click()} title="上传本地参考图">
+							<IconUpload /> 换图
 						</button>
 					</>
 				) : (
 					<>
-						<button type="button" className="card-llm-btn primary" onClick={() => void handlePolish()} title="调用文本 LLM 润色美化设定与镜头表现力">
-							✨ AI 润色美化
+						<button type="button" className="card-llm-btn primary" onClick={() => void handlePolish()} title="调用文本 LLM 润色美化设定">
+							<IconSparkles /> AI 润色美化
 						</button>
-						<button type="button" className="card-llm-btn" onClick={() => void handleRegenerate()} title="调用文本 LLM 重新生成另一版创意方案">
-							🔄 AI 重生
+						<button type="button" className="card-llm-btn" onClick={() => void handleRegenerate()} title="调用文本 LLM 重新生成另一版方案">
+							<IconRefresh /> AI 重生
 						</button>
-						<button type="button" className="card-llm-btn accent" onClick={() => void handleToPanelPrompt()} title="将文字设定转化为结构化分镜与机位提示词">
-							🎬 转分镜词
+						<button type="button" className="card-llm-btn accent" onClick={() => void handleToPanelPrompt()} title="将文字设定转化为结构化分镜词">
+							转分镜词
 						</button>
 					</>
 				)}
@@ -327,7 +343,7 @@ function CardView({ shape }: { shape: MangaCard }) {
 				<input
 					type="text"
 					value={customPrompt}
-					placeholder={isImageCard ? '💬 自定义指令：如「加上夕阳逆光」「反推服装细节」…' : '💬 自定义指令：如「改成赛博雨夜风」「强化动作张力」…'}
+					placeholder={isImageCard ? '自定义指令：如「加上夕阳逆光」…' : '自定义指令：如「改成赛博雨夜风」…'}
 					onChange={(event) => setCustomPrompt(event.target.value)}
 					onFocus={() => {
 						focused.current = true
@@ -344,7 +360,7 @@ function CardView({ shape }: { shape: MangaCard }) {
 					}}
 				/>
 				<button type="button" onClick={() => void handleCustomExecute()}>
-					发送
+					<IconSend /> 发送
 				</button>
 			</div>
 		</HTMLContainer>

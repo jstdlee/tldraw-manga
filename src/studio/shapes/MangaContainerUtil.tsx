@@ -1,6 +1,9 @@
 import { useMemo, useRef } from 'react'
 import { BaseBoxShapeUtil, HTMLContainer, resizeBox, useEditor, useValue, type TLResizeInfo } from 'tldraw'
 import { ENV_LABELS, LIGHT_LABELS, SCENARIO_LABELS } from '../demo/book'
+import { energyFor } from '../editor/placement'
+import { rerollSelectedPages } from '../editor/pipeline'
+import { downloadBlob, exportPagePng2400, exportPageSvgFile } from '../export/ora'
 import {
 	centroid,
 	clamp,
@@ -14,11 +17,11 @@ import {
 	type Genome,
 } from '../layout/engine'
 import { asScenario, layoutFeatures, layoutScore } from '../layout/score'
-import { readJson, refreshAspects, type PanelMeta } from '../model'
-import { energyFor } from '../editor/placement'
-import { renderPageSvg } from '../render/pageSvg'
-import { BUBBLE, CONTAINER, type MangaBubble, type MangaContainer } from './schema'
+import { readJson, readPageParams, refreshAspects, type PanelMeta } from '../model'
+import { renderPageSvg, type PageRenderModel } from '../render/pageSvg'
+import { IconBook, IconDownload, IconFrame, IconRefresh } from '../ui/icons'
 import { containerProps } from './props'
+import { BUBBLE, CONTAINER, type MangaBubble, type MangaContainer } from './schema'
 
 export class MangaContainerUtil extends BaseBoxShapeUtil<MangaContainer> {
 	static override type = CONTAINER
@@ -27,7 +30,7 @@ export class MangaContainerUtil extends BaseBoxShapeUtil<MangaContainer> {
 	override getDefaultProps(): MangaContainer['props'] {
 		return {
 			w: 460,
-			h: 640,
+			h: 650,
 			role: 'page',
 			title: 'P1',
 			subtitle: '',
@@ -93,20 +96,22 @@ export class MangaContainerUtil extends BaseBoxShapeUtil<MangaContainer> {
 function ContainerView({ shape }: { shape: MangaContainer }) {
 	const editor = useEditor()
 	if (shape.props.role !== 'page') {
-		const roleLabel = shape.props.role === 'bible' ? '📖 设定集' : `📑 第${shape.props.chapterIndex}话`
+		const roleLabel = shape.props.role === 'bible' ? '设定集' : `第${shape.props.chapterIndex}话`
 		const envLabel = ENV_LABELS[shape.props.environment] ?? shape.props.environment
 		const lightLabel = LIGHT_LABELS[shape.props.lighting] ?? shape.props.lighting
 		return (
 			<HTMLContainer className={`manga-container role-${shape.props.role}`}>
 				<header className="container-bar">
-					<span className="role-pill">{roleLabel}</span>
+					<span className="role-pill">
+						<IconBook /> {roleLabel}
+					</span>
 					<strong>{shape.props.title}</strong>
 					<span className="container-sub">
 						{shape.props.role === 'bible' ? shape.props.stylePreset : `${envLabel} · ${lightLabel}`}
 					</span>
 				</header>
 				<div className="container-body">
-					<p>{shape.props.subtitle || shape.props.mood || '把文字设定卡、图像参考卡或 AI 节点放入此容器，或用箭头连向下游容器。'}</p>
+					<p>{shape.props.subtitle || shape.props.mood || '将设定卡、视觉参考卡或 AI 节点放入此容器，并通过连线驱动分镜页。'}</p>
 				</div>
 			</HTMLContainer>
 		)
@@ -126,8 +131,18 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 		mark: string
 	} | null>(null)
 
-	const genome = useMemo(() => sanitize(readJson<Genome>(shape.props.genomeJson, { rowW: [], rowTilt: [], rows: [] })), [shape.props.genomeJson])
-	const config = useMemo(() => configFor(shape.props.layoutPreset, shape.props.targetPanels), [shape.props.layoutPreset, shape.props.targetPanels])
+	const overrides = useMemo(
+		() => readPageParams(shape.props.mood, shape.props.layoutPreset),
+		[shape.props.mood, shape.props.layoutPreset],
+	)
+	const genome = useMemo(
+		() => sanitize(readJson<Genome>(shape.props.genomeJson, { rows: [] })),
+		[shape.props.genomeJson],
+	)
+	const config = useMemo(
+		() => configFor(shape.props.layoutPreset, shape.props.targetPanels, overrides),
+		[shape.props.layoutPreset, shape.props.targetPanels, overrides],
+	)
 	const layout = useMemo(() => realize(genome, config), [genome, config])
 	const metas = useMemo(() => readJson<PanelMeta[]>(shape.props.panelsJson, []), [shape.props.panelsJson])
 
@@ -141,47 +156,65 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 		[editor, shape.id],
 	)
 
-	const artSvg = useMemo(
-		() =>
-			renderPageSvg({
-				uid: shape.id.replace(/[^a-zA-Z0-9]/g, ''),
-				title: shape.props.title,
-				width: layout.width,
-				height: layout.height,
-				inner: layout.inner,
-				panels: layout.panels.map((panel, index) => {
-					const meta = metas[index] ?? {
-						imageSeed: `${shape.props.seed}-p${index}`,
-						imageOffsetX: 0,
-						imageOffsetY: 0,
-						imageScale: 1,
-						imageRotation: 0,
-						aspect: '1:1',
-						shot: 'MS' as const,
-						angle: 'eye' as const,
-						focal: '50mm' as const,
-						beat: '',
-						who: [],
-						fries: 'none' as const,
-						eyeline: [8, -4] as [number, number],
-						imageDataUrl: '',
-						environment: '',
-					}
-					return {
-						pts: panel.pts,
-						meta,
-						environment: meta.environment || shape.props.environment,
-						lighting: shape.props.lighting,
-						energy: energyFor(shape.props.scenario, meta.fries),
-					}
-				}),
-				bubbles: [],
-				numbers: 'on',
-				director: shape.props.showFlow,
-				part: 'all',
+	const pageRenderModel = useMemo<PageRenderModel>(
+		() => ({
+			uid: shape.id.replace(/[^a-zA-Z0-9]/g, ''),
+			title: shape.props.title,
+			width: layout.width,
+			height: layout.height,
+			inner: layout.inner,
+			panels: layout.panels.map((panel, index) => {
+				const meta = metas[index] ?? {
+					imageSeed: `${shape.props.seed}-p${index}`,
+					imageOffsetX: 0,
+					imageOffsetY: 0,
+					imageScale: 1,
+					imageRotation: 0,
+					aspect: '1:1',
+					shot: 'MS' as const,
+					angle: 'eye' as const,
+					focal: '50mm' as const,
+					beat: '',
+					who: [],
+					fries: 'none' as const,
+					eyeline: [8, -4] as [number, number],
+					imageDataUrl: '',
+					environment: '',
+				}
+				return {
+					pts: panel.pts,
+					meta,
+					environment: meta.environment || shape.props.environment,
+					lighting: shape.props.lighting,
+					energy: energyFor(shape.props.scenario, meta.fries),
+				}
 			}),
-		[layout, metas, shape.id, shape.props.environment, shape.props.lighting, shape.props.scenario, shape.props.seed, shape.props.showFlow, shape.props.title],
+			bubbles: [],
+			numbers: 'corner',
+			director: shape.props.showFlow,
+			lineWidth: overrides.lineW,
+			showInnerFrame: overrides.showInnerFrame,
+			showRuleOfThirds: overrides.showRuleOfThirds,
+			showAxis180: overrides.showAxis180,
+			selectedPanel: shape.props.selectedPanel,
+			part: 'all',
+		}),
+		[
+			layout,
+			metas,
+			overrides,
+			shape.id,
+			shape.props.environment,
+			shape.props.lighting,
+			shape.props.scenario,
+			shape.props.seed,
+			shape.props.selectedPanel,
+			shape.props.showFlow,
+			shape.props.title,
+		],
 	)
+
+	const artSvg = useMemo(() => renderPageSvg(pageRenderModel), [pageRenderModel])
 
 	const toLocalLayout = (clientX: number, clientY: number) => {
 		const pagePoint = editor.screenToPage({ x: clientX, y: clientY })
@@ -206,15 +239,54 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 		.sort((a, b) => a.props.panelIndex - b.props.panelIndex || a.y - b.y)
 		.map((bubble) => `${((bubble.x + bubble.props.w / 2) * sx).toFixed(1)},${((bubble.y + bubble.props.h / 2) * sy).toFixed(1)}`)
 
+	const stopEvent = (event: React.SyntheticEvent) => {
+		event.stopPropagation()
+		editor.markEventAsHandled(event.nativeEvent)
+	}
+
 	return (
 		<HTMLContainer className="manga-container role-page">
 			<header className="container-bar">
-				<span className="role-pill">📄 {shape.props.title}</span>
+				<span className="role-pill">
+					<IconFrame /> {shape.props.title}
+				</span>
 				<span className="badge">{scenarioZh}</span>
 				<span className="badge">{layout.panels.length}格</span>
 				<span className="badge score" title={reasons.join(' · ')}>
-					评分 {Math.round(shape.props.score * 100)}
+					{Math.round(shape.props.score * 100)}分
 				</span>
+				<div className="page-mini-actions" onPointerDown={stopEvent}>
+					<button
+						type="button"
+						className="mini-icon-btn"
+						title="切换此页分格版式"
+						onClick={() => {
+							editor.select(shape.id)
+							rerollSelectedPages(editor)
+						}}
+					>
+						<IconRefresh />
+					</button>
+					<button
+						type="button"
+						className="mini-icon-btn"
+						title="导出单页矢量 SVG"
+						onClick={() => exportPageSvgFile(pageRenderModel, `${shape.props.title}.svg`)}
+					>
+						SVG
+					</button>
+					<button
+						type="button"
+						className="mini-icon-btn"
+						title="导出 2400px 印刷级高清 PNG"
+						onClick={async () => {
+							const blob = await exportPagePng2400(pageRenderModel, 2400)
+							downloadBlob(`${shape.props.title}-2400px.png`, blob, 'image/png')
+						}}
+					>
+						<IconDownload /> PNG
+					</button>
+				</div>
 			</header>
 			<div
 				className="page-stage"
@@ -274,11 +346,17 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 						editor.markEventAsHandled(event)
 						const pos = toLocalLayout(event.clientX, event.clientY)
 						const hit = layout.panels.findIndex((panel) => pointInPoly(pos.x, pos.y, panel.pts))
+						editor.select(shape.id)
 						editor.updateShape({ id: shape.id, type: CONTAINER, props: { selectedPanel: hit === selected ? -1 : hit } })
 					}}
 					onPointerDown={(event) => {
-						if (selected < 0) return
 						const pos = toLocalLayout(event.clientX, event.clientY)
+						const hit = layout.panels.findIndex((panel) => pointInPoly(pos.x, pos.y, panel.pts))
+						if (hit >= 0 && hit !== selected) {
+							editor.select(shape.id)
+							editor.updateShape({ id: shape.id, type: CONTAINER, props: { selectedPanel: hit } })
+						}
+						if (selected < 0) return
 						if (!layout.panels[selected] || !pointInPoly(pos.x, pos.y, layout.panels[selected].pts)) return
 						event.stopPropagation()
 						editor.markEventAsHandled(event)
@@ -297,9 +375,9 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 					{selected >= 0 && layout.panels[selected] ? (
 						<polygon
 							points={layout.panels[selected].pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')}
-							fill="rgba(201,61,53,0.08)"
-							stroke="#c93d35"
-							strokeWidth={5}
+							fill="rgba(37,99,235,0.06)"
+							stroke="#2563eb"
+							strokeWidth={4.5}
 							strokeDasharray="10 5"
 						/>
 					) : null}
@@ -352,14 +430,14 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 								}
 							}}
 						>
-							<circle cx={divider.x} cy={divider.y} r={16} fill="rgba(201,61,53,0.16)" />
-							<circle cx={divider.x} cy={divider.y} r={7} fill="#c93d35" stroke="#fffefb" strokeWidth={2} />
+							<circle cx={divider.x} cy={divider.y} r={14} fill="rgba(37,99,235,0.12)" />
+							<circle cx={divider.x} cy={divider.y} r={5.5} fill="#2563eb" stroke="#ffffff" strokeWidth={1.8} />
 						</g>
 					))}
 				</svg>
 			</div>
 			<footer className="page-foot">
-				<span>{reasons.slice(0, 2).join(' · ') || '拖拽红点改斜切分格 · 双击格内推拉构图'}</span>
+				<span>{reasons.slice(0, 2).join(' · ') || '单击选格联动光学镜头 · 拖拽分割点调斜切分格'}</span>
 			</footer>
 		</HTMLContainer>
 	)

@@ -71,17 +71,17 @@ export async function pageToOra(model: PageRenderModel, name: string): Promise<{
 		{ name: 'Bubbles', part: 'bubbles' },
 		{ name: 'Ink', part: 'frames' },
 		{ name: 'Art', part: 'art' },
-		{ name: 'Paper', part: 'paper' },
+		{ name: 'Paper', part: 'background' },
 	]
 	const layers = []
 	for (const item of parts) {
-		const svg = renderPageSvg({ ...model, part: item.part, numbers: item.part === 'director' ? 'in-director' : 'off', director: true })
+		const svg = renderPageSvg({ ...model, part: item.part, numbers: item.part === 'director' ? 'badge' : 'off', director: true })
 		layers.push({ name: item.name, png: await svgToPng(svg, width, height) })
 	}
 	const mergedSvg = renderPageSvg({ ...model, part: 'all', numbers: 'off', director: false })
 	const merged = await svgToPng(mergedSvg, width, height)
 	const thumbW = 256
-	const thumbnail = await svgToPng(mergedSvg, thumbW, Math.round(thumbW * height / width))
+	const thumbnail = await svgToPng(mergedSvg, thumbW, Math.round((thumbW * height) / width))
 	return { name, svg: mergedSvg, ora: buildOpenRaster({ width, height, layers, merged, thumbnail }) }
 }
 
@@ -102,15 +102,37 @@ export function readZipText(archive: Uint8Array, name: string): string {
 }
 
 export async function exportOpenRaster(model: PageRenderModel): Promise<Uint8Array> {
-	const result = await pageToOra(model, model.title || "page")
+	const result = await pageToOra(model, model.title || 'page')
 	return result.ora
 }
 
-export function downloadText(name: string, content: string, type = "text/plain;charset=utf-8"): void {
+export function exportPageSvgFile(model: PageRenderModel, filename?: string): string {
+	const svg = renderPageSvg({ ...model, part: 'all' })
+	if (filename) {
+		const safeName = filename.replace(/\.svg$/i, '').replace(/\s+/g, '-')
+		downloadText(`${safeName}.svg`, svg, 'image/svg+xml;charset=utf-8')
+	}
+	return svg
+}
+
+export async function exportPagePng2400(model: PageRenderModel, filenameOrHeight?: string | number): Promise<Uint8Array> {
+	const targetHeight = typeof filenameOrHeight === 'number' ? filenameOrHeight : 2400
+	const scale = targetHeight / Math.max(1, model.height)
+	const targetWidth = Math.max(1, Math.round(model.width * scale))
+	const svg = renderPageSvg({ ...model, part: 'all' })
+	const bytes = await svgToPng(svg, targetWidth, targetHeight)
+	if (typeof filenameOrHeight === 'string' && filenameOrHeight) {
+		const safeName = filenameOrHeight.replace(/\.png$/i, '').replace(/\s+/g, '-')
+		downloadBlob(`${safeName}.png`, bytes, 'image/png')
+	}
+	return bytes
+}
+
+export function downloadText(name: string, content: string, type = 'text/plain;charset=utf-8'): void {
 	downloadBlob(name, new Blob([content], { type }))
 }
 
-export function downloadBlob(name: string, data: Blob | Uint8Array, type = "application/octet-stream"): void {
+export function downloadBlob(name: string, data: Blob | Uint8Array, type = 'application/octet-stream'): void {
 	const blob = data instanceof Blob ? data : new Blob([data.buffer as ArrayBuffer], { type })
 	const url = URL.createObjectURL(blob)
 	const link = document.createElement('a')

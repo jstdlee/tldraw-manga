@@ -269,8 +269,8 @@ export function compileBook(editor: Editor, filter?: { chapters?: TLShapeId[]; p
 					bubbles,
 					pageW: page.props.w,
 					pageH: page.props.h,
-					numbers: 'in-director',
-					director: true,
+					numbers: 'off',
+					director: false,
 				})
 				const prompts = metas.map((meta, index) => {
 					const bubble = bubbles.find((item) => item.panelIndex === index)

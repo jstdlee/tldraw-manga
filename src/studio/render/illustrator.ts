@@ -1,4 +1,4 @@
-import { aspectValue, mulberry32, strHash } from '../layout/engine'
+import { aspectValue, mulberry32, strHash, type AspectId } from '../layout/engine'
 
 export interface IllustrationInput {
 	idPrefix: string
@@ -7,6 +7,9 @@ export interface IllustrationInput {
 	shot: string
 	angle: string
 	focal: string
+	focalMm?: number
+	fStop?: number
+	silent?: boolean
 	aspect: string
 	who: string[]
 	fries: string
@@ -27,7 +30,7 @@ const JACKET = '#d6453d'
 const PAPER = '#f7f4ee'
 
 function slotsFor(environment: string): Record<string, ActorSlot> {
-	if (environment === 'sunset-roof') {
+	if (environment === 'sunset-roof' || environment === 'rooftop') {
 		return {
 			kanta: { x: 420, y: 790, scale: 1.12 },
 			mei: { x: 600, y: 770, scale: 1.05 },
@@ -95,7 +98,7 @@ function backdrop(environment: string, prefix: string, seed: string): string {
 			<rect x="0" y="780" width="1000" height="320" fill="#08090c"/>
 		`
 	}
-	if (environment === 'sunset-roof') {
+	if (environment === 'sunset-roof' || environment === 'rooftop') {
 		return `
 			<linearGradient id="${sky}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb15a"/><stop offset=".55" stop-color="#e25b3a"/><stop offset="1" stop-color="#6a3148"/></linearGradient>
 			<rect x="-400" y="-400" width="1800" height="1800" fill="url(#${sky})"/>
@@ -282,12 +285,12 @@ function propMarkup(fries: string, cast: Record<string, ActorSlot>): string {
 		const b = cast.boss ?? { x: 560, y: 420, scale: 1 }
 		return friesBox((a.x + b.x) / 2, (a.y + b.y) / 2 - 80, -28)
 	}
-	if (fries === 'jar') {
+	if (fries === 'jar' || fries === 'cap') {
 		const x = ((cast.kanta?.x ?? 420) + (cast.mei?.x ?? 600)) / 2
 		const y = (cast.kanta?.y ?? 790) - 10
 		return `<g transform="translate(${x} ${y})"><path d="M-16 0 L-12 -28 H12 L16 0 Z" fill="#d7eef8" stroke="${INK}" stroke-width="3"/><rect x="-8" y="-36" width="16" height="8" fill="#e2b84a" stroke="${INK}" stroke-width="2"/><path d="M-8 0 H8" stroke="${INK}" stroke-width="2"/></g>`
 	}
-	if (fries === 'feather') {
+	if (fries === 'feather' || fries === 'beak') {
 		const x = cast.kanta?.x ?? 480
 		const y = (cast.kanta?.y ?? 760) - 150
 		return `<g transform="translate(${x} ${y}) rotate(-24)"><path d="M0 -30 Q16 -8 0 28 Q-16 -8 0 -30" fill="#f7f9fc" stroke="${INK}" stroke-width="2"/><path d="M0 -24 V22" stroke="${INK}" stroke-width="1.4"/></g>`
@@ -298,15 +301,69 @@ function propMarkup(fries: string, cast: Record<string, ActorSlot>): string {
 function lightingOverlay(lighting: string, prefix: string): string {
 	const id = `${prefix}-light`
 	if (lighting === 'rim') return `<radialGradient id="${id}" cx=".7" cy=".3" r=".8"><stop offset="0" stop-color="#fff" stop-opacity=".0"/><stop offset="1" stop-color="#1a242c" stop-opacity=".28"/></radialGradient><rect x="-400" y="-400" width="1800" height="1800" fill="url(#${id})"/>`
-	if (lighting === 'backlight') return `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".45"/><stop offset="1" stop-color="#1a242c" stop-opacity=".2"/></linearGradient><rect x="-400" y="-400" width="1800" height="1800" fill="url(#${id})"/>`
+	if (lighting === 'backlight' || lighting === 'golden-dusk') return `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".45"/><stop offset="1" stop-color="#1a242c" stop-opacity=".2"/></linearGradient><rect x="-400" y="-400" width="1800" height="1800" fill="url(#${id})"/>`
 	if (lighting === 'underlight') return `<linearGradient id="${id}" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ffb15a" stop-opacity=".4"/><stop offset=".45" stop-color="#000" stop-opacity="0"/></linearGradient><rect x="-400" y="-400" width="1800" height="1800" fill="url(#${id})"/>`
 	if (lighting === 'neon-bounce') return `<linearGradient id="${id}" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#ff2d95" stop-opacity=".28"/><stop offset="1" stop-color="#22e0ff" stop-opacity=".22"/></linearGradient><rect x="-400" y="-400" width="1800" height="1800" fill="url(#${id})"/>`
 	if (lighting === 'screentone') return `<pattern id="${id}" width="8" height="8" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.1" fill="${INK}" opacity=".45"/></pattern><rect x="-400" y="-400" width="1800" height="1800" fill="url(#${id})" opacity=".35"/>`
 	return `<pattern id="${id}" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="1.4" cy="1.4" r=".9" fill="${INK}" opacity=".28"/></pattern><rect x="0" y="680" width="1000" height="420" fill="url(#${id})" opacity=".45"/>`
 }
 
+function opticalOverlay(focalMm: number, fStop: number, silent: boolean, focus: { x: number; y: number }, seed: string): string {
+	const random = mulberry32(strHash(`${seed}:optics`))
+	const layers: string[] = []
+
+	// Shallow DOF bokeh circles when aperture fStop <= 2.8
+	if (fStop <= 2.8) {
+		const bokehCount = Math.round((3.2 - fStop) * 9)
+		const radiusScale = (3.4 - fStop) * 18
+		for (let i = 0; i < bokehCount; i += 1) {
+			const bx = focus.x + (random() - 0.5) * 620
+			const by = focus.y + (random() - 0.5) * 480
+			const r = 14 + random() * radiusScale
+			layers.push(
+				`<circle cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="${r.toFixed(1)}" fill="#ffffff" opacity="0.24" stroke="#ffffff" stroke-width="1.2" stroke-opacity="0.45"/>`,
+			)
+		}
+	}
+
+	// Wide-angle perspective convergence rays when focalMm <= 24mm
+	if (focalMm <= 24) {
+		for (let i = 0; i < 10; i += 1) {
+			const angle = (i / 10) * Math.PI * 2 + 0.18
+			const x1 = focus.x + Math.cos(angle) * 120
+			const y1 = focus.y + Math.sin(angle) * 120
+			const x2 = focus.x + Math.cos(angle) * 520
+			const y2 = focus.y + Math.sin(angle) * 520
+			layers.push(`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${INK}" stroke-width="1.2" opacity="0.22"/>`)
+		}
+	}
+
+	// Telephoto compression hatching when focalMm >= 75mm
+	if (focalMm >= 75) {
+		for (let i = -3; i <= 3; i += 1) {
+			const y = focus.y + i * 36
+			layers.push(
+				`<line x1="${(focus.x - 280).toFixed(0)}" y1="${y.toFixed(0)}" x2="${(focus.x - 120).toFixed(0)}" y2="${y.toFixed(0)}" stroke="${INK}" stroke-width="1.1" opacity="0.2"/>`,
+				`<line x1="${(focus.x + 120).toFixed(0)}" y1="${y.toFixed(0)}" x2="${(focus.x + 280).toFixed(0)}" y2="${y.toFixed(0)}" stroke="${INK}" stroke-width="1.1" opacity="0.2"/>`,
+			)
+		}
+	}
+
+	// Silent panel stillness vertical hatch marks
+	if (silent) {
+		for (let i = -4; i <= 4; i += 1) {
+			const x = focus.x + i * 28
+			layers.push(
+				`<line x1="${x.toFixed(0)}" y1="${(focus.y - 160).toFixed(0)}" x2="${x.toFixed(0)}" y2="${(focus.y - 115).toFixed(0)}" stroke="${INK}" stroke-width="1.1" opacity="0.32"/>`,
+			)
+		}
+	}
+
+	return layers.join('')
+}
+
 function speedLines(energy: string, seed: string): string {
-	if (energy !== 'action' && energy !== 'impact') return ''
+	if (energy !== 'action' && energy !== 'impact' && energy !== 'burst') return ''
 	const random = mulberry32(strHash(`${seed}:speed`))
 	const cx = 480 + random() * 80
 	const cy = 420 + random() * 80
@@ -324,18 +381,20 @@ function speedLines(energy: string, seed: string): string {
 
 function focusPoint(who: string[], actors: Record<string, ActorSlot>, shot: string): { x: number; y: number } {
 	if (shot === 'EWS' || who.length === 0) return { x: 520, y: 520 }
-	const actor = actors[who[0]] ?? { x: 500, y: 760, scale: 1 }
-	const head = who[0] === 'boss' ? 10 : 108
+	const actor = actors[actorId(who[0], 0)] ?? { x: 500, y: 760, scale: 1 }
+	const head = actorId(who[0], 0) === 'boss' ? 10 : 108
 	if (shot === 'CU' || shot === 'ECU' || shot === 'MCU') return { x: actor.x, y: actor.y - head * actor.scale }
 	if (shot === 'MS') return { x: actor.x, y: actor.y - 48 * actor.scale }
 	return { x: actor.x, y: actor.y - 20 * actor.scale }
 }
 
-function frame(focus: { x: number; y: number }, shot: string, aspect: string, angle: string, focal: string) {
+function frame(focus: { x: number; y: number }, shot: string, aspect: string, angle: string, focal: string, focalMm?: number) {
 	const base = shot === 'EWS' ? 980 : shot === 'WS' ? 680 : shot === 'MS' ? 460 : shot === 'MCU' ? 330 : shot === 'CU' ? 230 : 140
-	const lens = focal === '18mm' ? 1.24 : focal === '85mm' ? 0.78 : focal === '35mm' ? 1.08 : 1
+	const fallbackMm = focal === '18mm' ? 18 : focal === '85mm' ? 85 : focal === '35mm' ? 35 : 50
+	const mm = focalMm && focalMm >= 12 ? focalMm : fallbackMm
+	const lens = Math.pow(42 / mm, 0.28)
 	const size = base * lens
-	const ratio = aspectValue(aspect)
+	const ratio = aspectValue((aspect as AspectId) || '1:1')
 	const w = size
 	const h = size / ratio
 	const yBias = angle === 'low' ? 0.66 : angle === 'high' || angle === 'bird' ? 0.32 : 0.48
@@ -360,13 +419,16 @@ export function renderIllustration(input: IllustrationInput): { viewBox: string;
 		cast[name] = distant ? { ...slot, scale: slot.scale * 0.42, y: slot.y - 40 } : slot
 	}
 	const people = [
-		cast.kanta ? drawKanta(cast.kanta.x, cast.kanta.y, cast.kanta.scale, 'front', input.fries === 'kanta') : '',
+		cast.kanta ? drawKanta(cast.kanta.x, cast.kanta.y, cast.kanta.scale, 'front', input.fries === 'kanta' || input.fries === 'box') : '',
 		cast.mei ? drawMei(cast.mei.x, cast.mei.y, cast.mei.scale, 'front') : '',
-		cast.boss ? drawGull(cast.boss.x, cast.boss.y, cast.boss.scale, 'front', input.fries === 'gull') : '',
+		cast.boss ? drawGull(cast.boss.x, cast.boss.y, cast.boss.scale, 'front', input.fries === 'gull' || input.fries === 'beak') : '',
 	].join('')
 	const dutch = input.angle === 'dutch' ? ` transform="rotate(-8 500 560)"` : ''
 	const focus = focusPoint(distant ? [] : input.who, distant ? {} : cast, input.shot)
-	const box = frame(input.shot === 'EWS' ? { x: 520, y: 520 } : focus, input.shot, input.aspect, input.angle, input.focal)
+	const box = frame(input.shot === 'EWS' ? { x: 520, y: 520 } : focus, input.shot, input.aspect, input.angle, input.focal, input.focalMm)
+	const fallbackMm = input.focal === '18mm' ? 18 : input.focal === '85mm' ? 85 : input.focal === '35mm' ? 35 : 50
+	const mm = input.focalMm ?? fallbackMm
+	const fStop = input.fStop ?? 2.8
 	const markup = `
 		<g${dutch}>
 			${backdrop(input.environment, input.idPrefix, input.seed)}
@@ -374,6 +436,7 @@ export function renderIllustration(input: IllustrationInput): { viewBox: string;
 			${propMarkup(input.fries, cast)}
 		</g>
 		${lightingOverlay(input.lighting, input.idPrefix)}
+		${opticalOverlay(mm, fStop, Boolean(input.silent), focus, input.seed)}
 		${speedLines(input.energy, input.seed)}
 	`
 	return { viewBox: `${box.x.toFixed(1)} ${box.y.toFixed(1)} ${box.w.toFixed(1)} ${box.h.toFixed(1)}`, markup }
@@ -387,11 +450,11 @@ export function characterSheetSvg(tag: string): string {
 		return drawKanta(x, 128, 0.72, turn, false)
 	}
 	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 150">
-		<rect width="360" height="150" fill="#f4efe6"/>
+		<rect width="360" height="150" fill="#f7f6f2"/>
 		${draw('front', 60)}${draw('side', 180)}${draw('back', 300)}
-		<text x="60" y="146" text-anchor="middle" font-size="11" fill="#5c6b76">正</text>
-		<text x="180" y="146" text-anchor="middle" font-size="11" fill="#5c6b76">侧</text>
-		<text x="300" y="146" text-anchor="middle" font-size="11" fill="#5c6b76">背</text>
+		<text x="60" y="146" text-anchor="middle" font-size="11" fill="#5c6b76">正视图</text>
+		<text x="180" y="146" text-anchor="middle" font-size="11" fill="#5c6b76">侧视图</text>
+		<text x="300" y="146" text-anchor="middle" font-size="11" fill="#5c6b76">背视图</text>
 	</svg>`
 }
 
@@ -402,7 +465,7 @@ export function referenceCardSvg(tag: string, title: string, seed: string): stri
 	const light = isRoof ? 'golden-dusk' : isNeon ? 'neon-bounce' : 'hard-noon'
 	const who = tag.includes('boss') ? ['boss', 'kanta'] : isRoof ? ['kanta', 'mei', 'boss'] : ['kanta', 'mei']
 	const art = renderIllustration({
-		idPrefix: `ref-${ Math.abs(strHash(seed + title)) }`,
+		idPrefix: `ref-${Math.abs(strHash(seed + title))}`,
 		environment: env,
 		lighting: light,
 		shot: seed.includes('cu') ? 'CU' : 'WS',

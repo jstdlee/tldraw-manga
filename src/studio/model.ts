@@ -1,5 +1,14 @@
-import { boundsOf, closestAspect, type AspectId, type Pt, type RealizedPanel } from './layout/engine'
+import {
+	boundsOf,
+	closestAspect,
+	defaultOverridesForPreset,
+	type AspectId,
+	type ParametricOverrides,
+	type Pt,
+	type RealizedPanel,
+} from './layout/engine'
 import type { Scenario } from './layout/score'
+import type { SensorId } from './optics/shotLab'
 
 export type Shot = 'EWS' | 'WS' | 'MS' | 'MCU' | 'CU' | 'ECU'
 export type Angle = 'low' | 'high' | 'eye' | 'bird' | 'dutch'
@@ -9,6 +18,7 @@ export type Prosody = '' | '冷笑' | '颤抖' | '怒吼' | '低语' | '停顿'
 export type FriesProp = 'none' | 'kanta' | 'gull' | 'air' | 'jar' | 'feather'
 
 export interface BubbleLine {
+	speaker?: string
 	type: BubbleStyle
 	text: string
 	prosody?: Prosody
@@ -24,6 +34,12 @@ export interface Beat {
 	fries?: FriesProp
 	lines: BubbleLine[]
 	eyeline?: [number, number]
+	silent?: boolean
+	sensor?: SensorId
+	focalMm?: number
+	fStop?: number
+	subjectDistM?: number
+	bgDistM?: number
 }
 
 export interface PanelMeta {
@@ -42,6 +58,13 @@ export interface PanelMeta {
 	eyeline: [number, number]
 	imageDataUrl: string
 	environment: string
+	silent?: boolean
+	sensor?: SensorId
+	focalMm?: number
+	fStop?: number
+	subjectDistM?: number
+	bgDistM?: number
+	prevBeat?: string
 }
 
 export interface CharacterDraft {
@@ -99,6 +122,12 @@ export function silentBeat(index: number): Beat {
 		fries: 'none',
 		lines: [],
 		eyeline: [8, -6],
+		silent: true,
+		sensor: 's35',
+		focalMm: 50,
+		fStop: 2.8,
+		subjectDistM: 2.2,
+		bgDistM: 12,
 	}
 }
 
@@ -112,6 +141,12 @@ function eyelineFor(angle: Angle): [number, number] {
 
 export function metaFromBeat(beat: Beat, panel: RealizedPanel, seed: string, index: number): PanelMeta {
 	const box = boundsOf(panel.pts)
+	const focalMm =
+		beat.focalMm ??
+		(beat.focal === '18mm' ? 18 : beat.focal === '35mm' ? 35 : beat.focal === '85mm' ? 85 : 50)
+	const fStop =
+		beat.fStop ??
+		(beat.shot === 'ECU' || beat.shot === 'CU' ? 1.8 : beat.shot === 'EWS' || beat.shot === 'WS' ? 8.0 : 2.8)
 	return {
 		imageSeed: `${seed}-p${index}`,
 		imageOffsetX: 0,
@@ -128,6 +163,12 @@ export function metaFromBeat(beat: Beat, panel: RealizedPanel, seed: string, ind
 		eyeline: beat.eyeline ?? eyelineFor(beat.angle),
 		imageDataUrl: '',
 		environment: '',
+		silent: Boolean(beat.silent),
+		sensor: beat.sensor ?? 's35',
+		focalMm,
+		fStop,
+		subjectDistM: beat.subjectDistM ?? 2.4,
+		bgDistM: beat.bgDistM ?? 14,
 	}
 }
 
@@ -147,7 +188,9 @@ export function fitBeats(script: Beat[], count: number): Beat[] {
 	const middle = script.slice(0, -1)
 	const step = middle.length / (count - 1)
 	const picked: Beat[] = []
-	for (let index = 0; index < count - 1; index += 1) picked.push(structuredClone(middle[Math.min(middle.length - 1, Math.floor(index * step))]))
+	for (let index = 0; index < count - 1; index += 1) {
+		picked.push(structuredClone(middle[Math.min(middle.length - 1, Math.floor(index * step))]))
+	}
 	picked.push(structuredClone(script[script.length - 1]))
 	return picked
 }
@@ -180,19 +223,38 @@ export function buildPanelPrompt(input: {
 	beat: string
 	locks: string
 	corner: string
+	silent?: boolean
+	opticsClause?: string
 }): string {
 	return [
 		'Manga panel, black ink line art with screentone, spot red only',
 		input.environment,
 		input.lighting,
 		`${input.shot} shot, ${input.angle} angle, ${input.focal}`,
+		input.opticsClause,
 		input.locks,
 		input.beat,
+		input.silent ? 'silent contemplation beat, zero dialogue balloons, dramatic negative space' : '',
 		`native aspect ${input.aspect}, include 12% bleed past the panel, leave empty negative space in the ${input.corner} for a speech balloon, no face in that corner`,
 		'NO text, NO letters, NO speech bubbles, NO captions, NO sound-effect lettering',
 	]
 		.filter(Boolean)
 		.join('. ')
+}
+
+export function readPageParams(moodRaw: string, preset: string): Required<ParametricOverrides> {
+	const base = defaultOverridesForPreset(preset)
+	if (!moodRaw || !moodRaw.trim().startsWith('{')) return base
+	try {
+		const parsed = JSON.parse(moodRaw) as ParametricOverrides
+		return { ...base, ...parsed }
+	} catch {
+		return base
+	}
+}
+
+export function serializePageParams(params: ParametricOverrides): string {
+	return JSON.stringify(params)
 }
 
 export type { Pt }

@@ -1,45 +1,41 @@
-import { useState } from 'react'
-import { Tldraw, type Editor, type TLComponents } from 'tldraw'
+import { useEffect, useState } from 'react'
+import { Tldraw, type Editor } from 'tldraw'
 import 'tldraw/tldraw.css'
-import './studio/studio.css'
 import { SEAGULL_STORY } from './studio/demo/book'
-import { seedDefaultIfEmpty, spawnPromptBlock } from './studio/editor/pipeline'
-import type { BlockId } from './studio/prompts/library'
-import type { CompiledBook } from './studio/spec/compile'
+import { seedDefaultIfEmpty } from './studio/editor/pipeline'
 import { MangaBubbleUtil } from './studio/shapes/MangaBubbleUtil'
 import { MangaCardUtil } from './studio/shapes/MangaCardUtil'
 import { MangaContainerUtil } from './studio/shapes/MangaContainerUtil'
 import { MangaPromptUtil } from './studio/shapes/MangaPromptUtil'
+import type { CompiledBook } from './studio/spec/compile'
 import { CompareModal, FloatingBar, LeftLibrary, ReaderModal, SettingsModal, TopBar, type SidebarTab } from './studio/ui/chrome'
+import './studio/studio.css'
 
 const shapeUtils = [MangaContainerUtil, MangaCardUtil, MangaPromptUtil, MangaBubbleUtil]
-
-const components: TLComponents = {
-	InFrontOfTheCanvas: FloatingBar,
-	SharePanel: null,
-	StylePanel: null,
-	MainMenu: null,
-	PageMenu: null,
-	ActionsMenu: null,
-	QuickActions: null,
-	HelperButtons: null,
-	DebugPanel: null,
-	DebugMenu: null,
-	MenuPanel: null,
-	TopPanel: null,
-}
 
 export function App() {
 	const [editor, setEditor] = useState<Editor | null>(null)
 	const [story, setStory] = useState(SEAGULL_STORY)
-	const [status, setStatus] = useState('就绪 · 文字卡/图像卡均支持 AI 润色、重生成、Vision 识图反推与自定义提示词')
-	const [activeTab, setActiveTab] = useState<SidebarTab>('cards')
+	const [status, setStatus] = useState('就绪 · 设定卡 → 版式台 → 分镜台词 → 光学镜头 → 完稿导出')
 	const [compareOpen, setCompareOpen] = useState(false)
 	const [readerBook, setReaderBook] = useState<CompiledBook | null>(null)
 	const [settingsOpen, setSettingsOpen] = useState(false)
+	const [activeTab, setActiveTab] = useState<SidebarTab>('cards')
+	const [theme, setTheme] = useState<'light' | 'dark'>('light')
+
+	useEffect(() => {
+		document.documentElement.setAttribute('data-theme', theme)
+		if (editor) {
+			editor.user.updateUserPreferences({ colorScheme: theme })
+		}
+	}, [editor, theme])
+
+	const toggleTheme = () => {
+		setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))
+	}
 
 	return (
-		<div className="studio-root">
+		<div className={`studio-shell theme-${theme}`} data-theme={theme}>
 			<TopBar
 				editor={editor}
 				story={story}
@@ -49,8 +45,10 @@ export function App() {
 				onOpenReader={(book) => setReaderBook(book)}
 				onOpenSettings={() => setSettingsOpen(true)}
 				onSwitchTab={(tab) => setActiveTab(tab)}
+				theme={theme}
+				onToggleTheme={toggleTheme}
 			/>
-			<div className="studio-body">
+			<div className="studio-main">
 				<LeftLibrary
 					editor={editor}
 					story={story}
@@ -58,32 +56,22 @@ export function App() {
 					setStatus={setStatus}
 					activeTab={activeTab}
 					setActiveTab={setActiveTab}
+					onOpenCompare={() => setCompareOpen(true)}
 				/>
-				<div
-					className="studio-canvas"
-					onDragOver={(event) => {
-						if (event.dataTransfer.types.includes('application/manga-block')) event.preventDefault()
-					}}
-					onDrop={(event) => {
-						const block = event.dataTransfer.getData('application/manga-block') as BlockId
-						if (!block || !editor) return
-						event.preventDefault()
-						const point = editor.screenToPage({ x: event.clientX, y: event.clientY })
-						spawnPromptBlock(editor, block, point.x, point.y)
-						setStatus(`已放入「${block}」AI 节点，用箭头连向容器或直接点击执行`)
-					}}
-				>
+				<main className="canvas-wrap">
 					<Tldraw
-						persistenceKey="tldraw-manga-studio-v2"
+						persistenceKey="tldraw-manga-v5"
 						shapeUtils={shapeUtils}
-						components={components}
-						onMount={(ed) => {
-							;(window as unknown as { __tldrawEditor?: Editor }).__tldrawEditor = ed
-							setEditor(ed)
-							seedDefaultIfEmpty(ed)
+						components={{
+							InFrontOfTheCanvas: () => <FloatingBar onSwitchTab={(tab) => setActiveTab(tab)} />,
+						}}
+						onMount={(mounted) => {
+							setEditor(mounted)
+							mounted.user.updateUserPreferences({ colorScheme: theme })
+							seedDefaultIfEmpty(mounted)
 						}}
 					/>
-				</div>
+				</main>
 			</div>
 			{compareOpen ? <CompareModal editor={editor} onClose={() => setCompareOpen(false)} /> : null}
 			{readerBook ? <ReaderModal book={readerBook} onClose={() => setReaderBook(null)} /> : null}

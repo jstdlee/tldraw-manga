@@ -1,15 +1,95 @@
 import { createBindingId, createShapeId, type Editor, type TLShapeId } from 'tldraw'
 import { askImage, askText, askVision, polishCardText, regenerateCardText } from '../ai/client'
 import { bookFromText, defaultBook, ENV_IDS, ENV_LABELS, LIGHT_IDS, LIGHT_LABELS } from '../demo/book'
-import { configFor, generate, mulberry32, mutate, realize, sanitize, strHash } from '../layout/engine'
-import { asScenario, layoutFeatures, layoutScore, pickTopLayouts } from '../layout/score'
-import { buildPanelPrompt, fitBeats, metaFromBeat, readJson, refreshAspects, safeCorner, type Beat, type BookDraft, type PageDraft, type PanelMeta } from '../model'
-import { planBubbles } from './placement'
+import {
+	boundsOf,
+	centroid,
+	configFor,
+	generate,
+	mulberry32,
+	mutate,
+	realize,
+	sanitize,
+	strHash,
+	togglePanelBleed,
+	togglePanelNest,
+	type ParametricOverrides,
+} from '../layout/engine'
+import {
+	applyRemedyToGenome,
+	asScenario,
+	EMOTION_DIRECTION_TIPS,
+	layoutFeatures,
+	layoutScore,
+	pickTopLayouts,
+	type EditorialRemedy,
+	type Scenario,
+} from '../layout/score'
+import {
+	buildPanelPrompt,
+	fitBeats,
+	metaFromBeat,
+	readJson,
+	readPageParams,
+	refreshAspects,
+	safeCorner,
+	serializePageParams,
+	type Beat,
+	type BookDraft,
+	type BubbleStyle,
+	type PageDraft,
+	type PanelMeta,
+} from '../model'
+import { computeOptics, defaultOpticsForMeta } from '../optics/shotLab'
 import { blockTitle, defaultParams, type BlockId } from '../prompts/library'
 import { BUBBLE, CARD, CONTAINER, PROMPT, type CardKind, type MangaBubble, type MangaCard, type MangaContainer } from '../shapes/schema'
+import { planBubbles } from './placement'
 
 const PAGE_W = 460
 const PAGE_H = 650
+
+const cardDiffStore = new Map<string, { prevBody: string; nextBody: string; modelUsed: string; label: string }>()
+const pageDiffStore = new Map<string, { prevPanelsJson: string; prevScriptJson: string; summary: string }>()
+
+export function getCardDiff(cardId: string) {
+	return cardDiffStore.get(cardId) ?? null
+}
+
+export function revertCardDiff(editor: Editor, card: MangaCard): void {
+	const snap = cardDiffStore.get(card.id)
+	if (!snap) return
+	editor.updateShape<MangaCard>({
+		id: card.id,
+		type: CARD,
+		props: { body: snap.prevBody, aiStatus: '已回退至改写前版本' },
+	})
+	cardDiffStore.delete(card.id)
+}
+
+export function getPageDiff(pageId: string) {
+	return pageDiffStore.get(pageId) ?? null
+}
+
+export function revertPageDiff(editor: Editor, page: MangaContainer): void {
+	const snap = pageDiffStore.get(page.id)
+	if (!snap) return
+	const overrides = readPageParams(page.props.mood, page.props.layoutPreset)
+	const config = configFor(page.props.layoutPreset, page.props.targetPanels, overrides)
+	const layout = realize(sanitize(readJson(page.props.genomeJson, generate(page.props.seed, config).genome)), config)
+	const beats = readJson<Beat[]>(snap.prevScriptJson, [])
+	const metas = readJson<PanelMeta[]>(snap.prevPanelsJson, [])
+	editor.updateShape<MangaContainer>({
+		id: page.id,
+		type: CONTAINER,
+		props: {
+			panelsJson: snap.prevPanelsJson,
+			scriptJson: snap.prevScriptJson,
+			subtitle: `${metas.length} 格 · 已回退原分镜`,
+		},
+	})
+	spawnPageBubbles(editor, page.id, layout, beats, metas)
+	pageDiffStore.delete(page.id)
+}
 
 export function seedDefaultIfEmpty(editor: Editor): void {
 	if (editor.getCurrentPageShapeIds().size > 0) return
@@ -119,7 +199,6 @@ export function spawnBook(editor: Editor, book: BookDraft): void {
 		})
 	})
 
-	// Seed 2 standalone Image Cards (视觉参考图卡) wired into the chapters
 	const refCard1Id = createShapeId('img-card-boardwalk')
 	editor.createShape<MangaCard>({
 		id: refCard1Id,
@@ -247,7 +326,7 @@ export function createTextCardOnCanvas(
 	editor: Editor,
 	kind: Exclude<CardKind, 'image' | 'character'> = 'note',
 	title = '新建文字设定卡',
-	body = '在此输入角色小传、场景规则或单场戏剧情。点击下方「✨ AI 润色美化」或输入自定义提示词即可由 Text LLM 扩写。',
+	body = '在此输入角色小传、场景规则或单场戏剧情。点击下方「AI 润色美化」或输入自定义提示词即可由 Text LLM 扩写。',
 ): TLShapeId {
 	const center = editor.getViewportPageBounds().center
 	const id = createShapeId(`text-card-${Date.now()}`)
@@ -279,7 +358,7 @@ export function createImageCardOnCanvas(
 	kind: 'image' | 'character' = 'image',
 	title = '新建视觉参考图卡',
 	tag = '@boardwalk',
-	body = '海岸防波堤仰拍参考图，黑白G笔浓墨线配60L灰网点，右上角留出对白气泡安全区。可点「👁️ Vision 反推」或「🎨 AI 重绘」。',
+	body = '海岸防波堤仰拍参考图，黑白G笔浓墨线配60L灰网点，右上角留出对白气泡安全区。可点「Vision 反推」或「AI 重绘」。',
 ): TLShapeId {
 	const center = editor.getViewportPageBounds().center
 	const id = createShapeId(`img-card-${Date.now()}`)
@@ -370,14 +449,15 @@ export function spawnPageBubbles(
 	pageId: TLShapeId,
 	layout: ReturnType<typeof realize>,
 	beats: Beat[],
-	_metas: PanelMeta[],
+	metas: PanelMeta[],
 ): void {
 	const old = editor
 		.getSortedChildIdsForParent(pageId)
 		.map((id) => editor.getShape(id))
 		.filter((shape): shape is MangaBubble => shape?.type === BUBBLE)
 	if (old.length) editor.deleteShapes(old.map((shape) => shape.id))
-	const planned = planBubbles({ ...layout, seed: pageId }, beats, PAGE_W, PAGE_H)
+	const syncedBeats = beats.map((b, idx) => (metas[idx]?.silent ? { ...b, silent: true, lines: [] } : b))
+	const planned = planBubbles({ ...layout, seed: pageId }, syncedBeats, PAGE_W, PAGE_H)
 	planned.forEach((bubble, index) => {
 		editor.createShape<MangaBubble>({
 			id: createShapeId(`${pageId.replace('shape:', '')}-b${index}`),
@@ -388,7 +468,7 @@ export function spawnPageBubbles(
 			props: {
 				w: bubble.w,
 				h: bubble.h,
-				bubble: bubble.style as MangaBubble["props"]["bubble"],
+				bubble: bubble.style as MangaBubble['props']['bubble'],
 				text: bubble.text,
 				prosody: bubble.prosody,
 				emphasis: bubble.emphasis,
@@ -411,7 +491,7 @@ function wire(editor: Editor, fromId: TLShapeId, toId: TLShapeId, x1: number, y1
 		props: {
 			start: { x: x1, y: y1 },
 			end: { x: x2, y: y2 },
-			color: 'red',
+			color: 'grey',
 			bend: 0,
 		},
 	})
@@ -436,7 +516,8 @@ export function applyLayoutChoice(
 	page: MangaContainer,
 	choice: { seed: string; genome: ReturnType<typeof sanitize>; score: number; reasons: string[] },
 ): void {
-	const config = configFor(page.props.layoutPreset, page.props.targetPanels)
+	const overrides = readPageParams(page.props.mood, page.props.layoutPreset)
+	const config = configFor(page.props.layoutPreset, page.props.targetPanels, overrides)
 	const layout = realize(choice.genome, config)
 	const rawScript = readJson<Beat[]>(page.props.scriptJson, [])
 	const beats = fitBeats(rawScript, layout.panels.length)
@@ -444,7 +525,24 @@ export function applyLayoutChoice(
 	const metas = layout.panels.map((panel, index) => {
 		const old = prev[index]
 		const fresh = metaFromBeat(beats[index], panel, choice.seed, index)
-		return old ? { ...fresh, shot: old.shot, angle: old.angle, focal: old.focal, beat: old.beat, who: old.who, fries: old.fries, environment: old.environment } : fresh
+		return old
+			? {
+					...fresh,
+					shot: old.shot,
+					angle: old.angle,
+					focal: old.focal,
+					focalMm: old.focalMm ?? fresh.focalMm,
+					fStop: old.fStop ?? fresh.fStop,
+					sensor: old.sensor ?? fresh.sensor,
+					subjectDistM: old.subjectDistM ?? fresh.subjectDistM,
+					bgDistM: old.bgDistM ?? fresh.bgDistM,
+					silent: old.silent ?? fresh.silent,
+					beat: old.beat,
+					who: old.who,
+					fries: old.fries,
+					environment: old.environment,
+				}
+			: fresh
 	})
 	editor.updateShape<MangaContainer>({
 		id: page.id,
@@ -466,23 +564,320 @@ export function applyLayoutChoice(
 export function rerollSelectedPages(editor: Editor): void {
 	for (const page of selectedPages(editor)) {
 		const nextSeed = `${page.props.seed.replace(/~\d+$/, '')}~${Math.floor(Math.random() * 900 + 100)}`
-		const config = configFor(page.props.layoutPreset, page.props.targetPanels)
+		const overrides = readPageParams(page.props.mood, page.props.layoutPreset)
+		const config = configFor(page.props.layoutPreset, page.props.targetPanels, overrides)
 		const picked = pickTopLayouts(nextSeed, config, page.props.targetPanels, asScenario(page.props.scenario))
 		const best = picked.top[0]
 		applyLayoutChoice(editor, page, { seed: best.seed, genome: best.layout.genome, score: best.score, reasons: best.reasons })
 	}
 }
 
-export function mutateSelectedPages(editor: Editor): void {
+export function mutateSelectedPages(editor: Editor, strengthOverride?: number): void {
 	for (const page of selectedPages(editor)) {
-		const config = configFor(page.props.layoutPreset, page.props.targetPanels)
+		const overrides = readPageParams(page.props.mood, page.props.layoutPreset)
+		const strength = strengthOverride ?? overrides.mutationStrength ?? 0.55
+		const config = configFor(page.props.layoutPreset, page.props.targetPanels, overrides)
 		const current = sanitize(readJson(page.props.genomeJson, generate(page.props.seed, config).genome))
 		const rand = mulberry32(strHash(`${page.props.seed}-${Date.now()}`))
-		const genome = mutate(current, rand, 0.55)
+		const genome = mutate(current, rand, strength)
 		const layout = realize(genome, config)
 		const judged = layoutScore(layoutFeatures(layout), page.props.targetPanels, asScenario(page.props.scenario))
 		applyLayoutChoice(editor, page, { seed: `${page.props.seed}*`, genome: layout.genome, score: judged.score, reasons: judged.reasons })
 	}
+}
+
+export function updatePageParametric(
+	editor: Editor,
+	page: MangaContainer,
+	patch: Partial<ParametricOverrides>,
+	regenerateLayout = true,
+): string {
+	const current = readPageParams(page.props.mood, page.props.layoutPreset)
+	const next: Required<ParametricOverrides> = { ...current, ...patch }
+	const moodStr = serializePageParams(next)
+	const config = configFor(page.props.layoutPreset, page.props.targetPanels, next)
+
+	if (regenerateLayout) {
+		const picked = pickTopLayouts(`${page.props.seed.replace(/~\d+$/, '')}~p`, config, page.props.targetPanels, asScenario(page.props.scenario), 24)
+		const best = picked.top[0]
+		editor.updateShape<MangaContainer>({
+			id: page.id,
+			type: CONTAINER,
+			props: { mood: moodStr },
+		})
+		const updatedPage = editor.getShape<MangaContainer>(page.id)
+		if (updatedPage) {
+			applyLayoutChoice(editor, updatedPage, {
+				seed: best.seed,
+				genome: best.layout.genome,
+				score: best.score,
+				reasons: best.reasons,
+			})
+		}
+		return `已更新版式几何参数并重算最高分排布（${Math.round(best.score * 100)} 分）`
+	}
+
+	const rawGenome = readJson(page.props.genomeJson, generate(page.props.seed, config).genome)
+	const layout = realize(sanitize(rawGenome), config)
+	const judged = layoutScore(layoutFeatures(layout), page.props.targetPanels, asScenario(page.props.scenario))
+	editor.updateShape<MangaContainer>({
+		id: page.id,
+		type: CONTAINER,
+		props: {
+			mood: moodStr,
+			score: judged.score,
+			reasonsJson: JSON.stringify(judged.reasons),
+		},
+	})
+	return '已更新原稿框线与安全参考线显示'
+}
+
+export function applyEditorialRemedyOnPage(
+	editor: Editor,
+	page: MangaContainer,
+	remedy: EditorialRemedy,
+): string {
+	const overrides = readPageParams(page.props.mood, page.props.layoutPreset)
+	const nextOverrides: Required<ParametricOverrides> = { ...overrides }
+	if (remedy.id === 'expand-hero') nextOverrides.big = Math.min(1, (overrides.big ?? 0.25) + 0.28)
+	if (remedy.id === 'bleed-last-hook') nextOverrides.bleed = Math.min(1, (overrides.bleed ?? 0.2) + 0.35)
+	if (remedy.id === 'boost-tilt') nextOverrides.tilt = Math.min(1, (overrides.tilt ?? 0.2) + 0.32)
+	if (remedy.id === 'calm-tilt') nextOverrides.tilt = 0.04
+
+	const config = configFor(page.props.layoutPreset, page.props.targetPanels, nextOverrides)
+	const currentGenome = sanitize(readJson(page.props.genomeJson, generate(page.props.seed, config).genome))
+	const nextGenome = applyRemedyToGenome(currentGenome, remedy.id)
+	const layout = realize(nextGenome, config)
+	const judged = layoutScore(layoutFeatures(layout), page.props.targetPanels, asScenario(page.props.scenario))
+
+	editor.updateShape<MangaContainer>({
+		id: page.id,
+		type: CONTAINER,
+		props: { mood: serializePageParams(nextOverrides) },
+	})
+	const refreshed = editor.getShape<MangaContainer>(page.id) ?? page
+	applyLayoutChoice(editor, refreshed, {
+		seed: `${page.props.seed}-fix`,
+		genome: layout.genome,
+		score: judged.score,
+		reasons: judged.reasons,
+	})
+	return `已执行主编诊断修复「${remedy.actionLabel}」· 综合评分提升至 ${Math.round(judged.score * 100)} 分`
+}
+
+export function applyEmotionStrategyOnPage(
+	editor: Editor,
+	page: MangaContainer,
+	scenario: Scenario,
+): string {
+	const tip = EMOTION_DIRECTION_TIPS[scenario]
+	const baseOverrides = readPageParams(page.props.mood, tip.recommendedPreset)
+	const nextOverrides: Required<ParametricOverrides> = {
+		...baseOverrides,
+		tilt: tip.recommendedTilt,
+		bleed: tip.recommendedBleed,
+		big: tip.recommendedBig,
+	}
+	const config = configFor(tip.recommendedPreset, page.props.targetPanels, nextOverrides)
+	const picked = pickTopLayouts(`${page.props.seed.replace(/~\d+$/, '')}-${scenario}`, config, page.props.targetPanels, scenario, 36)
+	const best = picked.top[0]
+	const layout = best.layout
+	const rawScript = readJson<Beat[]>(page.props.scriptJson, [])
+	const beats = fitBeats(rawScript, layout.panels.length).map((beat, idx, arr) => {
+		const isPreClimax = (scenario === 'climax' || scenario === 'tension' || scenario === 'reveal') && arr.length >= 3 && idx === arr.length - 2
+		const isLastHook = idx === arr.length - 1
+		return {
+			...beat,
+			silent: isPreClimax ? true : Boolean(beat.silent),
+			lines: isPreClimax ? [] : beat.lines,
+			shot: isLastHook && scenario === 'climax' ? ('ECU' as const) : beat.shot,
+			angle: scenario === 'action' || scenario === 'tension' ? ('low' as const) : beat.angle,
+			beat: isPreClimax
+				? `${beat.beat.replace(/（.*）$/, '')}（高潮前无声留白静帧）`
+				: `${beat.beat.replace(/【.*】$/, '')}【${tip.label}】`,
+		}
+	})
+	const metas = layout.panels.map((panel, index) => metaFromBeat(beats[index], panel, best.seed, index))
+
+	editor.updateShape<MangaContainer>({
+		id: page.id,
+		type: CONTAINER,
+		props: {
+			scenario,
+			layoutPreset: tip.recommendedPreset,
+			mood: serializePageParams(nextOverrides),
+			seed: best.seed,
+			subtitle: `${layout.panels.length} 格 · ${tip.label} · 评分 ${Math.round(best.score * 100)}`,
+			genomeJson: JSON.stringify(layout.genome),
+			panelsJson: JSON.stringify(metas),
+			scriptJson: JSON.stringify(beats),
+			score: best.score,
+			reasonsJson: JSON.stringify(best.reasons),
+		},
+	})
+	spawnPageBubbles(editor, page.id, layout, beats, metas)
+	return `已应用「${tip.label}」分镜锦囊：${tip.beatRule}`
+}
+
+export function toggleSilentPanelOnPage(
+	editor: Editor,
+	page: MangaContainer,
+	panelIndex: number,
+): string {
+	const overrides = readPageParams(page.props.mood, page.props.layoutPreset)
+	const config = configFor(page.props.layoutPreset, page.props.targetPanels, overrides)
+	const layout = realize(sanitize(readJson(page.props.genomeJson, generate(page.props.seed, config).genome)), config)
+	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
+	const beats = fitBeats(readJson<Beat[]>(page.props.scriptJson, []), layout.panels.length)
+	const targetMeta = metas[panelIndex]
+	if (!targetMeta) return '未找到目标分镜格'
+
+	const nextSilent = !targetMeta.silent
+	metas[panelIndex] = {
+		...targetMeta,
+		silent: nextSilent,
+		beat: nextSilent
+			? `${targetMeta.beat.replace(/（无声留白静帧）$/, '')}（无声留白静帧）`
+			: targetMeta.beat.replace(/（无声留白静帧）$/, ''),
+	}
+	if (beats[panelIndex]) {
+		beats[panelIndex] = {
+			...beats[panelIndex],
+			silent: nextSilent,
+		}
+	}
+
+	editor.updateShape<MangaContainer>({
+		id: page.id,
+		type: CONTAINER,
+		props: {
+			panelsJson: JSON.stringify(metas),
+			scriptJson: JSON.stringify(beats),
+		},
+	})
+	spawnPageBubbles(editor, page.id, layout, beats, metas)
+	return nextSilent
+		? `第 ${panelIndex + 1} 格已设为「无声留白静帧」，自动清空对白气泡并注入留白提示词`
+		: `第 ${panelIndex + 1} 格已恢复对白模式`
+}
+
+export function togglePanelBleedOnPage(
+	editor: Editor,
+	page: MangaContainer,
+	panelIndex: number,
+	edge: 'bT' | 'bB' | 'bL' | 'bR',
+): string {
+	const overrides = readPageParams(page.props.mood, page.props.layoutPreset)
+	const config = configFor(page.props.layoutPreset, page.props.targetPanels, overrides)
+	const current = sanitize(readJson(page.props.genomeJson, generate(page.props.seed, config).genome))
+	const nextGenome = togglePanelBleed(current, panelIndex, edge)
+	const layout = realize(nextGenome, config)
+	const judged = layoutScore(layoutFeatures(layout), page.props.targetPanels, asScenario(page.props.scenario))
+	applyLayoutChoice(editor, page, {
+		seed: page.props.seed,
+		genome: layout.genome,
+		score: judged.score,
+		reasons: judged.reasons,
+	})
+	const edgeLabel = { bT: '上出血', bB: '下出血', bL: '左出血', bR: '右出血' }[edge]
+	return `已切换第 ${panelIndex + 1} 格「${edgeLabel}」破框状态`
+}
+
+export function togglePanelNestOnPage(
+	editor: Editor,
+	page: MangaContainer,
+	panelIndex: number,
+): string {
+	const overrides = readPageParams(page.props.mood, page.props.layoutPreset)
+	const config = configFor(page.props.layoutPreset, page.props.targetPanels, overrides)
+	const current = sanitize(readJson(page.props.genomeJson, generate(page.props.seed, config).genome))
+	const nextGenome = togglePanelNest(current, panelIndex)
+	const layout = realize(nextGenome, config)
+	const judged = layoutScore(layoutFeatures(layout), page.props.targetPanels, asScenario(page.props.scenario))
+	applyLayoutChoice(editor, page, {
+		seed: page.props.seed,
+		genome: layout.genome,
+		score: judged.score,
+		reasons: judged.reasons,
+	})
+	return `已切换第 ${panelIndex + 1} 格纵切子分格嵌套（当前共 ${layout.panels.length} 格）`
+}
+
+export function applyOpticsToPanel(
+	editor: Editor,
+	page: MangaContainer,
+	panelIndex: number,
+	patch: Partial<Pick<PanelMeta, 'sensor' | 'focalMm' | 'fStop' | 'subjectDistM' | 'bgDistM' | 'angle'>>,
+): string {
+	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
+	const current = metas[panelIndex]
+	if (!current) return '未找到选中分镜格'
+
+	const baseOpt = defaultOpticsForMeta(current)
+	const mergedOpt = {
+		sensor: patch.sensor ?? current.sensor ?? baseOpt.sensor,
+		focalMm: patch.focalMm ?? current.focalMm ?? baseOpt.focalMm,
+		fStop: patch.fStop ?? current.fStop ?? baseOpt.fStop,
+		subjectDistM: patch.subjectDistM ?? current.subjectDistM ?? baseOpt.subjectDistM,
+		bgDistM: patch.bgDistM ?? current.bgDistM ?? baseOpt.bgDistM,
+	}
+	const computed = computeOptics(mergedOpt)
+
+	metas[panelIndex] = {
+		...current,
+		...mergedOpt,
+		angle: patch.angle ?? current.angle,
+		shot: computed.derivedShot,
+		focal: computed.derivedFocal,
+	}
+
+	editor.updateShape<MangaContainer>({
+		id: page.id,
+		type: CONTAINER,
+		props: { panelsJson: JSON.stringify(metas) },
+	})
+	return `第 ${panelIndex + 1} 格光学镜头：${mergedOpt.focalMm}mm (等效 ${computed.eqFocalMm}mm) · f/${mergedOpt.fStop} · 自动推导为 ${computed.shotLabelZh}`
+}
+
+export function addBubbleToPage(
+	editor: Editor,
+	page: MangaContainer,
+	panelIndex: number,
+	style: BubbleStyle = 'speech',
+	text = '新台词内容',
+): void {
+	const overrides = readPageParams(page.props.mood, page.props.layoutPreset)
+	const config = configFor(page.props.layoutPreset, page.props.targetPanels, overrides)
+	const layout = realize(sanitize(readJson(page.props.genomeJson, generate(page.props.seed, config).genome)), config)
+	const panel = layout.panels[panelIndex] ?? layout.panels[0]
+	if (!panel) return
+	const box = boundsOf(panel.pts)
+	const center = centroid(panel.pts)
+	const sx = PAGE_W / layout.width
+	const sy = (PAGE_H - 60) / layout.height
+	const x = Math.round((box.maxX - 110) * sx)
+	const y = Math.round(36 + (box.minY + 14) * sy)
+	const id = createShapeId(`${page.id.replace('shape:', '')}-b-${Date.now()}`)
+	editor.createShape<MangaBubble>({
+		id,
+		type: BUBBLE,
+		parentId: page.id,
+		x: Math.max(12, Math.min(PAGE_W - 110, x)),
+		y: Math.max(40, Math.min(PAGE_H - 90, y)),
+		props: {
+			w: 96,
+			h: 64,
+			bubble: style,
+			text,
+			prosody: '',
+			emphasis: 1,
+			tailX: (center[0] - (box.maxX - 60)) * sx * 0.4,
+			tailY: 28,
+			panelIndex,
+			spin: 0,
+		},
+	})
+	editor.select(id)
 }
 
 export function toggleAllFlow(editor: Editor): boolean {
@@ -503,11 +898,17 @@ export async function polishPageWithAi(editor: Editor, customPrompt?: string): P
 	const pages = selectedPages(editor)
 	let polishedCount = 0
 	for (const page of pages) {
+		pageDiffStore.set(page.id, {
+			prevPanelsJson: page.props.panelsJson,
+			prevScriptJson: page.props.scriptJson,
+			summary: customPrompt || 'AI 导演润色分镜与台词',
+		})
 		const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
 		const beats = readJson<Beat[]>(page.props.scriptJson, [])
 		const suffix = customPrompt ? `（${customPrompt}）` : '（光影网点强化）'
 		const updatedMetas = metas.map((meta, idx) => ({
 			...meta,
+			prevBeat: meta.beat,
 			beat: meta.beat.includes('【AI') ? meta.beat : `${meta.beat} 【AI 镜头润色#${idx + 1}${suffix}】`,
 		}))
 		editor.updateShape<MangaContainer>({
@@ -515,7 +916,7 @@ export async function polishPageWithAi(editor: Editor, customPrompt?: string): P
 			type: CONTAINER,
 			props: {
 				panelsJson: JSON.stringify(updatedMetas),
-				subtitle: `${updatedMetas.length} 格 · ✨ AI 已润色分镜`,
+				subtitle: `${updatedMetas.length} 格 · AI 已润色分镜`,
 			},
 		})
 		const bubbles = editor
@@ -536,7 +937,7 @@ export async function polishPageWithAi(editor: Editor, customPrompt?: string): P
 	const summary = await askText(
 		'你是漫画导演。请用一句简短中文总结本轮分镜润色重点。',
 		customPrompt || '强化镜头对比、角色锁定与台词张力',
-		() => `✨ Text + Vision LLM 已润色 ${pages.length} 页共 ${polishedCount} 格分镜与台词${customPrompt ? `（指令：${customPrompt}）` : ''}。`,
+		() => `Text + Vision LLM 已润色 ${pages.length} 页共 ${polishedCount} 格分镜与台词${customPrompt ? `（指令：${customPrompt}）` : ''}。`,
 	)
 	return summary
 }
@@ -559,6 +960,7 @@ export async function applySelectedCardAiAction(
 	customPrompt?: string,
 ): Promise<string> {
 	const promptToUse = customPrompt ?? card.props.customPrompt
+	const prevBody = card.props.body
 	if (action === 'vision') {
 		const res = await askVision({
 			imageDataUrl: card.props.imageDataUrl,
@@ -567,12 +969,13 @@ export async function applySelectedCardAiAction(
 			body: card.props.body,
 			customPrompt: promptToUse,
 		})
+		cardDiffStore.set(card.id, { prevBody, nextBody: res.analysis, modelUsed: res.modelUsed, label: 'Vision 识图反推' })
 		editor.updateShape<MangaCard>({
 			id: card.id,
 			type: CARD,
-			props: { body: res.analysis, customPrompt: promptToUse, aiStatus: `👁️ ${res.modelUsed} 识图完成` },
+			props: { body: res.analysis, customPrompt: promptToUse, aiStatus: `${res.modelUsed} 识图完成` },
 		})
-		return `👁️ 已对「${card.props.title}」执行 Vision 识图反推`
+		return `已对「${card.props.title}」执行 Vision 识图反推`
 	}
 	if (action === 'redraw') {
 		const remoteUrl = await askImage(`${card.props.title} ${card.props.body} ${promptToUse}`, '16:9')
@@ -584,10 +987,10 @@ export async function applySelectedCardAiAction(
 				imageDataUrl: remoteUrl || card.props.imageDataUrl,
 				voice: card.props.kind === 'image' ? nextSeed : card.props.voice,
 				customPrompt: promptToUse,
-				aiStatus: remoteUrl ? '🎨 Image LLM 已重绘' : '🎨 生图引擎已重绘新变体',
+				aiStatus: remoteUrl ? 'Image LLM 已重绘' : '生图引擎已重绘新变体',
 			},
 		})
-		return `🎨 已对「${card.props.title}」重新生成参考图像`
+		return `已对「${card.props.title}」重新生成参考图像`
 	}
 	if (action === 'regenerate') {
 		const res = await regenerateCardText({
@@ -597,12 +1000,13 @@ export async function applySelectedCardAiAction(
 			tag: card.props.tag,
 			customPrompt: promptToUse,
 		})
+		cardDiffStore.set(card.id, { prevBody, nextBody: res.text, modelUsed: res.modelUsed, label: 'AI 重新生成' })
 		editor.updateShape<MangaCard>({
 			id: card.id,
 			type: CARD,
-			props: { body: res.text, customPrompt: promptToUse, aiStatus: `🔄 ${res.modelUsed} 已重新生成` },
+			props: { body: res.text, customPrompt: promptToUse, aiStatus: `${res.modelUsed} 已重新生成` },
 		})
-		return `🔄 已对「${card.props.title}」重新生成内容`
+		return `已对「${card.props.title}」重新生成内容`
 	}
 	const res = await polishCardText({
 		kind: card.props.kind,
@@ -611,12 +1015,13 @@ export async function applySelectedCardAiAction(
 		tag: card.props.tag,
 		customPrompt: promptToUse,
 	})
+	cardDiffStore.set(card.id, { prevBody, nextBody: res.text, modelUsed: res.modelUsed, label: 'AI 润色美化' })
 	editor.updateShape<MangaCard>({
 		id: card.id,
 		type: CARD,
-		props: { body: res.text, customPrompt: promptToUse, aiStatus: `✨ ${res.modelUsed} 已美化` },
+		props: { body: res.text, customPrompt: promptToUse, aiStatus: `${res.modelUsed} 已美化` },
 	})
-	return `✨ 已对「${card.props.title}」执行 AI 润色美化`
+	return `已对「${card.props.title}」执行 AI 润色美化`
 }
 
 export async function runBlock(
@@ -659,13 +1064,14 @@ export async function runBlock(
 
 	if (block === 'name') {
 		for (const page of selectedPages(editor)) {
-			const config = configFor(page.props.layoutPreset, page.props.targetPanels)
+			const overrides = readPageParams(page.props.mood, page.props.layoutPreset)
+			const config = configFor(page.props.layoutPreset, page.props.targetPanels, overrides)
 			const layout = realize(sanitize(readJson(page.props.genomeJson, generate(page.props.seed, config).genome)), config)
 			const base = readJson<Beat[]>(page.props.scriptJson, [])
 			const beats = fitBeats(base, layout.panels.length)
 			if (merged.silent && beats.length >= 3) {
 				const silentIdx = Math.max(1, beats.length - 2)
-				beats[silentIdx] = { ...beats[silentIdx], lines: [], beat: `${beats[silentIdx].beat}（高潮前静帧）` }
+				beats[silentIdx] = { ...beats[silentIdx], silent: true, lines: [], beat: `${beats[silentIdx].beat}（高潮前静帧）` }
 			}
 			const metas = layout.panels.map((panel, index) => metaFromBeat(beats[index], panel, page.props.seed, index))
 			editor.updateShape<MangaContainer>({
@@ -724,6 +1130,7 @@ export async function runBlock(
 		const next: PanelMeta[] = []
 		for (let index = 0; index < metas.length; index += 1) {
 			const meta = metas[index]
+			const opt = computeOptics(defaultOpticsForMeta(meta))
 			const prompt = buildPanelPrompt({
 				environment: meta.environment || page.props.environment,
 				lighting: page.props.lighting,
@@ -734,6 +1141,8 @@ export async function runBlock(
 				beat: meta.beat,
 				locks: '@kanta @mei @boss 外观锁定',
 				corner: safeCorner('top-right'),
+				silent: meta.silent,
+				opticsClause: opt.promptClause,
 			})
 			const dataUrl = await askImage(prompt, meta.aspect)
 			next.push({ ...meta, imageSeed: `${meta.imageSeed}-r`, imageDataUrl: dataUrl || meta.imageDataUrl })

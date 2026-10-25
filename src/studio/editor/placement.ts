@@ -1,8 +1,7 @@
-import { boundsOf, type Layout } from '../layout/engine'
+import { boundsOf, pagePixelSize, type Layout } from '../layout/engine'
 import type { Beat, PanelMeta } from '../model'
 import type { BubbleDraw } from '../render/bubbles'
 import type { PageBubble, PagePanel, PageRenderModel } from '../render/pageSvg'
-import { pagePixelSize } from '../layout/engine'
 
 const ANCHORS: Record<string, [number, number]> = {
 	'top-left': [0.28, 0.22],
@@ -24,7 +23,7 @@ export function planBubbles(layout: Layout, beats: Beat[], pageW = pagePixelSize
 	const planned: PlannedBubble[] = []
 	layout.panels.forEach((panel, panelIndex) => {
 		const beat = beats[panelIndex]
-		if (!beat) return
+		if (!beat || beat.silent) return
 		const box = boundsOf(panel.pts)
 		beat.lines.forEach((line, lineIndex) => {
 			const placement =
@@ -102,6 +101,11 @@ export function pageModel(input: {
 	pageH: number
 	numbers: PageRenderModel['numbers']
 	director: boolean
+	lineWidth?: number
+	showInnerFrame?: boolean
+	showRuleOfThirds?: boolean
+	showAxis180?: boolean
+	selectedPanel?: number
 	part?: PageRenderModel['part']
 }): PageRenderModel {
 	return {
@@ -120,6 +124,11 @@ export function pageModel(input: {
 		bubbles: toLayoutBubbles(input.bubbles, input.pageW, input.pageH, input.width, input.height),
 		numbers: input.numbers,
 		director: input.director,
+		lineWidth: input.lineWidth,
+		showInnerFrame: input.showInnerFrame,
+		showRuleOfThirds: input.showRuleOfThirds,
+		showAxis180: input.showAxis180,
+		selectedPanel: input.selectedPanel,
 		part: input.part,
 	}
 }

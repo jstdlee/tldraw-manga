@@ -1,10 +1,11 @@
 import { BaseBoxShapeUtil, HTMLContainer, resizeBox, useEditor, type TLResizeInfo } from 'tldraw'
-import { readJson } from '../model'
-import { ANGLES, FOCALS, PROMPT_BLOCKS, SHOTS, STYLE_PRESETS, defaultParams, type BlockId } from '../prompts/library'
 import { ANGLE_LABELS, ENV_IDS, ENV_LABELS, FOCAL_LABELS, LIGHT_IDS, LIGHT_LABELS, SHOT_LABELS } from '../demo/book'
 import { runBlock } from '../editor/pipeline'
-import { PROMPT, type MangaPrompt } from './schema'
+import { readJson } from '../model'
+import { ANGLES, defaultParams, FOCALS, PROMPT_BLOCKS, SHOTS, STYLE_PRESETS, type BlockId } from '../prompts/library'
+import { IconPlay, IconTerminal } from '../ui/icons'
 import { promptProps } from './props'
+import { PROMPT, type MangaPrompt } from './schema'
 
 export class MangaPromptUtil extends BaseBoxShapeUtil<MangaPrompt> {
 	static override type = PROMPT
@@ -15,7 +16,7 @@ export class MangaPromptUtil extends BaseBoxShapeUtil<MangaPrompt> {
 			w: 270,
 			h: 196,
 			block: 'extract',
-			title: '⚡ 设定集提炼',
+			title: '设定集提炼',
 			paramsJson: JSON.stringify(defaultParams('extract')),
 			preview: '',
 		}
@@ -55,7 +56,9 @@ function PromptView({ shape }: { shape: MangaPrompt }) {
 	return (
 		<HTMLContainer className="manga-prompt">
 			<header>
-				<span>{shape.props.title}</span>
+				<span>
+					<IconTerminal /> {shape.props.title.replace(/^[^\u4e00-\u9fa5A-Za-z0-9]+\s*/, '')}
+				</span>
 				<em className="prompt-engine-tag">{engineLabel}</em>
 			</header>
 			<p>{block?.summary}</p>
@@ -78,7 +81,7 @@ function PromptView({ shape }: { shape: MangaPrompt }) {
 				}}
 				onClick={() => void runBlock(editor, shape.props.block, params, shape.id)}
 			>
-				🤖 调用 LLM 执行节点
+				<IconPlay /> 执行管线节点
 			</button>
 		</HTMLContainer>
 	)
