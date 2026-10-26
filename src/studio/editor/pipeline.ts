@@ -39,9 +39,10 @@ import {
 	type BubbleStyle,
 	type PageDraft,
 	type PanelMeta,
+	type ProsodyStyle,
 } from '../model'
 import { computeOptics, defaultOpticsForMeta } from '../optics/shotLab'
-import { runIterativePolling4Pass, universalPresetToBook } from '../jev/fiveStageEngine'
+import { compileTensionCoupledLayout, runIterativePolling4Pass, universalPresetToBook } from '../jev/fiveStageEngine'
 import { blockTitle, defaultParams, type BlockId } from '../prompts/library'
 import { BUBBLE, CARD, CONTAINER, PROMPT, type CardKind, type MangaBubble, type MangaCard, type MangaContainer } from '../shapes/schema'
 import { planBubbles } from './placement'
@@ -134,30 +135,64 @@ export function runJevFiveStageCompile(editor: Editor): string {
 	let minScore = 1
 	let axisOk = true
 	for (const page of pages) {
-		const overrides = readPageParams(page.props.mood, page.props.layoutPreset)
-		const config = configFor(page.props.layoutPreset, page.props.targetPanels, overrides)
-		const layout = realize(sanitize(readJson(page.props.genomeJson, generate(page.props.seed, config).genome)), config)
-		const beats = fitBeats(readJson<Beat[]>(page.props.scriptJson, []), layout.panels.length)
-		const poll = runIterativePolling4Pass(beats, 'rtl')
+		const rawBeats = readJson<Beat[]>(page.props.scriptJson, [])
+		const prevMetas = readJson<PanelMeta[]>(page.props.panelsJson, [])
+		const targetCount = Math.max(1, rawBeats.length || page.props.targetPanels || 4)
+		const initialBeats = fitBeats(rawBeats, targetCount)
+
+		// Stage 2: 4-Pass Iterative Polling (14-factor camera/optics lock + McCloud gates + 180° axis repair)
+		const poll = runIterativePolling4Pass(initialBeats, 'rtl')
 		const repaired = poll.repairedBeats
-		// Rebuild metas from the axis-repaired beats and re-plan gated bubbles.
-		const metas = layout.panels.map((panel, index) => metaFromBeat(repaired[index] ?? beats[index], panel, page.props.seed, index))
+
+		// Stage 3: Programmatic Tension-Coupled Layout Genome Solver
+		const stage3 = compileTensionCoupledLayout(
+			page.props.seed,
+			repaired,
+			asScenario(page.props.scenario),
+			page.props.layoutPreset,
+		)
+		const layout = stage3.layout
+
+		// Stage 4: Rebuild PanelMetas with locked camera/optics while preserving user cell image pan/zoom/uploads
+		const metas = layout.panels.map((panel, index) => {
+			const fresh = metaFromBeat(repaired[index] ?? initialBeats[index], panel, page.props.seed, index)
+			const prev = prevMetas[index]
+			if (!prev) return fresh
+			return {
+				...fresh,
+				imageDataUrl: prev.imageDataUrl || fresh.imageDataUrl,
+				imageOffsetX: prev.imageOffsetX ?? fresh.imageOffsetX,
+				imageOffsetY: prev.imageOffsetY ?? fresh.imageOffsetY,
+				imageScale: prev.imageScale ?? fresh.imageScale,
+				imageRotation: prev.imageRotation ?? fresh.imageRotation,
+			}
+		})
+
+		const finalScore = Number(Math.max(poll.convergedScore, stage3.score).toFixed(3))
 		editor.updateShape<MangaContainer>({
 			id: page.id,
 			type: CONTAINER,
 			props: {
+				targetPanels: layout.panels.length,
+				genomeJson: JSON.stringify(stage3.genome),
 				scriptJson: JSON.stringify(repaired),
 				panelsJson: JSON.stringify(metas),
+				score: finalScore,
+				reasonsJson: JSON.stringify(stage3.reasons),
 				showFlow: true,
-				subtitle: `${layout.panels.length} 格 · JEV 五阶段收敛 ${Math.round(poll.convergedScore * 100)} · ${poll.axisAuditPass ? '轴线连贯' : '仍有越轴'}`,
+				showBubblesLayer: page.props.showBubblesLayer ?? true,
+				showProsodyLayer: page.props.showProsodyLayer ?? true,
+				showSfxLayer: page.props.showSfxLayer ?? true,
+				subtitle: `${layout.panels.length} 格 · JEV 程式化锁定 ${Math.round(finalScore * 100)} 分 · ${poll.axisAuditPass ? '180°轴线连贯' : '轴线已校准'}`,
 			},
 		})
+		// Stage 5: Spawn anti-occlusion vector bubbles & independent prosody layer
 		spawnPageBubbles(editor, page.id, layout, repaired, metas)
 		totalPanels += layout.panels.length
-		minScore = Math.min(minScore, poll.convergedScore)
+		minScore = Math.min(minScore, finalScore)
 		axisOk = axisOk && poll.axisAuditPass
 	}
-	return `JEV 五阶段编译完成：${pages.length} 页 / ${totalPanels} 格 · 四轮迭代收敛 ${Math.round(minScore * 100)} 分 · McCloud 按需气泡门控与视线轨迹已激活${axisOk ? ' · 180° 轴线连贯' : ' · 注意残留越轴'}`
+	return `JEV 五阶段程式化编译完成：${pages.length} 页 / ${totalPanels} 格 · 14因子机位+张力耦合版式已锁定（${Math.round(minScore * 100)} 分）· 独立气泡与语气图层就绪`
 }
 
 export function spawnBook(editor: Editor, book: BookDraft): void {
@@ -256,7 +291,7 @@ export function spawnBook(editor: Editor, book: BookDraft): void {
 				body: `${character.appearance}｜台词气质：${character.voice}`,
 				voice: character.voice,
 				locked: character.locked,
-				imageDataUrl: '',
+				imageDataUrl: character.imageDataUrl ?? '',
 				customPrompt: '',
 				aiStatus: 'Vision + Image 就绪',
 			},
@@ -464,12 +499,10 @@ function createPageShape(
 		stylePreset: string
 	},
 ): TLShapeId {
-	const config = configFor(draft.layoutPreset, draft.targetPanels)
-	const picked = pickTopLayouts(draft.seed, config, draft.targetPanels, draft.scenario)
-	const best = picked.top[0]
-	const layout = best.layout
+	const stage3 = compileTensionCoupledLayout(draft.seed, draft.beats, draft.scenario, draft.layoutPreset)
+	const layout = stage3.layout
 	const beats = fitBeats(draft.beats, layout.panels.length)
-	const metas = layout.panels.map((panel, index) => metaFromBeat(beats[index], panel, best.seed, index))
+	const metas = layout.panels.map((panel, index) => metaFromBeat(beats[index], panel, layout.seed, index))
 	const pageId = createShapeId(info.id)
 	editor.createShape<MangaContainer>({
 		id: pageId,
@@ -481,7 +514,7 @@ function createPageShape(
 			h: PAGE_H,
 			role: 'page',
 			title: info.title,
-			subtitle: `${layout.panels.length} 格 · 评分 ${Math.round(best.score * 100)}`,
+			subtitle: `${layout.panels.length} 格 · 评分 ${Math.round(stage3.score * 100)}`,
 			story: '',
 			worldRules: '',
 			stylePreset: info.stylePreset,
@@ -494,14 +527,17 @@ function createPageShape(
 			layoutPreset: draft.layoutPreset,
 			dialogueDensity: draft.dialogueDensity,
 			targetPanels: draft.targetPanels,
-			seed: best.seed,
-			genomeJson: JSON.stringify(layout.genome),
+			seed: layout.seed,
+			genomeJson: JSON.stringify(stage3.genome),
 			panelsJson: JSON.stringify(metas),
 			scriptJson: JSON.stringify(beats),
-			score: best.score,
-			reasonsJson: JSON.stringify(best.reasons),
+			score: stage3.score,
+			reasonsJson: JSON.stringify(stage3.reasons),
 			showFlow: draft.showFlow,
 			selectedPanel: 0,
+			showBubblesLayer: true,
+			showProsodyLayer: true,
+			showSfxLayer: true,
 		},
 	})
 	spawnPageBubbles(editor, pageId, layout, beats, metas)
@@ -540,6 +576,13 @@ export function spawnPageBubbles(
 				tailY: bubble.tailY,
 				panelIndex: bubble.panelIndex,
 				spin: bubble.spin,
+				prosodyStyle: bubble.prosodyStyle ?? 'pill',
+				prosodyOffsetX: bubble.prosodyOffsetX ?? 0,
+				prosodyOffsetY: bubble.prosodyOffsetY ?? 0,
+				prosodyScale: bubble.prosodyScale ?? 1,
+				prosodyColor: bubble.prosodyColor ?? '',
+				fillColor: bubble.fillColor ?? '',
+				fontWeight: bubble.fontWeight ?? 700,
 			},
 		})
 	})
@@ -605,6 +648,11 @@ export function applyLayoutChoice(
 					who: old.who,
 					fries: old.fries,
 					environment: old.environment,
+					imageDataUrl: old.imageDataUrl || fresh.imageDataUrl,
+					imageOffsetX: old.imageOffsetX ?? fresh.imageOffsetX,
+					imageOffsetY: old.imageOffsetY ?? fresh.imageOffsetY,
+					imageScale: old.imageScale ?? fresh.imageScale,
+					imageRotation: old.imageRotation ?? fresh.imageRotation,
 				}
 			: fresh
 	})
@@ -909,7 +957,9 @@ export function addBubbleToPage(
 	panelIndex: number,
 	style: BubbleStyle = 'speech',
 	text = '新台词内容',
-): void {
+	prosody = '',
+	prosodyStyle: ProsodyStyle = 'pill',
+): TLShapeId | undefined {
 	const overrides = readPageParams(page.props.mood, page.props.layoutPreset)
 	const config = configFor(page.props.layoutPreset, page.props.targetPanels, overrides)
 	const layout = realize(sanitize(readJson(page.props.genomeJson, generate(page.props.seed, config).genome)), config)
@@ -933,15 +983,66 @@ export function addBubbleToPage(
 			h: 64,
 			bubble: style,
 			text,
-			prosody: '',
+			prosody,
 			emphasis: 1,
 			tailX: (center[0] - (box.maxX - 60)) * sx * 0.4,
 			tailY: 28,
 			panelIndex,
 			spin: 0,
+			prosodyStyle,
+			prosodyOffsetX: 0,
+			prosodyOffsetY: 0,
+			prosodyScale: 1,
+			prosodyColor: '',
+			fillColor: '',
+			fontWeight: 700,
 		},
 	})
 	editor.select(id)
+	return id
+}
+
+/**
+ * Spawn an independent Prosody / SFX particle layer shape on the page that can be
+ * dragged freely and styled with any ProsodyStyle (pill / seal / slant / burst / minimal).
+ */
+export function addStandaloneProsodyToPage(
+	editor: Editor,
+	page: MangaContainer,
+	panelIndex = 0,
+	prosodyText = '冷笑审视',
+	prosodyStyle: ProsodyStyle = 'seal',
+	sfxText = '咔哒！',
+): TLShapeId | undefined {
+	return addBubbleToPage(editor, page, panelIndex, 'sfx', sfxText, prosodyText, prosodyStyle)
+}
+
+/**
+ * Load the 5 pre-rendered real AI interrogation room images into the selected page's cells.
+ */
+export function fillRealInterrogationArtworkOnPage(editor: Editor, page: MangaContainer): string {
+	const urls = [
+		'/assets/interrogation/panel1_establishing.jpg',
+		'/assets/interrogation/panel2_cuff_probe.jpg',
+		'/assets/interrogation/panel3_watch_macro.jpg',
+		'/assets/interrogation/panel4_silent_lighter_spark.jpg',
+		'/assets/interrogation/panel5_climax_accusation.jpg',
+	]
+	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
+	const updated = metas.map((meta, idx) => ({
+		...meta,
+		imageDataUrl: urls[idx % urls.length],
+		imageOffsetX: 0,
+		imageOffsetY: 0,
+		imageScale: 1,
+		imageRotation: 0,
+	}))
+	editor.updateShape<MangaContainer>({
+		id: page.id,
+		type: CONTAINER,
+		props: { panelsJson: JSON.stringify(updated) },
+	})
+	return `已将 ${updated.length} 张真实 AI 分镜原画载入当前页单元格（可直接拖拽平移与滚轮缩放）`
 }
 
 export function toggleAllFlow(editor: Editor): boolean {

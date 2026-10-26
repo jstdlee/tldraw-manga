@@ -5,7 +5,7 @@ import {
 	type NormalizedBox,
 } from '../jev/fiveStageEngine'
 import type { Beat, PanelMeta } from '../model'
-import type { BubbleDraw } from '../render/bubbles'
+import { inferProsodyStyleFromText, type BubbleDraw } from '../render/bubbles'
 import type { PageBubble, PagePanel, PageRenderModel } from '../render/pageSvg'
 
 const ANCHORS: Record<string, [number, number]> = {
@@ -29,7 +29,6 @@ export function planBubbles(layout: Layout, beats: Beat[], pageW = pagePixelSize
 	layout.panels.forEach((panel, panelIndex) => {
 		const beat = beats[panelIndex]
 		if (!beat) return
-		// Stage 2 on-demand gate: resolve whether this panel keeps balloons / sfx at all.
 		const gates = solveOnDemandBubbleAndSfxGates({
 			silent: beat.silent,
 			wordPictureMode: beat.wordPictureMode,
@@ -41,7 +40,6 @@ export function planBubbles(layout: Layout, beats: Beat[], pageW = pagePixelSize
 		const box = boundsOf(panel.pts)
 		const boxW = box.maxX - box.minX
 		const boxH = box.maxY - box.minY
-		// Universal focal / subject targeting replaces any single-story mouth heuristic.
 		const focalRel = beat.focalPointRel ?? [0.5, 0.58]
 		const subjectBoxesRel: NormalizedBox[] = beat.subjectBoxesRel ?? [
 			[
@@ -58,7 +56,6 @@ export function planBubbles(layout: Layout, beats: Beat[], pageW = pagePixelSize
 			const candidateRel = ANCHORS[placement] ?? ANCHORS['top-right']
 			const w = (line.type === 'sfx' ? 156 : 188) * sx
 			const h = (line.type === 'sfx' ? 64 : 96) * sy
-			// Anti-occlusion: shift the balloon anchor out of the subject saliency box.
 			const wRel = clamp(w / sx / boxW, 0.05, 0.9)
 			const hRel = clamp(h / sy / boxH, 0.05, 0.9)
 			const solved =
@@ -81,11 +78,20 @@ export function planBubbles(layout: Layout, beats: Beat[], pageW = pagePixelSize
 				dy = (dy / len) * max
 			}
 			const tailless = line.type === 'caption' || line.type === 'broadcast' || line.type === 'sfx'
+			const prosody = line.prosody ?? ''
+			const prosodyStyle = inferProsodyStyleFromText(prosody, line.prosodyStyle)
 			planned.push({
 				style: line.type,
 				text: line.text,
-				prosody: line.prosody ?? '',
-				emphasis: line.type === 'shout' || line.type === 'sfx' ? 1.3 : line.prosody === '低语' ? 0.85 : 1,
+				prosody,
+				prosodyStyle,
+				prosodyOffsetX: line.prosodyOffsetX ?? 0,
+				prosodyOffsetY: line.prosodyOffsetY ?? 0,
+				prosodyScale: line.prosodyScale ?? 1,
+				prosodyColor: line.prosodyColor ?? '',
+				fillColor: '#fffefb',
+				fontWeight: line.type === 'shout' || line.type === 'sfx' ? 800 : 600,
+				emphasis: line.type === 'shout' || line.type === 'sfx' ? 1.3 : prosody === '低语' ? 0.85 : 1,
 				panelIndex,
 				x,
 				y,
@@ -111,6 +117,8 @@ export function toLayoutBubbles(bubbles: PlannedBubble[], pageW: number, pageH: 
 		h: bubble.h * sy,
 		tailX: bubble.tailX * sx,
 		tailY: bubble.tailY * sy,
+		prosodyOffsetX: (bubble.prosodyOffsetX ?? 0) * sx,
+		prosodyOffsetY: (bubble.prosodyOffsetY ?? 0) * sy,
 	}))
 }
 

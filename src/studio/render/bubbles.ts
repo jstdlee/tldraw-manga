@@ -1,3 +1,5 @@
+import type { ProsodyStyle } from '../model'
+
 export interface BubbleDraw {
 	style: string
 	text: string
@@ -8,6 +10,25 @@ export interface BubbleDraw {
 	tailX: number
 	tailY: number
 	spin: number
+	prosodyStyle?: ProsodyStyle | string
+	prosodyOffsetX?: number
+	prosodyOffsetY?: number
+	prosodyScale?: number
+	prosodyColor?: string
+	fillColor?: string
+	fontWeight?: number
+	hideProsody?: boolean
+}
+
+export interface ProsodyBadgeAnchor {
+	cx: number
+	cy: number
+	bw: number
+	bh: number
+	style: ProsodyStyle
+	color: string
+	scale: number
+	visible: boolean
 }
 
 export function escapeXml(value: string): string {
@@ -20,16 +41,25 @@ export function escapeXml(value: string): string {
 	})
 }
 
-function wrap(text: string, maxChars: number): string[] {
-	const chars = Array.from(text.trim())
-	if (!chars.length) return ['…']
-	const lines: string[] = []
-	const size = Math.max(4, maxChars)
-	for (let index = 0; index < chars.length; index += size) lines.push(chars.slice(index, index + size).join(''))
-	return lines.slice(0, 4)
+function clamp(v: number, lo: number, hi: number): number {
+	return Math.max(lo, Math.min(hi, v))
 }
 
-function tailPolygon(w: number, h: number, tailX: number, tailY: number): string {
+function wrap(text: string, maxChars: number): string[] {
+	const raw = String(text ?? '').trim()
+	if (!raw.length) return ['…']
+	const lines: string[] = []
+	const size = Math.max(4, maxChars)
+	for (const paragraph of raw.split(/\n+/)) {
+		const chars = Array.from(paragraph)
+		for (let index = 0; index < chars.length; index += size) {
+			lines.push(chars.slice(index, index + size).join(''))
+		}
+	}
+	return lines.slice(0, 5)
+}
+
+function tailPolygon(w: number, h: number, tailX: number, tailY: number, bgFill: string, stroke: string): string {
 	const cx = w / 2
 	const cy = h / 2
 	const dx = tailX - cx
@@ -45,28 +75,154 @@ function tailPolygon(w: number, h: number, tailX: number, tailY: number): string
 	const by = cy + uy * er * 0.86
 	const px = -uy
 	const py = ux
-	return `<polygon points="${(bx + px * 9).toFixed(1)},${(by + py * 9).toFixed(1)} ${(bx - px * 9).toFixed(1)},${(by - py * 9).toFixed(1)} ${tailX.toFixed(1)},${tailY.toFixed(1)}" fill="#fffefb" stroke="#1a242c" stroke-width="2.2" stroke-linejoin="round"/>`
+	return `<polygon points="${(bx + px * 9).toFixed(1)},${(by + py * 9).toFixed(1)} ${(bx - px * 9).toFixed(1)},${(by - py * 9).toFixed(1)} ${tailX.toFixed(1)},${tailY.toFixed(1)}" fill="${bgFill}" stroke="${stroke}" stroke-width="2.2" stroke-linejoin="round"/>`
 }
 
-function textBlock(text: string, w: number, h: number, emphasis: number, weight: number): string {
-	const font = Math.max(11, Math.min(28, (emphasis >= 1.2 ? 18 : 14) * (w / 130)))
+function textBlock(
+	text: string,
+	w: number,
+	h: number,
+	emphasis: number,
+	weight: number,
+	fillColor = '#1a242c',
+): string {
+	const font = Math.max(11, Math.min(28, (emphasis >= 1.2 ? 18 : 14) * (w / 130) * clamp(emphasis || 1, 0.7, 1.65)))
 	const lines = wrap(text, Math.max(4, Math.floor(w / (font * 0.95))))
 	const start = h / 2 - ((lines.length - 1) * font * 1.15) / 2
 	const tspans = lines
 		.map((line, index) => `<tspan x="${(w / 2).toFixed(1)}" y="${(start + index * font * 1.15).toFixed(1)}">${escapeXml(line)}</tspan>`)
 		.join('')
-	return `<text text-anchor="middle" font-family="Hiragino Sans, PingFang SC, Noto Sans SC, sans-serif" font-size="${font.toFixed(1)}" font-weight="${weight}" fill="#1a242c">${tspans}</text>`
+	return `<text class="bubble-text-layer" text-anchor="middle" font-family="Hiragino Sans, PingFang SC, Noto Sans SC, sans-serif" font-size="${font.toFixed(1)}" font-weight="${weight}" fill="${fillColor}">${tspans}</text>`
+}
+
+export function normalizeProsodyStyle(raw?: string): ProsodyStyle {
+	if (raw === 'seal' || raw === 'slant' || raw === 'burst' || raw === 'minimal' || raw === 'off') {
+		return raw
+	}
+	return 'pill'
+}
+
+export function defaultProsodyColorForStyle(style: ProsodyStyle, custom?: string): string {
+	if (custom && custom.trim()) return custom.trim()
+	if (style === 'seal') return '#c93d35'
+	if (style === 'slant') return '#18222c'
+	if (style === 'burst') return '#c93d35'
+	if (style === 'minimal') return '#0f172a'
+	return '#1e78c8'
+}
+
+export function inferProsodyStyleFromText(prosody?: string, explicitStyle?: string): ProsodyStyle {
+	if (explicitStyle && explicitStyle.trim()) return normalizeProsodyStyle(explicitStyle)
+	const text = (prosody ?? '').trim()
+	if (!text) return 'pill'
+	if (text.includes('雷霆') || text.includes('怒吼') || text.includes('咆哮') || text.includes('炸')) return 'burst'
+	if (text.includes('叙述') || text.includes('旁白') || text.includes('一字一顿') || text.includes('印')) return 'seal'
+	if (text.includes('冷笑') || text.includes('锋芒') || text.includes('压迫') || text.includes('审视')) return 'slant'
+	if (text.includes('低语') || text.includes('停顿') || text.includes('轻声')) return 'minimal'
+	return 'pill'
+}
+
+export function computeProsodyBadgeAnchor(bubble: BubbleDraw): ProsodyBadgeAnchor {
+	const style = inferProsodyStyleFromText(bubble.prosody, bubble.prosodyStyle)
+	const scale = clamp(bubble.prosodyScale || 1, 0.65, 2.0)
+	const w = Math.max(48, bubble.w)
+	const h = Math.max(36, bubble.h)
+	const textLen = Math.max(2, Array.from((bubble.prosody || '').trim()).length)
+	const bw = (textLen * 11.5 + 22) * scale
+	const bh = 20 * scale
+	// Default anchor sits near top-left/top-center of the bubble frame, offset by prosodyOffsetX/Y
+	const defaultCx = clamp(bw / 2 + 6, 28, w - 16)
+	const defaultCy = -8
+	const ox = Number.isFinite(bubble.prosodyOffsetX) ? (bubble.prosodyOffsetX as number) : 0
+	const oy = Number.isFinite(bubble.prosodyOffsetY) ? (bubble.prosodyOffsetY as number) : 0
+	const cx = clamp(defaultCx + ox, -w * 0.35, w * 1.35)
+	const cy = clamp(defaultCy + oy, -h * 0.6, h * 1.35)
+	const visible = Boolean((bubble.prosody || '').trim()) && style !== 'off' && !bubble.hideProsody
+	return {
+		cx,
+		cy,
+		bw,
+		bh,
+		style,
+		color: defaultProsodyColorForStyle(style, bubble.prosodyColor),
+		scale,
+		visible,
+	}
+}
+
+export function renderProsodyBadgeSvg(bubble: BubbleDraw): string {
+	const anchor = computeProsodyBadgeAnchor(bubble)
+	if (!anchor.visible) return ''
+	const { cx, cy, bw, bh, style, color, scale } = anchor
+	const rawText = (bubble.prosody || '').trim()
+	const fs = (10.5 * scale).toFixed(1)
+
+	if (style === 'seal') {
+		const x = (cx - bw / 2).toFixed(1)
+		const y = (cy - bh / 2).toFixed(1)
+		const ix = (cx - bw / 2 + 2.2).toFixed(1)
+		const iy = (cy - bh / 2 + 2.2).toFixed(1)
+		const iw = Math.max(8, bw - 4.4).toFixed(1)
+		const ih = Math.max(6, bh - 4.4).toFixed(1)
+		return `<g class="prosody-independent-layer" data-prosody-style="seal" data-cx="${cx.toFixed(1)}" data-cy="${cy.toFixed(1)}"><rect x="${x}" y="${y}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="2.5" fill="#fffdf7" stroke="${color}" stroke-width="2"/><rect x="${ix}" y="${iy}" width="${iw}" height="${ih}" rx="1.2" fill="none" stroke="${color}" stroke-width="0.8" stroke-dasharray="3 1.5"/><text x="${cx.toFixed(1)}" y="${(cy + 3.8 * scale).toFixed(1)}" text-anchor="middle" font-size="${fs}" font-weight="800" fill="${color}" font-family="Hiragino Sans, PingFang SC, Noto Serif SC, serif">[${escapeXml(rawText)}]</text></g>`
+	}
+
+	if (style === 'slant') {
+		const hw = bw / 2
+		const hh = bh / 2
+		const skew = 4.5 * scale
+		const pts = [
+			`${(cx - hw + skew).toFixed(1)},${(cy - hh).toFixed(1)}`,
+			`${(cx + hw + skew).toFixed(1)},${(cy - hh).toFixed(1)}`,
+			`${(cx + hw - skew).toFixed(1)},${(cy + hh).toFixed(1)}`,
+			`${(cx - hw - skew).toFixed(1)},${(cy + hh).toFixed(1)}`,
+		].join(' ')
+		return `<g class="prosody-independent-layer" data-prosody-style="slant" data-cx="${cx.toFixed(1)}" data-cy="${cy.toFixed(1)}"><polygon points="${pts}" fill="${color}" stroke="#f59e0b" stroke-width="1.5" stroke-linejoin="round"/><text x="${cx.toFixed(1)}" y="${(cy + 3.8 * scale).toFixed(1)}" text-anchor="middle" font-size="${fs}" font-weight="800" fill="#fef3c7" font-family="Hiragino Sans, PingFang SC, Noto Sans SC, sans-serif">[${escapeXml(rawText)}]</text></g>`
+	}
+
+	if (style === 'burst') {
+		const spikes = 14
+		const rx = bw * 0.58
+		const ry = bh * 0.72
+		const pts: string[] = []
+		for (let i = 0; i < spikes; i += 1) {
+			const ang = (i / spikes) * Math.PI * 2
+			const rad = i % 2 === 0 ? 1.15 : 0.78
+			pts.push(`${(cx + Math.cos(ang) * rx * rad).toFixed(1)},${(cy + Math.sin(ang) * ry * rad).toFixed(1)}`)
+		}
+		return `<g class="prosody-independent-layer" data-prosody-style="burst" data-cx="${cx.toFixed(1)}" data-cy="${cy.toFixed(1)}"><polygon points="${pts.join(' ')}" fill="${color}" stroke="#fffefb" stroke-width="1.6" stroke-linejoin="round"/><text x="${cx.toFixed(1)}" y="${(cy + 3.8 * scale).toFixed(1)}" text-anchor="middle" font-size="${fs}" font-weight="900" fill="#fffefb" font-family="Hiragino Sans, PingFang SC, Noto Sans SC, sans-serif">[${escapeXml(rawText)}]</text></g>`
+	}
+
+	if (style === 'minimal') {
+		return `<g class="prosody-independent-layer" data-prosody-style="minimal" data-cx="${cx.toFixed(1)}" data-cy="${cy.toFixed(1)}"><text x="${cx.toFixed(1)}" y="${(cy + 3.8 * scale).toFixed(1)}" text-anchor="middle" font-size="${(11 * scale).toFixed(1)}" font-weight="800" fill="${color}" stroke="#fffefb" stroke-width="3.6" paint-order="stroke" font-family="Hiragino Sans, PingFang SC, Noto Sans SC, sans-serif">[${escapeXml(rawText)}]</text></g>`
+	}
+
+	// Default: 'pill'
+	return `<g class="prosody-independent-layer" data-prosody-style="pill" data-cx="${cx.toFixed(1)}" data-cy="${cy.toFixed(1)}"><rect x="${(cx - bw / 2).toFixed(1)}" y="${(cy - bh / 2).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="${(bh / 2).toFixed(1)}" fill="${color}" stroke="#fffefb" stroke-width="1.4"/><text x="${cx.toFixed(1)}" y="${(cy + 3.8 * scale).toFixed(1)}" text-anchor="middle" font-size="${fs}" font-weight="700" fill="#fffefb" font-family="Hiragino Sans, PingFang SC, Noto Sans SC, sans-serif">[${escapeXml(rawText)}]</text></g>`
 }
 
 export function bubbleMarkup(bubble: BubbleDraw): string {
 	const { style, w, h, emphasis } = bubble
-	const stroke = emphasis >= 1.2 || style === 'shout' ? '#d6453d' : '#1a242c'
+	const bgFill = bubble.fillColor && bubble.fillColor.trim() ? bubble.fillColor.trim() : '#fffefb'
+	const isDarkBg = bgFill.toLowerCase() === '#18222c' || bgFill.toLowerCase() === '#0f172a'
+	const stroke =
+		emphasis >= 1.2 || style === 'shout'
+			? '#d6453d'
+			: isDarkBg
+				? '#f8fafc'
+				: '#1a242c'
+	const textFill =
+		style === 'shout' && !isDarkBg
+			? '#b91c1c'
+			: isDarkBg
+				? '#f8fafc'
+				: '#1a242c'
 	const sw = emphasis >= 1.2 ? 3.4 : 2.4
 	let body = ''
 	if (style === 'caption') {
-		body = `<rect x="1.5" y="1.5" width="${w - 3}" height="${h - 3}" rx="4" fill="#fffefb" stroke="${stroke}" stroke-width="${sw}"/>`
+		body = `<rect x="1.5" y="1.5" width="${w - 3}" height="${h - 3}" rx="4" fill="${bgFill}" stroke="${stroke}" stroke-width="${sw}"/>`
 	} else if (style === 'broadcast') {
-		body = `<rect x="3" y="3" width="${w - 6}" height="${h - 6}" fill="#fffefb" stroke="${stroke}" stroke-width="${sw}"/><rect x="7" y="7" width="${w - 14}" height="${h - 14}" fill="none" stroke="${stroke}" stroke-width="1.4"/>`
+		body = `<rect x="3" y="3" width="${w - 6}" height="${h - 6}" fill="${bgFill}" stroke="${stroke}" stroke-width="${sw}"/><rect x="7" y="7" width="${w - 14}" height="${h - 14}" fill="none" stroke="${stroke}" stroke-width="1.4"/>`
 	} else if (style === 'shout') {
 		const cx = w / 2
 		const cy = h / 2
@@ -76,21 +232,29 @@ export function bubbleMarkup(bubble: BubbleDraw): string {
 			const ry = index % 2 ? h * 0.34 : h * 0.5
 			return `${(cx + Math.cos(angle) * rx).toFixed(1)},${(cy + Math.sin(angle) * ry).toFixed(1)}`
 		}).join(' ')
-		body = `${tailPolygon(w, h, bubble.tailX, bubble.tailY)}<polygon points="${points}" fill="#fffefb" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="miter"/>`
+		body = `${tailPolygon(w, h, bubble.tailX, bubble.tailY, bgFill, stroke)}<polygon points="${points}" fill="${bgFill}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="miter"/>`
 	} else if (style === 'sfx') {
 		const font = Math.max(22, Math.min(46, w * 0.34 * emphasis))
-		body = `<text x="${(w / 2).toFixed(1)}" y="${(h * 0.72).toFixed(1)}" text-anchor="middle" font-family="Hiragino Sans, PingFang SC, Noto Sans SC, sans-serif" font-size="${font.toFixed(1)}" font-weight="900" fill="#d6453d" stroke="#fffefb" stroke-width="5" paint-order="stroke">${escapeXml(bubble.text || '轰！！')}</text>`
+		const sfxColor =
+			bubble.fillColor && bubble.fillColor.trim() && bubble.fillColor !== '#fffefb'
+				? bubble.fillColor.trim()
+				: '#d6453d'
+		body = `<text x="${(w / 2).toFixed(1)}" y="${(h * 0.72).toFixed(1)}" text-anchor="middle" font-family="Hiragino Sans, PingFang SC, Noto Sans SC, sans-serif" font-size="${font.toFixed(1)}" font-weight="900" fill="${sfxColor}" stroke="#fffefb" stroke-width="5" paint-order="stroke">${escapeXml(bubble.text || '轰！！')}</text>`
 	} else if (style === 'thought') {
-		body = `${tailPolygon(w, h, bubble.tailX, bubble.tailY)}<ellipse cx="${w / 2}" cy="${h / 2}" rx="${w / 2 - 2}" ry="${h / 2 - 2}" fill="#fffefb" stroke="${stroke}" stroke-width="${sw}"/><circle cx="${(bubble.tailX * 0.35 + w * 0.2).toFixed(1)}" cy="${(h + 8).toFixed(1)}" r="5" fill="#fffefb" stroke="${stroke}" stroke-width="2"/><circle cx="${(bubble.tailX * 0.45 + w * 0.12).toFixed(1)}" cy="${(h + 18).toFixed(1)}" r="3" fill="#fffefb" stroke="${stroke}" stroke-width="1.6"/>`
+		body = `${tailPolygon(w, h, bubble.tailX, bubble.tailY, bgFill, stroke)}<ellipse cx="${w / 2}" cy="${h / 2}" rx="${w / 2 - 2}" ry="${h / 2 - 2}" fill="${bgFill}" stroke="${stroke}" stroke-width="${sw}"/><circle cx="${(bubble.tailX * 0.35 + w * 0.2).toFixed(1)}" cy="${(h + 8).toFixed(1)}" r="5" fill="${bgFill}" stroke="${stroke}" stroke-width="2"/><circle cx="${(bubble.tailX * 0.45 + w * 0.12).toFixed(1)}" cy="${(h + 18).toFixed(1)}" r="3" fill="${bgFill}" stroke="${stroke}" stroke-width="1.6"/>`
 	} else {
 		const dash = style === 'whisper' ? ' stroke-dasharray="6 4"' : ''
-		body = `${tailPolygon(w, h, bubble.tailX, bubble.tailY)}<ellipse cx="${w / 2}" cy="${h / 2}" rx="${w / 2 - 2}" ry="${h / 2 - 2}" fill="#fffefb" stroke="${stroke}" stroke-width="${sw}"${dash}/>`
+		body = `${tailPolygon(w, h, bubble.tailX, bubble.tailY, bgFill, stroke)}<ellipse cx="${w / 2}" cy="${h / 2}" rx="${w / 2 - 2}" ry="${h / 2 - 2}" fill="${bgFill}" stroke="${stroke}" stroke-width="${sw}"${dash}/>`
 	}
-	const label = bubble.prosody
-		? `<text x="4" y="-4" font-size="11" font-family="Hiragino Sans, PingFang SC, Noto Sans SC, sans-serif" fill="#1e78c8">[${escapeXml(bubble.prosody)}]</text>`
-		: ''
-	const words = style === 'sfx' ? '' : textBlock(bubble.text, w, h, emphasis, style === 'shout' ? 800 : 600)
-	return `${label}${body}${words}`
+	const label = renderProsodyBadgeSvg(bubble)
+	const weight =
+		bubble.fontWeight && bubble.fontWeight >= 400
+			? bubble.fontWeight
+			: style === 'shout'
+				? 800
+				: 600
+	const words = style === 'sfx' ? '' : textBlock(bubble.text, w, h, emphasis, weight, textFill)
+	return `${body}${words}${label}`
 }
 
 export function bubbleGroup(bubble: BubbleDraw, x: number, y: number): string {

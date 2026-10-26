@@ -145,10 +145,23 @@ function bubblesOf(editor: Editor, page: MangaContainer): PlannedBubble[] {
 		.getSortedChildIdsForParent(page.id)
 		.map((id) => editor.getShape(id))
 		.filter((shape): shape is MangaBubble => shape?.type === BUBBLE)
+		.filter((shape) => {
+			if (shape.props.bubble === "sfx" && page.props.showSfxLayer === false) return false;
+			if (shape.props.bubble !== "sfx" && page.props.showBubblesLayer === false) return false;
+			return true;
+		})
 		.map((shape) => ({
 			style: shape.props.bubble,
 			text: shape.props.text,
 			prosody: shape.props.prosody,
+			prosodyStyle: shape.props.prosodyStyle,
+			prosodyOffsetX: shape.props.prosodyOffsetX,
+			prosodyOffsetY: shape.props.prosodyOffsetY,
+			prosodyScale: shape.props.prosodyScale,
+			prosodyColor: shape.props.prosodyColor,
+			fillColor: shape.props.fillColor,
+			fontWeight: shape.props.fontWeight,
+			hideProsody: page.props.showProsodyLayer === false,
 			emphasis: shape.props.emphasis,
 			w: shape.props.w,
 			h: shape.props.h,

@@ -21,6 +21,15 @@ export type Shot = 'EWS' | 'WS' | 'MS' | 'MCU' | 'CU' | 'ECU'
 export type Angle = 'low' | 'high' | 'eye' | 'bird' | 'dutch'
 export type Focal = '18mm' | '35mm' | '50mm' | '85mm'
 export type BubbleStyle = 'speech' | 'thought' | 'caption' | 'whisper' | 'shout' | 'broadcast' | 'sfx'
+export type ProsodyStyle = 'pill' | 'seal' | 'slant' | 'burst' | 'minimal' | 'off'
+export const PROSODY_STYLE_LABELS: Record<ProsodyStyle, string> = {
+	pill: '胶囊标签',
+	seal: '朱印方章',
+	slant: '斜切徽章',
+	burst: '炸裂星标',
+	minimal: '极简括号',
+	off: '隐藏语气层',
+}
 export type Prosody =
 	| ''
 	| '冷笑'
@@ -35,6 +44,7 @@ export type Prosody =
 	| '一字一顿'
 	| '锋芒毕露'
 	| '雷霆指认'
+	| (string & {})
 export type FriesProp = 'none' | 'kanta' | 'gull' | 'air' | 'jar' | 'feather'
 
 export interface BubbleLine {
@@ -42,6 +52,11 @@ export interface BubbleLine {
 	type: BubbleStyle
 	text: string
 	prosody?: Prosody
+	prosodyStyle?: ProsodyStyle
+	prosodyColor?: string
+	prosodyScale?: number
+	prosodyOffsetX?: number
+	prosodyOffsetY?: number
 	placement?: 'top-left' | 'top-right' | 'center' | 'bottom-left' | 'bottom-right'
 }
 
@@ -60,6 +75,7 @@ export interface Beat {
 	fStop?: number
 	subjectDistM?: number
 	bgDistM?: number
+	imageDataUrl?: string
 	// Universal (story-agnostic) JEV 5-stage fields.
 	assetRefs?: string[]
 	mccloudChoice?: McCloudChoice
@@ -115,6 +131,7 @@ export interface CharacterDraft {
 	appearance: string
 	voice: string
 	locked: boolean
+	imageDataUrl?: string
 }
 
 export interface PageDraft {
@@ -203,7 +220,7 @@ export function metaFromBeat(beat: Beat, panel: RealizedPanel, seed: string, ind
 		who: beat.who,
 		fries: beat.fries ?? 'none',
 		eyeline: beat.eyeline ?? eyelineFor(beat.angle),
-		imageDataUrl: '',
+		imageDataUrl: beat.imageDataUrl ?? '',
 		environment: '',
 		silent: Boolean(beat.silent),
 		sensor: beat.sensor ?? 's35',
@@ -212,6 +229,7 @@ export function metaFromBeat(beat: Beat, panel: RealizedPanel, seed: string, ind
 		subjectDistM: beat.subjectDistM ?? 2.4,
 		bgDistM: beat.bgDistM ?? 14,
 		assetRefs: beat.assetRefs,
+		mccloudChoice: beat.mccloudChoice,
 		mccloudTransition: beat.mccloudTransition,
 		wordPictureMode: beat.wordPictureMode,
 		tension: beat.tension,
@@ -279,8 +297,6 @@ export function buildPanelPrompt(input: {
 	styleClause?: string
 	hasBubble?: boolean
 }): string {
-	// Story-agnostic bubble gate: default to reserving balloon space when a corner is
-	// supplied, but suppress it when the panel is silent or the caller declares no bubble.
 	const hasBubble = input.hasBubble ?? input.silent !== true
 	const reserveBalloon = hasBubble && input.silent !== true
 	const spaceClause = reserveBalloon

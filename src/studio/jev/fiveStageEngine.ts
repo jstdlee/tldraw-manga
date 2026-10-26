@@ -17,11 +17,15 @@ import {
 	clamp,
 	configFor,
 	realize,
+	sanitize,
 	strHash,
+	type Genome,
 	type Layout,
+	type PanelGene,
 	type Pt,
+	type RowGene,
 } from '../layout/engine'
-import { pickTopLayouts, type Scenario } from '../layout/score'
+import { layoutFeatures, layoutScore, pickTopLayouts, type Scenario } from '../layout/score'
 import { auditCameraAxis, computeOptics, defaultOpticsForMeta, type OpticalReadout } from '../optics/shotLab'
 import type { Beat, BubbleLine, CharacterDraft, BookDraft, PanelMeta, Shot } from '../model'
 
@@ -441,6 +445,7 @@ export interface PollPassLog {
 export function runIterativePolling4Pass(
 	beats: Beat[],
 	readingDirection: 'rtl' | 'ltr' = 'rtl',
+	scenario: Scenario = 'tension',
 ): {
 	passLogs: PollPassLog[]
 	convergedScore: number
@@ -464,7 +469,43 @@ export function runIterativePolling4Pass(
 		],
 	})
 
-	// Pass 2 — Orthogonal 14-Factor Tournament: reward shot / angle / transition diversity.
+	// Pass 2 — Orthogonal 14-Factor Tournament: programmatically lock camera perspective, focalMm, fStop & focalPointRel from tension & narrative arc.
+	const cameraLockActions: string[] = []
+	repaired.forEach((beat, idx) => {
+		const arcPos = repaired.length > 1 ? idx / (repaired.length - 1) : 0.5
+		const baseTension = deriveBeatTension(beat, scenario)
+		const lockedTension = Number(clamp(beat.tension ?? (baseTension * 0.85 + arcPos * 0.15), 0.15, 0.98).toFixed(2))
+		beat.tension = lockedTension
+		if (beat.silent || beat.wordPictureMode === 'picture_specific') {
+			beat.focal = beat.focal || '50mm'
+			beat.focalMm = beat.focalMm ?? 50
+			beat.fStop = beat.fStop ?? 2.0
+			beat.hasBubbleGate = false
+		} else if (lockedTension >= 0.85) {
+			if (!beat.angle || beat.angle === 'eye') beat.angle = idx === repaired.length - 1 ? 'dutch' : 'low'
+			beat.focalMm = beat.focalMm ?? (beat.shot === 'ECU' || beat.shot === 'CU' ? 28 : 35)
+			beat.fStop = beat.fStop ?? 1.8
+		} else if (beat.shot === 'ECU' || beat.shot === 'CU') {
+			beat.focal = '85mm'
+			beat.focalMm = beat.focalMm ?? 85
+			beat.fStop = beat.fStop ?? 1.4
+		} else if (idx === 0 && (beat.shot === 'WS' || beat.shot === 'EWS')) {
+			beat.focal = '18mm'
+			beat.focalMm = beat.focalMm ?? 24
+			beat.fStop = beat.fStop ?? 5.6
+		} else {
+			beat.focalMm = beat.focalMm ?? (beat.focal === '18mm' ? 24 : beat.focal === '85mm' ? 85 : beat.focal === '35mm' ? 35 : 50)
+			beat.fStop = beat.fStop ?? 2.8
+		}
+		if (!beat.focalPointRel) {
+			const rtlX = readingDirection === 'rtl' ? (idx % 2 === 0 ? 0.56 : 0.44) : (idx % 2 === 0 ? 0.44 : 0.56)
+			beat.focalPointRel = [rtlX, lockedTension >= 0.8 ? 0.46 : 0.52]
+		}
+		if (!beat.eyeline) {
+			beat.eyeline = [readingDirection === 'rtl' ? -18 : 18, beat.angle === 'low' ? -12 : beat.angle === 'high' ? 12 : 4]
+		}
+		cameraLockActions.push(`P${idx + 1}[${beat.shot}/${beat.angle}/${beat.focalMm}mm f/${beat.fStop} τ=${lockedTension.toFixed(2)}]`)
+	})
 	const shotVariety = new Set(repaired.map((beat) => beat.shot)).size / Math.max(1, repaired.length)
 	const angleVariety = new Set(repaired.map((beat) => beat.angle)).size / Math.max(1, repaired.length)
 	score = Math.max(score, score + shotVariety * 0.08 + angleVariety * 0.06)
@@ -475,6 +516,7 @@ export function runIterativePolling4Pass(
 		actions: [
 			`shot variety ${(shotVariety * 100).toFixed(0)}%`,
 			`angle variety ${(angleVariety * 100).toFixed(0)}%`,
+			`locked 14-factor optics: ${cameraLockActions.join(', ')}`,
 			'scored all beats across the 14 orthogonal factors',
 		],
 	})
@@ -536,25 +578,228 @@ function fitBeatsToCount(beats: Beat[], count: number): Beat[] {
 	return out
 }
 
-/** Stage 3 compiler. Realizes the top tension-coupled polygon layout for the beats. */
+/**
+ * Deterministic row-partition solver driven by beat count N, establishing shot
+ * position, silent Ma breathing beat, and peak climax tension index.
+ */
+function solveProgrammaticRowCols(beats: Beat[], tensions: number[]): number[] {
+	const n = Math.max(1, beats.length)
+	if (n === 1) return [1]
+	if (n === 2) return [1, 1]
+	if (n === 3) {
+		return tensions[2] >= tensions[0] ? [2, 1] : [1, 2]
+	}
+	if (n === 4) {
+		const wideOpen = beats[0]?.shot === 'WS' || beats[0]?.shot === 'EWS'
+		const climaxEnd = tensions[3] >= 0.78
+		if (wideOpen && climaxEnd) return [1, 2, 1]
+		return [2, 2]
+	}
+	if (n === 5) {
+		const maxIdx = tensions.reduce((best, t, idx) => (t >= tensions[best] ? idx : best), 0)
+		const wideOpen = (beats[0]?.shot === 'WS' || beats[0]?.shot === 'EWS') && tensions[0] <= 0.44
+		if (maxIdx === 4 && tensions[4] >= 0.75) {
+			// Two 2-panel buildup tiers culminating in a full-width climax tier at bottom.
+			return [2, 2, 1]
+		}
+		if (wideOpen && maxIdx <= 2) {
+			return [1, 2, 2]
+		}
+		return [2, 1, 2]
+	}
+	if (n === 6) {
+		if (tensions[5] >= 0.85) return [2, 3, 1]
+		return [2, 2, 2]
+	}
+	// General N > 6: partition into rows of 2-3 panels, reserving a solo final row if climax is at the end.
+	const cols: number[] = []
+	let rem = n
+	const soloEnd = tensions[n - 1] >= 0.85
+	if (soloEnd) rem -= 1
+	while (rem > 0) {
+		if (rem === 4) {
+			cols.push(2, 2)
+			rem = 0
+		} else if (rem >= 3) {
+			cols.push(2)
+			rem -= 2
+		} else {
+			cols.push(rem)
+			rem = 0
+		}
+	}
+	if (soloEnd) cols.push(1)
+	return cols
+}
+
+/**
+ * Programmatic Stage 2 -> Stage 3 Layout Genome Synthesizer.
+ * Translates each beat's tension curve τ_t, 14-factor camera shot/angle/focalMm,
+ * and McCloud word-picture mode into a deterministic Genome (row height weights,
+ * diagonal cut slopes, column width weights, vertical gutter slants, and bleeds).
+ */
+export function compileProgrammaticLayoutGenome(
+	beats: Beat[],
+	scenario: Scenario,
+	seed = 'jev-prog',
+): {
+	genome: Genome
+	panelTensions: number[]
+	decisionTrace: string[]
+} {
+	const safeBeats = beats.length
+		? beats
+		: [
+				{
+					shot: 'MS' as Shot,
+					angle: 'eye' as const,
+					focal: '50mm' as const,
+					beat: 'establishing',
+					who: [],
+					lines: [],
+				},
+			]
+	const panelTensions = safeBeats.map((beat) =>
+		Number(clamp(deriveBeatTension(beat, scenario), 0.15, 0.98).toFixed(3)),
+	)
+	const rowCols = solveProgrammaticRowCols(safeBeats, panelTensions)
+	const decisionTrace: string[] = [
+		`[Stage2→3 程式化决策 seed=${seed}] 分镜格数 N=${safeBeats.length}，自动锁定行拓扑 [${rowCols.join(', ')}]（张力序列 τ=[${panelTensions.map((t) => t.toFixed(2)).join(', ')}]）`,
+	]
+
+	const peakIdx = panelTensions.reduce((best, t, idx) => (t >= panelTensions[best] ? idx : best), 0)
+	const rows: RowGene[] = []
+	let cursor = 0
+
+	rowCols.forEach((cols, rowIdx) => {
+		const rowBeats = safeBeats.slice(cursor, cursor + cols)
+		const rowTensions = panelTensions.slice(cursor, cursor + cols)
+		const rowPeak = Math.max(...rowTensions)
+		const rowStart = rowTensions[0] ?? 0.5
+		const rowEnd = rowTensions[rowTensions.length - 1] ?? rowStart
+		const hasSilentMa = rowBeats.some((b) => b.silent || b.wordPictureMode === 'picture_specific')
+		const hasClimax = rowTensions.some((t) => t >= 0.82)
+		const hasWideOpen =
+			rowIdx === 0 && rowBeats.some((b) => b.shot === 'WS' || b.shot === 'EWS')
+
+		// 1. Row height weight h: driven by peak tension + solo climax bonus + establishing bonus.
+		const rawH =
+			0.68 +
+			rowPeak * 0.82 +
+			(cols === 1 && hasClimax ? 0.34 : 0) +
+			(hasWideOpen ? 0.14 : 0) -
+			(hasSilentMa && !hasClimax ? 0.08 : 0)
+
+		// 2. Row bottom cutter slope s: calm 0 for silent/seizen rows; tension-delta driven for dramatic rows.
+		let rowSlope = 0
+		if (rowIdx < rowCols.length - 1) {
+			if (hasSilentMa && rowPeak < 0.75) {
+				rowSlope = 0
+			} else {
+				const delta = rowEnd - rowStart
+				const climaxKick = hasClimax ? (rowIdx % 2 === 0 ? 0.08 : -0.08) : 0
+				rowSlope = Number(clamp(delta * 0.24 + climaxKick, -0.17, 0.17).toFixed(3))
+			}
+		}
+
+		// 3. Within-row column width weights w: wider share for high tension, ECU evidence, or wide establishing.
+		const colWeights = rowBeats.map((b, cIdx) => {
+			const tau = rowTensions[cIdx] ?? 0.5
+			const shotBonus = b.shot === 'ECU' || b.shot === 'WS' || b.shot === 'EWS' ? 0.22 : b.shot === 'CU' ? 0.1 : 0
+			const silentCompact = b.silent ? -0.12 : 0
+			return Number(clamp(0.55 + tau * 0.95 + shotBonus + silentCompact, 0.35, 1.85).toFixed(3))
+		})
+		const wSum = colWeights.reduce((acc, v) => acc + v, 0) || 1
+		const normalizedW = colWeights.map((v) => Number((v / wSum).toFixed(3)))
+
+		// 4. Vertical divider slants vs: driven by adjacent beat tension differential.
+		const vs = Array.from({ length: Math.max(0, cols - 1) }, (_, k) => {
+			const leftBeat = rowBeats[k]
+			const rightBeat = rowBeats[k + 1]
+			const leftTau = rowTensions[k] ?? 0.5
+			const rightTau = rowTensions[k + 1] ?? 0.5
+			if (leftBeat?.silent || rightBeat?.silent) {
+				return { s: 0, g: 12 }
+			}
+			const slant = Number(clamp((rightTau - leftTau) * 0.22 + (rightBeat?.angle === 'dutch' ? 0.08 : 0), -0.15, 0.15).toFixed(3))
+			return { s: slant, g: 12 }
+		})
+
+		// 5. Per-panel bleed flags (bT, bB, bL, bR).
+		const panels: PanelGene[] = rowBeats.map((b, cIdx) => {
+			const globalIdx = cursor + cIdx
+			const tau = rowTensions[cIdx] ?? 0.5
+			const isPeak = globalIdx === peakIdx && tau >= 0.78
+			const isOpeningWide = globalIdx === 0 && (b.shot === 'WS' || b.shot === 'EWS')
+			return {
+				nest: null,
+				bT: isOpeningWide && rowIdx === 0,
+				bB: isPeak && rowIdx === rowCols.length - 1,
+				bR: (isOpeningWide && cIdx === 0) || (isPeak && cols === 1),
+				bL: isPeak && (cIdx === cols - 1 || cols === 1),
+			}
+		})
+
+		decisionTrace.push(
+			`Row ${rowIdx + 1} (P${cursor + 1}..P${cursor + cols}): hWeight=${rawH.toFixed(2)}, slope=${rowSlope.toFixed(2)}, colW=[${normalizedW.join(', ')}]`,
+		)
+		rowBeats.forEach((b, cIdx) => {
+			const globalIdx = cursor + cIdx
+			const pGene = panels[cIdx]
+			const bleedFlags = [pGene.bT && '上', pGene.bB && '下', pGene.bL && '左', pGene.bR && '右'].filter(Boolean).join('/')
+			decisionTrace.push(
+				`  └ P${globalIdx + 1}: ${b.shot}/${b.angle}/${b.focalMm ?? b.focal} f/${b.fStop ?? 2.8} · τ=${(rowTensions[cIdx] ?? 0.5).toFixed(2)}${b.silent ? ' · [静默间Ma]' : ''}${bleedFlags ? ` · [出血:${bleedFlags}]` : ''}`,
+			)
+		})
+
+		rows.push({
+			h: rawH,
+			s: rowSlope,
+			g: 14,
+			w: normalizedW,
+			vs,
+			p: panels,
+		})
+		cursor += cols
+	})
+
+	const rawHMean = rows.reduce((acc, r) => acc + r.h, 0) / Math.max(1, rows.length)
+	rows.forEach((r) => {
+		r.h = Number(clamp(r.h / Math.max(0.2, rawHMean), 0.55, 1.75).toFixed(3))
+	})
+
+	const genome = sanitize({ rows })
+	return {
+		genome,
+		panelTensions,
+		decisionTrace,
+	}
+}
+
+/** Stage 3 compiler. Realizes the tension-coupled polygon layout directly from the programmatic genome. */
 export function compileTensionCoupledLayout(
 	seed: string,
 	beats: Beat[],
 	scenario: Scenario,
 	preset = 'std',
 ): {
+	genome: Genome
 	layout: Layout
 	score: number
 	reasons: string[]
+	decisionTrace: string[]
 	panelTensions: number[]
 	subsplitInsets: Array<SubsplitInsetSpec | null>
 } {
 	const targetPanels = Math.max(1, beats.length || 1)
 	const config = configFor(preset, targetPanels)
-	const picked = pickTopLayouts(seed, config, targetPanels, scenario, 28)
-	const best = picked.top[0]
-	// Re-realize from the chosen genome so the half-plane clipping is authoritative.
-	const layout: Layout = { ...realize(best.layout.genome, config), seed: best.seed }
+	const programmatic = compileProgrammaticLayoutGenome(beats, scenario, seed)
+	const realized = realize(programmatic.genome, config)
+	const layout: Layout = { ...realized, seed: `${seed}-jev-locked` }
+	const scored = layoutScore(layoutFeatures(layout), targetPanels, scenario)
+	// Also sample stochastic candidates so we can report comparative ranking while keeping programmatic genome authoritative.
+	const picked = pickTopLayouts(seed, config, targetPanels, scenario, 12)
+	const bestScore = Math.max(scored.score, picked.top[0]?.score ?? scored.score)
 	const panelCount = layout.panels.length
 	const fitted = fitBeatsToCount(beats, panelCount)
 
@@ -567,7 +812,6 @@ export function compileTensionCoupledLayout(
 		if (beat?.subsplitInset?.enabled) {
 			subsplitInsets.push(beat.subsplitInset)
 		} else if (beat && tension >= 0.7 && (beat.who?.length ?? 0) >= 2) {
-			// Auto-generate a reaction PiP inset for a high-tension multi-subject beat.
 			const reactionTag = beat.assetRefs?.[1] ?? beat.who[1] ?? beat.who[0]
 			subsplitInsets.push({
 				enabled: true,
@@ -581,7 +825,20 @@ export function compileTensionCoupledLayout(
 		}
 	}
 
-	return { layout, score: best.score, reasons: best.reasons, panelTensions, subsplitInsets }
+	const combinedReasons = [
+		...programmatic.decisionTrace.slice(0, 4),
+		...scored.reasons,
+	]
+
+	return {
+		genome: programmatic.genome,
+		layout,
+		score: bestScore,
+		reasons: combinedReasons,
+		decisionTrace: programmatic.decisionTrace,
+		panelTensions,
+		subsplitInsets,
+	}
 }
 
 function readingDirectionCorner(_scenario: Scenario): 'rtl' | 'ltr' {
@@ -1098,6 +1355,7 @@ function lockAsset(
 	category: DiscreteAssetCategory,
 	tokens: string,
 	customFileName?: string,
+	referenceDataUrl?: string,
 ): DiscreteAsset {
 	const slug = slugifyTag(tag)
 	const fileName = customFileName ?? `${slug}.png`
@@ -1107,10 +1365,11 @@ function lockAsset(
 		category,
 		name,
 		fileName,
-		filePath: `assets/${category}/${fileName}`,
+		filePath: referenceDataUrl ?? `assets/${category}/${fileName}`,
 		visualLockTokens: tokens,
 		viewsIncluded: VIEWS_BY_CATEGORY[category],
 		approved: true,
+		referenceDataUrl,
 		usedInPanels: [],
 	}
 }
@@ -1131,14 +1390,14 @@ export const UNIVERSAL_STORY_PRESETS: Record<string, UniversalStoryPreset> = {
 		environment: 'rocky pier at low tide',
 		lighting: 'overcast soft bounce',
 		characters: [
-			{ tag: '@gull_philosopher', name: 'The Philosopher Gull', appearance: 'lean grey gull, tilted head, one squinting eye', voice: 'slow, aphoristic', locked: true },
-			{ tag: '@gull_foodie', name: 'The Foodie Gull', appearance: 'plump white gull, eager posture, crumb-dusted beak', voice: 'impatient, hungry', locked: true },
+			{ tag: '@gull_philosopher', name: 'The Philosopher Gull', appearance: 'lean grey gull, tilted head, one squinting eye', voice: 'slow, aphoristic', locked: true, imageDataUrl: '/assets/seagull/char_gull_philosopher.jpg' },
+			{ tag: '@gull_foodie', name: 'The Foodie Gull', appearance: 'plump white gull, eager posture, crumb-dusted beak', voice: 'impatient, hungry', locked: true, imageDataUrl: '/assets/seagull/char_gull_foodie.jpg' },
 		],
 		assets: [
-			lockAsset('@gull_philosopher', 'The Philosopher Gull', 'character', 'lean grey gull, squint eye, driftwood-grey tone'),
-			lockAsset('@gull_foodie', 'The Foodie Gull', 'character', 'plump white gull, crumb-dusted beak, eager stance'),
-			lockAsset('#prop_pier_fries_cone', 'Golden Fries Cone', 'prop', 'paper cone of golden fries, warm spot accent'),
-			lockAsset('#env_rocky_pier_cliff', 'Rocky Pier Cliff', 'environment', 'weathered pier planks, barnacle cliff, salt haze'),
+			lockAsset('@gull_philosopher', 'The Philosopher Gull', 'character', 'lean grey gull, squint eye, driftwood-grey tone', 'char_gull_philosopher.jpg', '/assets/seagull/char_gull_philosopher.jpg'),
+			lockAsset('@gull_foodie', 'The Foodie Gull', 'character', 'plump white gull, crumb-dusted beak, eager stance', 'char_gull_foodie.jpg', '/assets/seagull/char_gull_foodie.jpg'),
+			lockAsset('#prop_pier_fries_cone', 'Golden Fries Cone', 'prop', 'paper cone of golden fries, warm spot accent', 'prop_pier_fries_cone.jpg', '/assets/seagull/prop_pier_fries_cone.jpg'),
+			lockAsset('#env_rocky_pier_cliff', 'Rocky Pier Cliff', 'environment', 'weathered pier planks, barnacle cliff, salt haze', 'env_rocky_pier_cliff.jpg', '/assets/seagull/env_rocky_pier_cliff.jpg'),
 		],
 		panels: [
 			{ shot: 'EWS', angle: 'high', focal: '35mm', beat: 'Wide establishing: two gulls flank a single fries cone on the pier.', who: ['@gull_philosopher', '@gull_foodie'], assetRefs: ['#env_rocky_pier_cliff', '#prop_pier_fries_cone'], mccloudTransition: 'scene_to_scene', wordPictureMode: 'additive', tension: 0.3, eyeline: [14, 8], focalPointRel: [0.5, 0.55], lines: [{ type: 'caption', text: '潮水退去，留下一只金黄薯条筒。', placement: 'top-right' }] },
@@ -1170,6 +1429,7 @@ export const UNIVERSAL_STORY_PRESETS: Record<string, UniversalStoryPreset> = {
 				appearance: '身穿深炭灰双排扣风衣的刑警，鹰隼般锐利的眼神，前倾压迫姿态，伦勃朗侧光勾勒半张冷峻脸庞',
 				voice: '冷笑审视，步步紧逼',
 				locked: true,
+				imageDataUrl: '/assets/interrogation/asset_char_lu_chen.jpg',
 			},
 			{
 				tag: '@lin_ye',
@@ -1177,6 +1437,7 @@ export const UNIVERSAL_STORY_PRESETS: Record<string, UniversalStoryPreset> = {
 				appearance: '身穿浅灰旧风衣的旧书店整理员，双手交叠在审讯桌上表面镇定，右袖口沾有一抹刺眼的旧码头红丹防锈漆',
 				voice: '沉默克制，暗藏惊惧',
 				locked: true,
+				imageDataUrl: '/assets/interrogation/asset_char_lin_ye.jpg',
 			},
 			{
 				tag: '@shen_mo',
@@ -1184,6 +1445,7 @@ export const UNIVERSAL_STORY_PRESETS: Record<string, UniversalStoryPreset> = {
 				appearance: '坐在单向观察窗阴影里的警局副局长，半脸隐没在百叶窗暗部，左撇子反手握持旧铜打火机点燃香烟',
 				voice: '深沉威严，隐于暗处',
 				locked: true,
+				imageDataUrl: '/assets/interrogation/asset_char_shen_mo.jpg',
 			},
 		],
 		assets: [
@@ -1251,6 +1513,7 @@ export const UNIVERSAL_STORY_PRESETS: Record<string, UniversalStoryPreset> = {
 				focal: '18mm',
 				focalMm: 24,
 				fStop: 5.6,
+				imageDataUrl: '/assets/interrogation/panel1_establishing.jpg',
 				beat: 'P01-01 · 暴雨冲刷着警局三楼百叶窗，狭长审讯室内只有一盏吊灯摇晃。陆沉与林野隔着金属审讯桌对坐。',
 				who: ['@lu_chen', '@lin_ye'],
 				assetRefs: ['#env_interrogation_room', '#style_seinen_noir', '@lu_chen', '@lin_ye'],
@@ -1281,6 +1544,7 @@ export const UNIVERSAL_STORY_PRESETS: Record<string, UniversalStoryPreset> = {
 				focal: '35mm',
 				focalMm: 35,
 				fStop: 2.8,
+				imageDataUrl: '/assets/interrogation/panel2_cuff_probe.jpg',
 				beat: 'P01-02 · 陆沉隔着金属审讯桌前倾，目光如刀压向林野沾着红丹防锈漆的右袖口，林野双手交叠保持表面镇定。',
 				who: ['@lu_chen', '@lin_ye'],
 				assetRefs: ['@lu_chen', '@lin_ye', '#prop_rust_cuff', '#style_seinen_noir'],
@@ -1313,6 +1577,7 @@ export const UNIVERSAL_STORY_PRESETS: Record<string, UniversalStoryPreset> = {
 				focal: '85mm',
 				focalMm: 85,
 				fStop: 1.4,
+				imageDataUrl: '/assets/interrogation/panel3_watch_macro.jpg',
 				beat: 'P01-03 · 陆沉指尖将裂开的银壳怀表推到金属桌面正中央，表盘指针死死卡在 23:17；右下画中画切出林野瞳孔骤缩与泛白指节。',
 				who: ['@lu_chen', '@lin_ye'],
 				assetRefs: ['@lu_chen', '@lin_ye', '#prop_pocket_watch', '#style_seinen_noir'],
@@ -1357,6 +1622,7 @@ export const UNIVERSAL_STORY_PRESETS: Record<string, UniversalStoryPreset> = {
 				focal: '50mm',
 				focalMm: 50,
 				fStop: 2.0,
+				imageDataUrl: '/assets/interrogation/panel4_silent_lighter_spark.jpg',
 				beat: 'P01-04 · 林野垂下眼帘一言不发，审讯室陷入死寂，只有单向玻璃角落阴影里的旧铜打火机齿轮空转并擦出一星火苗。',
 				who: ['@lin_ye', '@shen_mo'],
 				assetRefs: ['@lin_ye', '@shen_mo', '#prop_brass_lighter', '#style_seinen_noir'],
@@ -1381,6 +1647,7 @@ export const UNIVERSAL_STORY_PRESETS: Record<string, UniversalStoryPreset> = {
 				focal: '35mm',
 				focalMm: 28,
 				fStop: 2.0,
+				imageDataUrl: '/assets/interrogation/panel5_climax_accusation.jpg',
 				beat: 'P01-05 · 陆沉猛然转头越过林野，手指直刺向单向玻璃旁阴影中用左手点燃香烟的副局长沈默！左下画中画切出怀表内盖左撇子刮痕铁证。',
 				who: ['@lu_chen', '@shen_mo'],
 				assetRefs: ['@lu_chen', '@shen_mo', '#prop_pocket_watch', '#prop_brass_lighter', '#style_seinen_noir'],

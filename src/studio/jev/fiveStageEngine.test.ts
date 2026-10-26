@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
 	categoryForTag,
+	compileProgrammaticLayoutGenome,
 	compileStage4PureArtSpec,
 	compileTensionCoupledLayout,
 	createAssetRegistry,
@@ -18,6 +19,7 @@ import {
 } from './fiveStageEngine'
 import { metaFromBeat } from '../model'
 import { planBubbles, toLayoutBubbles } from '../editor/placement'
+import { bubbleMarkup, computeProsodyBadgeAnchor } from '../render/bubbles'
 import type { Beat } from '../model'
 import type { Pt, RealizedPanel } from '../layout/engine'
 
@@ -399,3 +401,117 @@ describe('Interrogation Room (noir-ch03-interrogation) — full 5-stage verifica
 		expect(bookByAlias?.chapters[0].pages[0].beats).toHaveLength(5)
 	})
 })
+
+describe("Programmatic Stage 2+3 Layout & Camera Decision Lock-in", () => {
+	it("deterministically synthesizes tension-coupled Genome [2,2,1], diagonal slopes, climax bleed, and 14-factor optics", () => {
+		const preset = UNIVERSAL_STORY_PRESETS["noir-watchmaker"];
+		const stage2 = runIterativePolling4Pass(preset.panels, "rtl", preset.scenario);
+		expect(stage2.axisAuditPass).toBe(true);
+		expect(stage2.repairedBeats).toHaveLength(5);
+		expect(stage2.repairedBeats[0].focalMm).toBe(24);
+		expect(stage2.repairedBeats[2].focalMm).toBe(85);
+		expect(stage2.repairedBeats[4].angle).toBe("dutch");
+		expect(stage2.repairedBeats[4].tension).toBeGreaterThanOrEqual(0.85);
+
+		const prog = compileProgrammaticLayoutGenome(stage2.repairedBeats, preset.scenario, "noir-lock");
+		expect(prog.panelTensions).toHaveLength(5);
+		expect(prog.genome.rows).toHaveLength(3);
+		expect(prog.genome.rows.map((r) => r.w.length)).toEqual([2, 2, 1]);
+		// Last row is the high-tension climax hook -> bottom & horizontal bleed locked
+		expect(prog.genome.rows[2].p[0].bB).toBe(true);
+		expect(prog.decisionTrace.length).toBeGreaterThanOrEqual(4);
+		expect(prog.decisionTrace[0]).toContain("Stage2→3 程式化决策");
+
+		const compiled = compileTensionCoupledLayout("noir-lock", stage2.repairedBeats, preset.scenario, preset.layoutPreset);
+		expect(compiled.layout.panels).toHaveLength(5);
+		expect(compiled.decisionTrace.length).toBeGreaterThanOrEqual(4);
+	});
+
+	it("pre-wires real AI artwork imageDataUrl paths into noir-watchmaker and seagull-fries presets", () => {
+		const noir = universalPresetToBook("noir-watchmaker");
+		expect(noir).not.toBeNull();
+		const noirBeats = noir!.chapters[0].pages[0].beats;
+		expect(noirBeats.every((b) => b.imageDataUrl && b.imageDataUrl.startsWith("/assets/interrogation/"))).toBe(true);
+		expect(noir!.characters.every((c) => c.imageDataUrl && c.imageDataUrl.startsWith("/assets/interrogation/"))).toBe(true);
+
+		const gull = universalPresetToBook("seagull-fries");
+		expect(gull).not.toBeNull();
+		expect(gull!.characters.every((c) => c.imageDataUrl && c.imageDataUrl.startsWith("/assets/seagull/"))).toBe(true);
+	});
+});
+
+describe("Independent Prosody Layer & Bubble Style Controls", () => {
+	it("renders all 5 prosody styles (pill, seal, slant, burst, minimal), supports independent drag offsets, and respects hideProsody", () => {
+		const styles = ["pill", "seal", "slant", "burst", "minimal"] as const;
+		for (const prosodyStyle of styles) {
+			const svg = bubbleMarkup({
+				style: "speech",
+				text: "看着这只怀表！",
+				prosody: "冷笑审视",
+				emphasis: 1.1,
+				w: 180,
+				h: 96,
+				tailX: 90,
+				tailY: 118,
+				spin: -4,
+				prosodyStyle,
+				prosodyOffsetX: 24,
+				prosodyOffsetY: -12,
+				prosodyScale: 1.25,
+				prosodyColor: "#c93d35",
+				fillColor: "#f1f5f9",
+			});
+			expect(svg).toContain(`data-prosody-style="${prosodyStyle}"`);
+			expect(svg).toContain("冷笑审视");
+			expect(svg).toContain("#c93d35");
+		}
+
+		const baseAnchor = computeProsodyBadgeAnchor({
+			style: "speech",
+			text: "看着这只怀表！",
+			prosody: "冷笑审视",
+			emphasis: 1,
+			w: 180,
+			h: 96,
+			tailX: 90,
+			tailY: 118,
+			spin: 0,
+			prosodyStyle: "pill",
+			prosodyOffsetX: 0,
+			prosodyOffsetY: 0,
+			prosodyScale: 1.2,
+		});
+		const shiftedAnchor = computeProsodyBadgeAnchor({
+			style: "speech",
+			text: "看着这只怀表！",
+			prosody: "冷笑审视",
+			emphasis: 1,
+			w: 180,
+			h: 96,
+			tailX: 90,
+			tailY: 118,
+			spin: 0,
+			prosodyStyle: "pill",
+			prosodyOffsetX: 30,
+			prosodyOffsetY: -15,
+			prosodyScale: 1.2,
+		});
+		expect(shiftedAnchor.visible).toBe(true);
+		expect(shiftedAnchor.cx - baseAnchor.cx).toBeCloseTo(30);
+		expect(shiftedAnchor.cy - baseAnchor.cy).toBeCloseTo(-15);
+
+		const hiddenSvg = bubbleMarkup({
+			style: "speech",
+			text: "隐藏语气层测试",
+			prosody: "不显示",
+			emphasis: 1,
+			w: 180,
+			h: 90,
+			tailX: 90,
+			tailY: 110,
+			spin: 0,
+			hideProsody: true,
+		});
+		expect(hiddenSvg).not.toContain("prosody-independent-layer");
+	});
+});
