@@ -7,6 +7,12 @@ import {
 	type Pt,
 	type RealizedPanel,
 } from './layout/engine'
+import type {
+	McCloudTransition,
+	NormalizedBox,
+	SubsplitInsetSpec,
+	WordPictureMode,
+} from './jev/fiveStageEngine'
 import type { Scenario } from './layout/score'
 import type { SensorId } from './optics/shotLab'
 
@@ -40,6 +46,16 @@ export interface Beat {
 	fStop?: number
 	subjectDistM?: number
 	bgDistM?: number
+	// Universal (story-agnostic) JEV 5-stage fields.
+	assetRefs?: string[]
+	mccloudTransition?: McCloudTransition
+	wordPictureMode?: WordPictureMode
+	tension?: number
+	focalPointRel?: [number, number]
+	subjectBoxesRel?: NormalizedBox[]
+	subsplitInset?: SubsplitInsetSpec
+	hasBubbleGate?: boolean
+	hasSfxGate?: boolean
 }
 
 export interface PanelMeta {
@@ -65,6 +81,16 @@ export interface PanelMeta {
 	subjectDistM?: number
 	bgDistM?: number
 	prevBeat?: string
+	// Universal (story-agnostic) JEV 5-stage fields mirrored from Beat.
+	assetRefs?: string[]
+	mccloudTransition?: McCloudTransition
+	wordPictureMode?: WordPictureMode
+	tension?: number
+	focalPointRel?: [number, number]
+	subjectBoxesRel?: NormalizedBox[]
+	subsplitInset?: SubsplitInsetSpec
+	hasBubbleGate?: boolean
+	hasSfxGate?: boolean
 }
 
 export interface CharacterDraft {
@@ -169,6 +195,15 @@ export function metaFromBeat(beat: Beat, panel: RealizedPanel, seed: string, ind
 		fStop,
 		subjectDistM: beat.subjectDistM ?? 2.4,
 		bgDistM: beat.bgDistM ?? 14,
+		assetRefs: beat.assetRefs,
+		mccloudTransition: beat.mccloudTransition,
+		wordPictureMode: beat.wordPictureMode,
+		tension: beat.tension,
+		focalPointRel: beat.focalPointRel,
+		subjectBoxesRel: beat.subjectBoxesRel,
+		subsplitInset: beat.subsplitInset,
+		hasBubbleGate: beat.hasBubbleGate,
+		hasSfxGate: beat.hasSfxGate,
 	}
 }
 
@@ -225,17 +260,27 @@ export function buildPanelPrompt(input: {
 	corner: string
 	silent?: boolean
 	opticsClause?: string
+	styleClause?: string
+	hasBubble?: boolean
 }): string {
+	// Story-agnostic bubble gate: default to reserving balloon space when a corner is
+	// supplied, but suppress it when the panel is silent or the caller declares no bubble.
+	const hasBubble = input.hasBubble ?? input.silent !== true
+	const reserveBalloon = hasBubble && input.silent !== true
+	const spaceClause = reserveBalloon
+		? `native aspect ${input.aspect}, include 12% bleed past the panel, leave empty negative space in the ${input.corner} for a speech balloon, no face in that corner`
+		: `native aspect ${input.aspect}, include 12% bleed past the panel, full-frame visual composition with zero dialogue balloon reservation`
 	return [
 		'Manga panel, black ink line art with screentone, spot red only',
 		input.environment,
 		input.lighting,
 		`${input.shot} shot, ${input.angle} angle, ${input.focal}`,
 		input.opticsClause,
+		input.styleClause,
 		input.locks,
 		input.beat,
 		input.silent ? 'silent contemplation beat, zero dialogue balloons, dramatic negative space' : '',
-		`native aspect ${input.aspect}, include 12% bleed past the panel, leave empty negative space in the ${input.corner} for a speech balloon, no face in that corner`,
+		spaceClause,
 		'NO text, NO letters, NO speech bubbles, NO captions, NO sound-effect lettering',
 	]
 		.filter(Boolean)

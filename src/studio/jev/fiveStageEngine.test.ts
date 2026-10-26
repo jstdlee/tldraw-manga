@@ -1,0 +1,334 @@
+import { describe, expect, it } from 'vitest'
+import {
+	categoryForTag,
+	compileStage4PureArtSpec,
+	compileTensionCoupledLayout,
+	createAssetRegistry,
+	registryForPreset,
+	renderGazeFocalTrajectorySvg,
+	runIterativePolling4Pass,
+	solveAntiOcclusionBubblePlacement,
+	solveOnDemandBubbleAndSfxGates,
+	solvePageGazeFocalTrajectory,
+	splitChineseDialogueBalloons,
+	universalPresetToBook,
+	UNIVERSAL_STORY_PRESETS,
+	verifyAssetRegistryAndBackfill,
+	type NormalizedBox,
+} from './fiveStageEngine'
+import { metaFromBeat } from '../model'
+import { planBubbles, toLayoutBubbles } from '../editor/placement'
+import type { Beat } from '../model'
+import type { Pt, RealizedPanel } from '../layout/engine'
+
+const PRESET_IDS = ['seagull-fries', 'noir-watchmaker', 'shonen-blade'] as const
+
+function squarePanel(size = 400): RealizedPanel {
+	return {
+		pts: [
+			[0, 0],
+			[size, 0],
+			[size, size],
+			[0, size],
+		] as Pt[],
+		row: 0,
+		col: 0,
+		sub: 0,
+	}
+}
+
+describe('Stage 1 — discrete asset registry verification & auto-backfill', () => {
+	it('categorizes tags purely from their prefix', () => {
+		expect(categoryForTag('@gull_philosopher')).toBe('character')
+		expect(categoryForTag('@char_hero')).toBe('character')
+		expect(categoryForTag('#prop_pier_fries_cone')).toBe('prop')
+		expect(categoryForTag('#env_rocky_pier_cliff')).toBe('environment')
+		expect(categoryForTag('#style_coastal_watercolor')).toBe('style')
+	})
+
+	it('auto-backfills every missing @char/#prop/#env/#style tag and never leaves Stage 4 blind', () => {
+		const registry = createAssetRegistry('proj-stage1')
+		const required = ['@char_hero', '#prop_sword', '#env_castle', '#style_ink']
+		const res = verifyAssetRegistryAndBackfill(required, registry)
+
+		expect(res.verified).toBe(true)
+		expect(res.resolvedAssets).toHaveLength(4)
+		expect(res.referenceImagePaths).toHaveLength(4)
+		expect(res.autoBackfilledTags.sort()).toEqual([...required].sort())
+		expect(res.resolvedAssets.every((asset) => asset.approved)).toBe(true)
+		expect(res.referenceImagePaths.every((path) => path.endsWith('.png'))).toBe(true)
+		expect(res.combinedLockPrompt).toContain('@char_hero')
+
+		// The registry has been mutated in place with approved, categorized assets.
+		expect(registry.assets['#prop_sword'].category).toBe('prop')
+		expect(registry.assets['#env_castle'].category).toBe('environment')
+		expect(registry.assets['#style_ink'].category).toBe('style')
+		expect(registry.assets['@char_hero'].category).toBe('character')
+
+		// A second verification resolves everything without any further backfill.
+		const again = verifyAssetRegistryAndBackfill(required, registry)
+		expect(again.autoBackfilledTags).toHaveLength(0)
+		expect(again.verified).toBe(true)
+	})
+
+	it('is deterministic for the same project + tag', () => {
+		const a = createAssetRegistry('proj-det')
+		const b = createAssetRegistry('proj-det')
+		verifyAssetRegistryAndBackfill(['#prop_lantern'], a)
+		verifyAssetRegistryAndBackfill(['#prop_lantern'], b)
+		expect(a.assets['#prop_lantern']).toEqual(b.assets['#prop_lantern'])
+	})
+})
+
+describe('Stage 2 — McCloud on-demand bubble & sfx gating', () => {
+	it('suppresses dialogue balloons on picture-specific panels', () => {
+		const res = solveOnDemandBubbleAndSfxGates({
+			wordPictureMode: 'picture_specific',
+			tension: 0.5,
+			lines: [{ type: 'speech', text: '本不该说出口的话' }],
+		})
+		expect(res.hasBubble).toBe(false)
+		expect(res.filteredLines.some((line) => line.type !== 'sfx')).toBe(false)
+	})
+
+	it('suppresses every balloon and sfx on silent panels', () => {
+		const res = solveOnDemandBubbleAndSfxGates({
+			silent: true,
+			tension: 0.95,
+			lines: [
+				{ type: 'sfx', text: '轰' },
+				{ type: 'speech', text: '喂' },
+			],
+		})
+		expect(res.hasBubble).toBe(false)
+		expect(res.hasSfx).toBe(false)
+		expect(res.filteredLines).toHaveLength(0)
+	})
+
+	it('suppresses redundant sfx on dialogue-only / low-tension panels', () => {
+		const res = solveOnDemandBubbleAndSfxGates({
+			tension: 0.3,
+			transition: 'subject_to_subject',
+			lines: [{ type: 'speech', text: '你说呢' }],
+		})
+		expect(res.hasBubble).toBe(true)
+		expect(res.hasSfx).toBe(false)
+	})
+
+	it('keeps an explicit sfx, and earns one on a high-tension action beat', () => {
+		expect(solveOnDemandBubbleAndSfxGates({ tension: 0.2, lines: [{ type: 'sfx', text: '咔' }] }).hasSfx).toBe(true)
+		expect(
+			solveOnDemandBubbleAndSfxGates({
+				tension: 0.82,
+				transition: 'action_to_action',
+				lines: [{ type: 'speech', text: '上' }],
+			}).hasSfx,
+		).toBe(true)
+	})
+})
+
+describe('Stage 2 — Chinese rhetorical-pause balloon splitting', () => {
+	it('splits a long line at rhetorical pauses into capped lead/follow balloons', () => {
+		const long = '你带来的东西，会让这座城市重新计时……也可能，让它彻底停摆。'
+		const parts = splitChineseDialogueBalloons(long, 12)
+		expect(parts.length).toBeGreaterThanOrEqual(2)
+		for (const part of parts) expect(Array.from(part).length).toBeLessThanOrEqual(12)
+	})
+
+	it('keeps short lines whole and returns nothing for empty input', () => {
+		expect(splitChineseDialogueBalloons('好的。')).toEqual(['好的。'])
+		expect(splitChineseDialogueBalloons('')).toEqual([])
+	})
+
+	it('hard-wraps a pause-free overflowing run', () => {
+		const parts = splitChineseDialogueBalloons('一二三四五六七八九十甲乙丙丁戊己', 8)
+		expect(parts.length).toBeGreaterThanOrEqual(2)
+		for (const part of parts) expect(Array.from(part).length).toBeLessThanOrEqual(8)
+	})
+})
+
+describe('Stage 2 — 4-pass iterative polling & 180-degree axis repair', () => {
+	it('converges across 4 passes and repairs an axis crossing', () => {
+		const beats: Beat[] = [
+			{ shot: 'CU', angle: 'low', focal: '85mm', beat: 'a', who: ['x'], eyeline: [28, 4], lines: [] },
+			{ shot: 'CU', angle: 'eye', focal: '85mm', beat: 'b', who: ['x'], eyeline: [-28, 4], lines: [] },
+			{ shot: 'MS', angle: 'eye', focal: '50mm', beat: 'c', who: ['x'], eyeline: [20, 2], lines: [] },
+		]
+		const res = runIterativePolling4Pass(beats, 'rtl')
+
+		expect(res.passLogs).toHaveLength(4)
+		expect(res.passLogs[0].name).toContain('Coarse')
+		for (let i = 1; i < res.passLogs.length; i += 1) {
+			expect(res.passLogs[i].score).toBeGreaterThanOrEqual(res.passLogs[i - 1].score)
+		}
+		expect(res.convergedScore).toBeGreaterThanOrEqual(res.passLogs[0].score)
+		expect(res.axisAuditPass).toBe(true)
+		expect(res.repairedBeats).toHaveLength(3)
+
+		// Original beats untouched; the repaired copy has the offending eyeline flipped.
+		expect(beats[1].eyeline).toEqual([-28, 4])
+		expect(res.repairedBeats[1].eyeline?.[0]).toBeGreaterThan(0)
+	})
+})
+
+describe('Stage 3 — tension-coupled continuous half-plane layout & sub-split PiP', () => {
+	it('realizes a polygon layout with per-panel tensions and PiP insets', () => {
+		const preset = UNIVERSAL_STORY_PRESETS['shonen-blade']
+		const res = compileTensionCoupledLayout('stage3-seed', preset.panels, preset.scenario, preset.layoutPreset)
+
+		expect(res.layout.panels.length).toBeGreaterThan(0)
+		expect(res.score).toBeGreaterThan(0)
+		expect(res.panelTensions).toHaveLength(res.layout.panels.length)
+		expect(res.subsplitInsets).toHaveLength(res.layout.panels.length)
+		expect(res.panelTensions.every((tension) => tension >= 0 && tension <= 1)).toBe(true)
+		expect(res.subsplitInsets.some(Boolean)).toBe(true)
+
+		for (const panel of res.layout.panels) {
+			expect(panel.pts.length).toBeGreaterThanOrEqual(3)
+		}
+	})
+})
+
+describe('Stage 4 — asset-locked pure camera prompt & conditional negative space', () => {
+	const preset = UNIVERSAL_STORY_PRESETS['noir-watchmaker']
+
+	it('reserves 0% balloon space on silent / picture-specific panels', () => {
+		const beat = preset.panels[1] // silent, picture_specific
+		const registry = registryForPreset(preset)
+		const panel = squarePanel()
+		const meta = metaFromBeat(beat, panel, 'noir', 1)
+		const spec = compileStage4PureArtSpec({
+			panelIndex: 1,
+			beat,
+			meta,
+			panelPts: panel.pts,
+			registry,
+			environment: preset.environment,
+			lighting: preset.lighting,
+		})
+		expect(spec.hasBubble).toBe(false)
+		expect(spec.negativeSpaceCorner).toBeNull()
+		expect(spec.negativeSpaceRatio).toBe(0)
+		expect(spec.pureCameraPrompt).toContain('0% speech balloon reservation')
+		expect(spec.referenceImagePaths).toHaveLength(beat.assetRefs?.length ?? 0)
+	})
+
+	it('reserves 24%-28% balloon space on a dialogue panel and locks assets', () => {
+		const beat = preset.panels[2] // speech, not silent
+		const registry = registryForPreset(preset)
+		const panel = squarePanel()
+		const meta = metaFromBeat(beat, panel, 'noir', 2)
+		const spec = compileStage4PureArtSpec({
+			panelIndex: 2,
+			beat,
+			meta,
+			panelPts: panel.pts,
+			registry,
+			environment: preset.environment,
+			lighting: preset.lighting,
+		})
+		expect(spec.hasBubble).toBe(true)
+		expect(spec.negativeSpaceCorner).not.toBeNull()
+		expect(spec.negativeSpaceRatio).toBeGreaterThanOrEqual(0.24)
+		expect(spec.negativeSpaceRatio).toBeLessThanOrEqual(0.28)
+		expect(spec.optics.equivFocalMm).toBeGreaterThan(0)
+		expect(spec.pureCameraPrompt).toContain('ASSET LOCK')
+		expect(spec.pureCameraPrompt).toContain('NO text')
+	})
+})
+
+describe('Stage 5 — anti-occlusion placement & saccadic gaze trajectory', () => {
+	it('shifts a balloon anchor out of the subject saliency box', () => {
+		const panel: Pt[] = [
+			[0, 0],
+			[400, 0],
+			[400, 400],
+			[0, 400],
+		]
+		const subject: NormalizedBox = [0.3, 0.3, 0.7, 0.7]
+		const res = solveAntiOcclusionBubblePlacement(panel, [subject], [0.5, 0.5], 0.3, 0.3)
+		expect(res.iouWithSubject).toBeLessThan(0.2)
+		const moved = Math.hypot(res.centerRel[0] - 0.5, res.centerRel[1] - 0.5)
+		expect(moved).toBeGreaterThan(0.1)
+	})
+
+	it('leaves a non-overlapping candidate in place', () => {
+		const panel: Pt[] = [
+			[0, 0],
+			[400, 0],
+			[400, 400],
+			[0, 400],
+		]
+		const subject: NormalizedBox = [0.4, 0.4, 0.6, 0.6]
+		const res = solveAntiOcclusionBubblePlacement(panel, [subject], [0.82, 0.18], 0.18, 0.12)
+		expect(res.centerRel[0]).toBeCloseTo(0.82)
+		expect(res.centerRel[1]).toBeCloseTo(0.18)
+	})
+
+	it('builds intra-panel chains and cross-gutter bezier saccades across all 3 universal presets', () => {
+		let sawLeadBubble = false
+		for (const id of PRESET_IDS) {
+			const preset = UNIVERSAL_STORY_PRESETS[id]
+			const compiled = compileTensionCoupledLayout(id, preset.panels, preset.scenario, preset.layoutPreset)
+			const layout = compiled.layout
+			const metas = layout.panels.map((panel, i) =>
+				metaFromBeat(preset.panels[i] ?? preset.panels[preset.panels.length - 1], panel, id, i),
+			)
+			const planned = planBubbles(layout, preset.panels)
+			const bubbles = toLayoutBubbles(planned, 460, 650, layout.width, layout.height).map((bubble) => ({
+				panelIndex: bubble.panelIndex,
+				style: bubble.style,
+				x: bubble.x,
+				y: bubble.y,
+				w: bubble.w,
+				h: bubble.h,
+			}))
+			const trajectory = solvePageGazeFocalTrajectory(layout, metas, bubbles, preset.readingDirection)
+
+			expect(trajectory.panelChains).toHaveLength(layout.panels.length)
+			expect(trajectory.crossGutterSaccades).toHaveLength(Math.max(0, layout.panels.length - 1))
+			expect(trajectory.flowContinuityScore).toBeGreaterThanOrEqual(0)
+			expect(trajectory.flowContinuityScore).toBeLessThanOrEqual(1)
+			expect(trajectory.globalSvgPathD).toContain('M')
+
+			for (const chain of trajectory.panelChains) {
+				const kinds = chain.orderedNodes.map((node) => node.kind)
+				expect(kinds).toContain('subject-focal')
+				expect(kinds).toContain('gaze-tip')
+				expect(kinds.indexOf('subject-focal')).toBeLessThan(kinds.indexOf('gaze-tip'))
+				if (kinds.includes('lead-bubble')) {
+					expect(kinds[0]).toBe('lead-bubble')
+					sawLeadBubble = true
+				}
+				expect(chain.intraPanelPathD.startsWith('M')).toBe(true)
+			}
+
+			for (const saccade of trajectory.crossGutterSaccades) {
+				expect(saccade.bezierPathD).toContain('C')
+				expect(saccade.saccadeLengthPx).toBeGreaterThanOrEqual(0)
+			}
+
+			const svg = renderGazeFocalTrajectorySvg(id, trajectory, layout.panels.map((panel, i) => ({ pts: panel.pts, meta: metas[i] })))
+			expect(svg.startsWith('<g')).toBe(true)
+			expect(svg).toContain('marker')
+			if (metas.some((meta) => meta.subsplitInset?.enabled)) {
+				expect(svg).toContain('PiP')
+			}
+		}
+		expect(sawLeadBubble).toBe(true)
+	})
+})
+
+describe('Universal story presets', () => {
+	it('exposes 3 presets, each convertible to a spawnable BookDraft with its 4 named assets', () => {
+		expect(Object.keys(UNIVERSAL_STORY_PRESETS).sort()).toEqual([...PRESET_IDS].sort())
+		for (const id of PRESET_IDS) {
+			const book = universalPresetToBook(id)
+			expect(book).not.toBeNull()
+			expect(book?.chapters[0].pages[0].beats.length).toBeGreaterThan(0)
+			const registry = registryForPreset(UNIVERSAL_STORY_PRESETS[id])
+			expect(Object.keys(registry.assets)).toHaveLength(4)
+		}
+		expect(universalPresetToBook('does-not-exist')).toBeNull()
+	})
+})

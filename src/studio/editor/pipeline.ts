@@ -41,6 +41,7 @@ import {
 	type PanelMeta,
 } from '../model'
 import { computeOptics, defaultOpticsForMeta } from '../optics/shotLab'
+import { runIterativePolling4Pass, universalPresetToBook } from '../jev/fiveStageEngine'
 import { blockTitle, defaultParams, type BlockId } from '../prompts/library'
 import { BUBBLE, CARD, CONTAINER, PROMPT, type CardKind, type MangaBubble, type MangaCard, type MangaContainer } from '../shapes/schema'
 import { planBubbles } from './placement'
@@ -94,6 +95,69 @@ export function revertPageDiff(editor: Editor, page: MangaContainer): void {
 export function seedDefaultIfEmpty(editor: Editor): void {
 	if (editor.getCurrentPageShapeIds().size > 0) return
 	spawnBook(editor, defaultBook())
+}
+
+/**
+ * Read dynamic character / discrete-asset visual locks from the Bible container
+ * cards on the canvas, replacing any single-story hardcoded lock string.
+ */
+export function readCharacterLocks(editor: Editor): string {
+	const cards = editor
+		.getCurrentPageShapes()
+		.filter((shape): shape is MangaCard => shape.type === CARD && (shape.props.kind === 'character' || shape.props.kind === 'image'))
+	const tags = cards.filter((card) => card.props.locked && card.props.tag).map((card) => card.props.tag)
+	const unique = Array.from(new Set(tags))
+	if (unique.length) return `${unique.join(' ')} 外观锁定`
+	return '角色与资产外观锁定'
+}
+
+/**
+ * Switch the canvas to any universal 5-stage story preset (fully story-agnostic),
+ * rebuilding the Bible, chapter and polygon storyboard pages from the preset.
+ */
+export function applyUniversalFiveStagePreset(editor: Editor, presetId: string): string {
+	const book = universalPresetToBook(presetId)
+	if (!book) return `未找到通用五阶段预设「${presetId}」`
+	spawnBook(editor, book)
+	return `已载入通用五阶段预设「${book.title}」并按 JEV 引擎重建画布分镜`
+}
+
+/**
+ * Run the JEV 5-stage compile on the active page(s): Stage 2 four-pass iterative
+ * polling + McCloud on-demand gating, then activate the Saccadic Focal-Gaze-Bubble
+ * Trajectory overlay. Fully story-agnostic — it reads whatever beats the page holds.
+ */
+export function runJevFiveStageCompile(editor: Editor): string {
+	const pages = selectedPages(editor)
+	if (!pages.length) return '请先选择要进行 JEV 五阶段编译的分镜页'
+	let totalPanels = 0
+	let minScore = 1
+	let axisOk = true
+	for (const page of pages) {
+		const overrides = readPageParams(page.props.mood, page.props.layoutPreset)
+		const config = configFor(page.props.layoutPreset, page.props.targetPanels, overrides)
+		const layout = realize(sanitize(readJson(page.props.genomeJson, generate(page.props.seed, config).genome)), config)
+		const beats = fitBeats(readJson<Beat[]>(page.props.scriptJson, []), layout.panels.length)
+		const poll = runIterativePolling4Pass(beats, 'rtl')
+		const repaired = poll.repairedBeats
+		// Rebuild metas from the axis-repaired beats and re-plan gated bubbles.
+		const metas = layout.panels.map((panel, index) => metaFromBeat(repaired[index] ?? beats[index], panel, page.props.seed, index))
+		editor.updateShape<MangaContainer>({
+			id: page.id,
+			type: CONTAINER,
+			props: {
+				scriptJson: JSON.stringify(repaired),
+				panelsJson: JSON.stringify(metas),
+				showFlow: true,
+				subtitle: `${layout.panels.length} 格 · JEV 五阶段收敛 ${Math.round(poll.convergedScore * 100)} · ${poll.axisAuditPass ? '轴线连贯' : '仍有越轴'}`,
+			},
+		})
+		spawnPageBubbles(editor, page.id, layout, repaired, metas)
+		totalPanels += layout.panels.length
+		minScore = Math.min(minScore, poll.convergedScore)
+		axisOk = axisOk && poll.axisAuditPass
+	}
+	return `JEV 五阶段编译完成：${pages.length} 页 / ${totalPanels} 格 · 四轮迭代收敛 ${Math.round(minScore * 100)} 分 · McCloud 按需气泡门控与视线轨迹已激活${axisOk ? ' · 180° 轴线连贯' : ' · 注意残留越轴'}`
 }
 
 export function spawnBook(editor: Editor, book: BookDraft): void {
@@ -1125,12 +1189,15 @@ export async function runBlock(
 	}
 
 	let rendered = 0
+	const bibleLocks = readCharacterLocks(editor)
 	for (const page of selectedPages(editor)) {
 		const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
 		const next: PanelMeta[] = []
 		for (let index = 0; index < metas.length; index += 1) {
 			const meta = metas[index]
 			const opt = computeOptics(defaultOpticsForMeta(meta))
+			// Dynamic locks: Bible-derived character tags plus this panel's asset refs.
+			const locks = [bibleLocks, ...(meta.assetRefs ?? [])].filter(Boolean).join(' ')
 			const prompt = buildPanelPrompt({
 				environment: meta.environment || page.props.environment,
 				lighting: page.props.lighting,
@@ -1139,7 +1206,7 @@ export async function runBlock(
 				focal: meta.focal,
 				aspect: meta.aspect,
 				beat: meta.beat,
-				locks: '@kanta @mei @boss 外观锁定',
+				locks,
 				corner: safeCorner('top-right'),
 				silent: meta.silent,
 				opticsClause: opt.promptClause,

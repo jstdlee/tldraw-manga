@@ -18,17 +18,20 @@ import {
 	applyLayoutChoice,
 	applyOpticsToPanel,
 	applySelectedCardAiAction,
+	applyUniversalFiveStagePreset,
 	createImageCardOnCanvas,
 	createTextCardOnCanvas,
 	getCardDiff,
 	getPageDiff,
 	mutateSelectedPages,
 	polishPageWithAi,
+	readCharacterLocks,
 	rerollSelectedPages,
 	revertCardDiff,
 	revertPageDiff,
 	rewriteStoryWithLlm,
 	runBlock,
+	runJevFiveStageCompile,
 	selectedPages,
 	spawnBook,
 	spawnPromptBlock,
@@ -38,6 +41,7 @@ import {
 	toggleSilentPanelOnPage,
 	updatePageParametric,
 } from '../editor/pipeline'
+import { listUniversalPresets } from '../jev/fiveStageEngine'
 import { readerHtml } from '../export/htmlReader'
 import { downloadBlob, downloadText, exportOpenRaster, exportPagePng2400, exportPageSvgFile } from '../export/ora'
 import {
@@ -102,6 +106,13 @@ import {
 const PRESETS = ['seizen', 'std', 'action', 'tobira'] as const
 const BUBBLES: BubbleStyle[] = ['speech', 'thought', 'caption', 'whisper', 'shout', 'broadcast', 'sfx']
 const PROSODIES: Prosody[] = ['', '冷笑', '颤抖', '怒吼', '低语', '停顿']
+
+// Chinese display labels for the story-agnostic universal 5-stage presets.
+const UNIVERSAL_PRESET_LABELS: Record<string, string> = {
+	'seagull-fries': '海堤双鸥 · 水彩哲思',
+	'noir-watchmaker': '雨夜钟表匠 · 赛博黑色',
+	'shonen-blade': '风暴神社 · 热血决斗',
+}
 
 export type SidebarTab = 'cards' | 'layout' | 'story' | 'camera' | 'llm'
 
@@ -176,6 +187,35 @@ export function TopBar({
 					</button>
 					<button type="button" onClick={() => void run('AI 提炼设定集', (ed) => runBlock(ed, 'extract'))}>
 						<IconFileText /> 提炼设定
+					</button>
+					<select
+						className="universal-preset-select"
+						aria-label="通用五阶段故事预设（百搭故事无关）"
+						title="一键载入任意通用五阶段故事预设（海鸥 / 黑色钟表 / 热血决斗）"
+						value=""
+						onChange={(event) => {
+							const presetId = event.target.value
+							if (!presetId) return
+							void run('载入通用五阶段预设', (ed) => applyUniversalFiveStagePreset(ed, presetId))
+							event.currentTarget.value = ''
+						}}
+					>
+						<option value="" disabled>
+							通用预设…
+						</option>
+						{listUniversalPresets().map((preset) => (
+							<option key={preset.id} value={preset.id}>
+								{UNIVERSAL_PRESET_LABELS[preset.id] ?? preset.title}
+							</option>
+						))}
+					</select>
+					<button
+						type="button"
+						className="accent-btn"
+						title="对选中页运行 JEV 四轮迭代轮询、McCloud 按需气泡门控与视线焦点轨迹"
+						onClick={() => void run('JEV 五阶段编译', (ed) => runJevFiveStageCompile(ed))}
+					>
+						<IconLayers /> JEV 五阶段编译
 					</button>
 				</div>
 
@@ -1686,9 +1726,10 @@ export function FloatingBar({ onSwitchTab }: { onSwitchTab?: (tab: SidebarTab) =
 								focal: meta.focal,
 								aspect: meta.aspect,
 								beat: `${meta.beat} ${customInput}`.trim(),
-								locks: '@kanta @mei @boss',
+								locks: [readCharacterLocks(editor), ...(meta.assetRefs ?? [])].filter(Boolean).join(' '),
 								corner: safeCorner('top-right'),
 								silent: meta.silent,
+								hasBubble: !meta.silent,
 								opticsClause: computedOpt.promptClause,
 							})
 							const dataUrl = await askImage(prompt, meta.aspect)

@@ -5,7 +5,6 @@ import { energyFor } from '../editor/placement'
 import { rerollSelectedPages } from '../editor/pipeline'
 import { downloadBlob, exportPagePng2400, exportPageSvgFile } from '../export/ora'
 import {
-	centroid,
 	clamp,
 	configFor,
 	dragColDivider,
@@ -15,13 +14,35 @@ import {
 	sanitize,
 	type Divider,
 	type Genome,
+	type Layout,
 } from '../layout/engine'
 import { asScenario, layoutFeatures, layoutScore } from '../layout/score'
+import { renderGazeFocalTrajectorySvg, solvePageGazeFocalTrajectory } from '../jev/fiveStageEngine'
 import { readJson, readPageParams, refreshAspects, type PanelMeta } from '../model'
 import { renderPageSvg, type PageRenderModel } from '../render/pageSvg'
 import { IconBook, IconDownload, IconFrame, IconRefresh } from '../ui/icons'
 import { containerProps } from './props'
 import { BUBBLE, CONTAINER, type MangaBubble, type MangaContainer } from './schema'
+
+function placeholderMeta(seed: string, index: number): PanelMeta {
+	return {
+		imageSeed: `${seed}-p${index}`,
+		imageOffsetX: 0,
+		imageOffsetY: 0,
+		imageScale: 1,
+		imageRotation: 0,
+		aspect: '1:1',
+		shot: 'MS',
+		angle: 'eye',
+		focal: '50mm',
+		beat: '',
+		who: [],
+		fries: 'none',
+		eyeline: [8, -4],
+		imageDataUrl: '',
+		environment: '',
+	}
+}
 
 export class MangaContainerUtil extends BaseBoxShapeUtil<MangaContainer> {
 	static override type = CONTAINER
@@ -231,13 +252,29 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 	const reasons = readJson<string[]>(shape.props.reasonsJson, [])
 	const scenarioZh = SCENARIO_LABELS[shape.props.scenario] ?? shape.props.scenario
 
-	const centers = layout.panels.map((panel) => centroid(panel.pts))
 	const sx = layout.width / shape.props.w
 	const sy = layout.height / Math.max(1, shape.props.h - 60)
-	const bubbleChain = childBubbles
-		.slice()
-		.sort((a, b) => a.props.panelIndex - b.props.panelIndex || a.y - b.y)
-		.map((bubble) => `${((bubble.x + bubble.props.w / 2) * sx).toFixed(1)},${((bubble.y + bubble.props.h / 2) * sy).toFixed(1)}`)
+
+	// Live Saccadic Focal-Gaze-Bubble Trajectory for the on-canvas page: focal rings,
+	// gaze vectors, intra-panel bubble->focal->exit chains and cross-gutter saccades.
+	const gazeMarkup = useMemo(() => {
+		if (!shape.props.showFlow) return ''
+		const safeMetas = layout.panels.map((_, index) => metas[index] ?? placeholderMeta(shape.props.seed, index))
+		const gazeBubbles = childBubbles.map((bubble) => ({
+			panelIndex: bubble.props.panelIndex,
+			style: bubble.props.bubble,
+			x: bubble.x * sx,
+			y: bubble.y * sy,
+			w: bubble.props.w * sx,
+			h: bubble.props.h * sy,
+		}))
+		const trajectory = solvePageGazeFocalTrajectory(layout as Layout, safeMetas, gazeBubbles, 'rtl')
+		return renderGazeFocalTrajectorySvg(
+			`${shape.id.replace(/[^a-zA-Z0-9]/g, '')}flow`,
+			trajectory,
+			layout.panels.map((panel, index) => ({ pts: panel.pts, meta: safeMetas[index] })),
+		)
+	}, [shape.props.showFlow, shape.props.seed, shape.id, layout, metas, childBubbles, sx, sy])
 
 	const stopEvent = (event: React.SyntheticEvent) => {
 		event.stopPropagation()
@@ -382,31 +419,8 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 						/>
 					) : null}
 
-					{shape.props.showFlow ? (
-						<g className="flow-overlay" pointerEvents="none">
-							{centers.length > 1 ? (
-								<polyline
-									points={centers.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')}
-									fill="none"
-									stroke="#c93d35"
-									strokeWidth={4}
-									strokeLinecap="round"
-								/>
-							) : null}
-							{centers.map(([cx, cy], index) => {
-								const eye = metas[index]?.eyeline ?? [12, -4]
-								return (
-									<g key={index}>
-										<circle cx={cx} cy={cy} r={14} fill="#c93d35" />
-										<text x={cx} y={cy + 5} textAnchor="middle" fontSize="13" fontWeight="900" fill="#fff">
-											{index + 1}
-										</text>
-										<line x1={cx} y1={cy} x2={cx + eye[0] * 3} y2={cy + eye[1] * 3} stroke="#1f8a5b" strokeWidth={3.5} />
-									</g>
-								)
-							})}
-							{bubbleChain.length > 1 ? <polyline points={bubbleChain.join(' ')} fill="none" stroke="#1e78c8" strokeWidth={3} strokeDasharray="8 6" /> : null}
-						</g>
+					{shape.props.showFlow && gazeMarkup ? (
+						<g className="flow-overlay" pointerEvents="none" dangerouslySetInnerHTML={{ __html: gazeMarkup }} />
 					) : null}
 
 					{layout.dividers.map((divider, index) => (

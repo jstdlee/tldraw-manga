@@ -240,6 +240,25 @@ body,
 	color: #ffffff;
 }
 
+.universal-preset-select {
+	height: 25px;
+	padding: 0 6px;
+	border-radius: var(--st-radius-sm);
+	border: 1px solid var(--st-border);
+	background: var(--st-bg-panel);
+	color: var(--st-text-1);
+	font-family: var(--st-font-sans);
+	font-size: 11.5px;
+	font-weight: 500;
+	cursor: pointer;
+	max-width: 150px;
+	transition: border-color 0.12s ease;
+}
+
+.universal-preset-select:hover {
+	border-color: var(--st-accent);
+}
+
 .status-pill {
 	font-size: 11px;
 	color: var(--st-text-2);
