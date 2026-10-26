@@ -215,7 +215,7 @@ export function renderPageSvg(model: PageRenderModel): string {
 
 	const bubbleLayers = includeBubbles
 		? model.bubbles
-				.filter((b) => !silentSet.has(b.panelIndex))
+				.filter((b) => !silentSet.has(b.panelIndex) || b.style === 'sfx')
 				.map(
 					(bubble) =>
 						`<g transform="translate(${bubble.x.toFixed(1)} ${bubble.y.toFixed(1)})">${bubbleMarkup(bubble)}</g>`,

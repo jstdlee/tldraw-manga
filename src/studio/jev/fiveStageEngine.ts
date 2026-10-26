@@ -200,6 +200,13 @@ export type WordPictureMode =
 	| 'montage'
 	| 'interdependent'
 
+export type McCloudChoice =
+	| 'choice_of_moment'
+	| 'choice_of_frame'
+	| 'choice_of_image'
+	| 'choice_of_word'
+	| 'choice_of_flow'
+
 export interface McCloudFiveChoices {
 	moment: string
 	frame: string
@@ -336,8 +343,13 @@ export function solveOnDemandBubbleAndSfxGates(input: {
 	// SFX gate.
 	let hasSfx: boolean
 	if (input.silent === true) {
-		hasSfx = false
-		reasons.push('silent beat suppresses sfx')
+		if (input.wordPictureMode === 'picture_specific' && hasExplicitSfx && input.tension <= 0.45) {
+			hasSfx = true
+			reasons.push('silent picture-specific Ma beat permits ambient micro-sfx')
+		} else {
+			hasSfx = false
+			reasons.push('silent beat suppresses sfx')
+		}
 	} else if (hasExplicitSfx) {
 		hasSfx = true
 		reasons.push('explicit sfx line present')
@@ -390,7 +402,8 @@ export function splitChineseDialogueBalloons(text: string, maxCharsPerBalloon = 
 			buffer = segment
 			continue
 		}
-		if (Array.from(buffer).length + Array.from(segment).length <= maxCharsPerBalloon) {
+		const endsWithDramaticPause = buffer.endsWith('——') || buffer.endsWith('……')
+		if (!endsWithDramaticPause && Array.from(buffer).length + Array.from(segment).length <= maxCharsPerBalloon) {
 			buffer += segment
 		} else {
 			merged.push(buffer)
@@ -1084,15 +1097,17 @@ function lockAsset(
 	name: string,
 	category: DiscreteAssetCategory,
 	tokens: string,
+	customFileName?: string,
 ): DiscreteAsset {
 	const slug = slugifyTag(tag)
+	const fileName = customFileName ?? `${slug}.png`
 	return {
 		assetId: `preset-${slug}`,
 		tag,
 		category,
 		name,
-		fileName: `${slug}.png`,
-		filePath: `assets/${category}/${slug}.png`,
+		fileName,
+		filePath: `assets/${category}/${fileName}`,
 		visualLockTokens: tokens,
 		viewsIncluded: VIEWS_BY_CATEGORY[category],
 		approved: true,
@@ -1136,34 +1151,274 @@ export const UNIVERSAL_STORY_PRESETS: Record<string, UniversalStoryPreset> = {
 	},
 	'noir-watchmaker': {
 		id: 'noir-watchmaker',
-		title: 'The Rain Chronometer',
-		subtitle: 'Cyber-noir clockwork detective thriller',
+		title: '第三章：雨夜审讯室的停摆怀表 (Noir Interrogation)',
+		subtitle: '硬派青年漫·伦勃朗黑色电影审讯推理 (noir-ch03-interrogation)',
 		logline:
-			'Detective Lin trades a stolen brass chronometer with the archivist Kuro beneath a rain-lashed clocktower as the hour strikes.',
-		world: 'High-contrast cyber-noir ink, neon rain reflections, deep cast shadow, right-to-left reading, cold cyan spot accent.',
-		stylePreset: 'cyber-noir-ink',
+			'暴雨夜的旧港警署审讯室里，刑警陆沉用一枚死死卡在 23:17 的裂纹银壳怀表，从红丹防锈漆袖口一路逼出单向玻璃阴影里的真凶。',
+		world: '浦泽直树式硬派青年漫黑白灰蓝冷调 + 伦勃朗 50% 半脸明暗分割 + 百叶窗雨夜条纹投影 + 金属桌面冷反光，从右至左阅读。',
+		stylePreset: 'seinen_noir',
 		readingDirection: 'rtl',
 		scenario: 'tension',
 		layoutPreset: 'std',
-		mood: 'cold · clocklike dread',
-		environment: 'rain-soaked clocktower interior',
-		lighting: 'hard neon key, deep shadow',
+		mood: '冷峻 · 窒息审讯 · 雷霆逆转',
+		environment: 'interrogation-room',
+		lighting: 'rim',
 		characters: [
-			{ tag: '@detective_lin', name: 'Detective Lin', appearance: 'sharp trench coat, rain-slick fringe, tired eyes', voice: 'clipped, weary', locked: true },
-			{ tag: '@archivist_kuro', name: 'Archivist Kuro', appearance: 'gloved archivist, high collar, half-lit face', voice: 'measured, cryptic', locked: true },
+			{
+				tag: '@lu_chen',
+				name: '侦探·陆沉',
+				appearance: '身穿深炭灰双排扣风衣的刑警，鹰隼般锐利的眼神，前倾压迫姿态，伦勃朗侧光勾勒半张冷峻脸庞',
+				voice: '冷笑审视，步步紧逼',
+				locked: true,
+			},
+			{
+				tag: '@lin_ye',
+				name: '嫌疑人·林野',
+				appearance: '身穿浅灰旧风衣的旧书店整理员，双手交叠在审讯桌上表面镇定，右袖口沾有一抹刺眼的旧码头红丹防锈漆',
+				voice: '沉默克制，暗藏惊惧',
+				locked: true,
+			},
+			{
+				tag: '@shen_mo',
+				name: '副局长·沈默',
+				appearance: '坐在单向观察窗阴影里的警局副局长，半脸隐没在百叶窗暗部，左撇子反手握持旧铜打火机点燃香烟',
+				voice: '深沉威严，隐于暗处',
+				locked: true,
+			},
 		],
 		assets: [
-			lockAsset('@detective_lin', 'Detective Lin', 'character', 'trench coat, rain-slick fringe, cyan rim-light'),
-			lockAsset('@archivist_kuro', 'Archivist Kuro', 'character', 'gloved, high collar, half-lit cryptic face'),
-			lockAsset('#prop_brass_chronometer', 'Brass Chronometer', 'prop', 'ornate brass chronometer, spinning gears, cyan glow'),
-			lockAsset('#env_rain_clocktower', 'Rain Clocktower', 'environment', 'vast gear room, rain through broken glass, neon'),
+			lockAsset(
+				'@lu_chen',
+				'侦探·陆沉',
+				'character',
+				'身穿深炭灰双排扣风衣的刑警，鹰隼般锐利的眼神，前倾压迫姿态，伦勃朗侧光勾勒半张冷峻脸庞',
+				'asset_char_lu_chen.png',
+			),
+			lockAsset(
+				'@lin_ye',
+				'嫌疑人·林野',
+				'character',
+				'身穿浅灰旧风衣的旧书店整理员，双手交叠在审讯桌上表面镇定，右袖口沾有一抹刺眼的旧码头红丹防锈漆',
+				'asset_char_lin_ye.png',
+			),
+			lockAsset(
+				'@shen_mo',
+				'副局长·沈默',
+				'character',
+				'坐在单向观察窗阴影里的警局副局长，半脸隐没在百叶窗暗部，左撇子反手握持旧铜打火机点燃香烟',
+				'asset_char_shen_mo.png',
+			),
+			lockAsset(
+				'#prop_pocket_watch',
+				'裂纹银壳怀表 (23:17)',
+				'prop',
+				'死者遗留的裂纹银壳怀表，蓝钢指针死死卡在 23:17，表盖内侧留有左撇子反手调表的反向刮痕',
+				'asset_prop_pocket_watch.png',
+			),
+			lockAsset(
+				'#prop_rust_cuff',
+				'袖口红丹防锈漆',
+				'prop',
+				'林野风衣袖口边缘干涸的砖红色码头防锈漆痕迹',
+				'asset_prop_rust_cuff.png',
+			),
+			lockAsset(
+				'#prop_brass_lighter',
+				'旧铜打火机',
+				'prop',
+				'沈默左手握持的旧黄铜砂轮打火机，跳动出橘金火苗',
+				'asset_prop_brass_lighter.png',
+			),
+			lockAsset(
+				'#env_interrogation_room',
+				'旧港警署三楼审讯室',
+				'environment',
+				'暴雨冲刷百叶窗、摇晃单盏吊灯、冰冷不锈钢审讯桌与单向玻璃观察窗',
+				'asset_env_interrogation_room.png',
+			),
+			lockAsset(
+				'#style_seinen_noir',
+				'硬派青年漫·伦勃朗黑色电影风',
+				'style',
+				'浦泽直树式写实冷峻线条 + 伦勃朗半脸侧逆光 + 雨夜百叶窗条纹光影',
+				'asset_style_seinen_noir.png',
+			),
 		],
 		panels: [
-			{ shot: 'EWS', angle: 'high', focal: '18mm', beat: 'Establishing: two silhouettes dwarfed by the great gear wall.', who: ['@detective_lin', '@archivist_kuro'], assetRefs: ['#env_rain_clocktower'], mccloudTransition: 'scene_to_scene', wordPictureMode: 'additive', tension: 0.55, eyeline: [16, 10], focalPointRel: [0.5, 0.52], lines: [{ type: 'caption', text: '子夜。钟塔内，雨水顺着齿轮滴落。', placement: 'top-right' }] },
-			{ shot: 'CU', angle: 'eye', focal: '85mm', beat: 'Close on the brass chronometer in Lin’s gloved palm.', who: ['@detective_lin'], assetRefs: ['@detective_lin', '#prop_brass_chronometer'], mccloudTransition: 'moment_to_moment', wordPictureMode: 'picture_specific', tension: 0.6, silent: true, eyeline: [-8, 6], focalPointRel: [0.5, 0.5], lines: [] },
-			{ shot: 'MCU', angle: 'low', focal: '50mm', beat: 'Kuro extends a gloved hand from the shadow.', who: ['@archivist_kuro'], assetRefs: ['@archivist_kuro'], mccloudTransition: 'subject_to_subject', wordPictureMode: 'word_specific', tension: 0.64, eyeline: [22, -4], focalPointRel: [0.6, 0.42], lines: [{ type: 'speech', text: '你带来的东西，会让这座城市重新计时……也可能,让它彻底停摆。', placement: 'top-left' }] },
-			{ shot: 'MS', angle: 'dutch', focal: '35mm', beat: 'The hour strikes; both react as gears roar to life.', who: ['@detective_lin', '@archivist_kuro'], assetRefs: ['@detective_lin', '@archivist_kuro', '#prop_brass_chronometer'], mccloudTransition: 'action_to_action', wordPictureMode: 'duo_specific', tension: 0.82, eyeline: [-18, 8], focalPointRel: [0.48, 0.48], subsplitInset: { enabled: true, targetTag: '@archivist_kuro', rectRel: [0.64, 0.58, 0.95, 0.94], shot: 'CU', caption: 'reaction' }, lines: [{ type: 'sfx', text: '铛——！', placement: 'top-right' }, { type: 'speech', text: '时间到了。', prosody: '停顿', placement: 'bottom-left' }] },
-			{ shot: 'ECU', angle: 'eye', focal: '85mm', beat: 'Extreme close: the chronometer hands lock at midnight.', who: ['@detective_lin'], assetRefs: ['#prop_brass_chronometer'], mccloudTransition: 'aspect_to_aspect', wordPictureMode: 'interdependent', tension: 0.78, eyeline: [4, -10], focalPointRel: [0.5, 0.46], lines: [{ type: 'whisper', text: '别回头。', prosody: '低语', placement: 'bottom-right' }] },
+			{
+				shot: 'WS',
+				angle: 'eye',
+				focal: '18mm',
+				focalMm: 24,
+				fStop: 5.6,
+				beat: 'P01-01 · 暴雨冲刷着警局三楼百叶窗，狭长审讯室内只有一盏吊灯摇晃。陆沉与林野隔着金属审讯桌对坐。',
+				who: ['@lu_chen', '@lin_ye'],
+				assetRefs: ['#env_interrogation_room', '#style_seinen_noir', '@lu_chen', '@lin_ye'],
+				tension: 0.42,
+				focalPointRel: [0.50, 0.54],
+				eyeline: [18, 4],
+				mccloudChoice: 'choice_of_frame',
+				mccloudTransition: 'scene_to_scene',
+				wordPictureMode: 'additive',
+				lines: [
+					{
+						type: 'caption',
+						speaker: '旁白',
+						prosody: '冷峻低沉 · 叙述方框',
+						placement: 'top-right',
+						text: '十一点四十分。雨还没有停的意思。',
+					},
+					{
+						type: 'sfx',
+						placement: 'bottom-left',
+						text: '哗啦啦——',
+					},
+				],
+			},
+			{
+				shot: 'MS',
+				angle: 'eye',
+				focal: '35mm',
+				focalMm: 35,
+				fStop: 2.8,
+				beat: 'P01-02 · 陆沉隔着金属审讯桌前倾，目光如刀压向林野沾着红丹防锈漆的右袖口，林野双手交叠保持表面镇定。',
+				who: ['@lu_chen', '@lin_ye'],
+				assetRefs: ['@lu_chen', '@lin_ye', '#prop_rust_cuff', '#style_seinen_noir'],
+				tension: 0.58,
+				focalPointRel: [0.46, 0.50],
+				eyeline: [26, 10],
+				mccloudChoice: 'choice_of_moment',
+				mccloudTransition: 'action_to_action',
+				wordPictureMode: 'interdependent',
+				lines: [
+					{
+						type: 'speech',
+						speaker: '@lu_chen',
+						prosody: '冷笑审视',
+						placement: 'top-right',
+						text: '你说你整晚都在书店整理旧画册——',
+					},
+					{
+						type: 'speech',
+						speaker: '@lu_chen',
+						prosody: '压迫追问',
+						placement: 'bottom-left',
+						text: '那你袖口上的码头红丹防锈漆，也是书架上蹭的？',
+					},
+				],
+			},
+			{
+				shot: 'ECU',
+				angle: 'high',
+				focal: '85mm',
+				focalMm: 85,
+				fStop: 1.4,
+				beat: 'P01-03 · 陆沉指尖将裂开的银壳怀表推到金属桌面正中央，表盘指针死死卡在 23:17；右下画中画切出林野瞳孔骤缩与泛白指节。',
+				who: ['@lu_chen', '@lin_ye'],
+				assetRefs: ['@lu_chen', '@lin_ye', '#prop_pocket_watch', '#style_seinen_noir'],
+				tension: 0.78,
+				focalPointRel: [0.46, 0.52],
+				eyeline: [22, 12],
+				mccloudChoice: 'choice_of_image',
+				mccloudTransition: 'subject_to_subject',
+				wordPictureMode: 'interdependent',
+				subsplitInset: {
+					enabled: true,
+					targetTag: '@lin_ye',
+					rectRel: [0.62, 0.60, 0.96, 0.95],
+					shot: 'ECU',
+					caption: 'PiP · 瞳孔微缩反应切格',
+				},
+				lines: [
+					{
+						type: 'speech',
+						speaker: '@lu_chen',
+						prosody: '低音叩击',
+						placement: 'top-right',
+						text: '看着它——',
+					},
+					{
+						type: 'speech',
+						speaker: '@lu_chen',
+						prosody: '一字一顿',
+						placement: 'bottom-left',
+						text: '这只表停下的时候，真正的凶手就在离你不到半米的地方。',
+					},
+					{
+						type: 'sfx',
+						placement: 'top-left',
+						text: '咔哒！',
+					},
+				],
+			},
+			{
+				shot: 'CU',
+				angle: 'eye',
+				focal: '50mm',
+				focalMm: 50,
+				fStop: 2.0,
+				beat: 'P01-04 · 林野垂下眼帘一言不发，审讯室陷入死寂，只有单向玻璃角落阴影里的旧铜打火机齿轮空转并擦出一星火苗。',
+				who: ['@lin_ye', '@shen_mo'],
+				assetRefs: ['@lin_ye', '@shen_mo', '#prop_brass_lighter', '#style_seinen_noir'],
+				tension: 0.30,
+				silent: true,
+				focalPointRel: [0.64, 0.54],
+				eyeline: [24, -4],
+				mccloudChoice: 'choice_of_word',
+				mccloudTransition: 'aspect_to_aspect',
+				wordPictureMode: 'picture_specific',
+				lines: [
+					{
+						type: 'sfx',
+						placement: 'bottom-right',
+						text: '嚓……',
+					},
+				],
+			},
+			{
+				shot: 'CU',
+				angle: 'dutch',
+				focal: '35mm',
+				focalMm: 28,
+				fStop: 2.0,
+				beat: 'P01-05 · 陆沉猛然转头越过林野，手指直刺向单向玻璃旁阴影中用左手点燃香烟的副局长沈默！左下画中画切出怀表内盖左撇子刮痕铁证。',
+				who: ['@lu_chen', '@shen_mo'],
+				assetRefs: ['@lu_chen', '@shen_mo', '#prop_pocket_watch', '#prop_brass_lighter', '#style_seinen_noir'],
+				tension: 0.94,
+				focalPointRel: [0.54, 0.46],
+				eyeline: [32, -8],
+				mccloudChoice: 'choice_of_flow',
+				mccloudTransition: 'moment_to_moment',
+				wordPictureMode: 'interdependent',
+				subsplitInset: {
+					enabled: true,
+					targetTag: '#prop_pocket_watch',
+					rectRel: [0.05, 0.60, 0.42, 0.95],
+					shot: 'ECU',
+					caption: 'PiP · 左撇子调表刮痕铁证',
+				},
+				lines: [
+					{
+						type: 'speech',
+						speaker: '@lu_chen',
+						prosody: '锋芒毕露',
+						placement: 'top-right',
+						text: '因为表盖内侧的刮痕只有左撇子反手调表才会留下——',
+					},
+					{
+						type: 'shout',
+						speaker: '@lu_chen',
+						prosody: '雷霆指认',
+						placement: 'bottom-right',
+						text: '我说的对吗，沈副局长？！',
+					},
+					{
+						type: 'sfx',
+						placement: 'top-left',
+						text: '轰——！！',
+					},
+				],
+			},
 		],
 	},
 	'shonen-blade': {
@@ -1212,8 +1467,13 @@ export function registryForPreset(preset: UniversalStoryPreset): AssetRegistry {
 }
 
 /** Convert a universal story preset id into a spawnable BookDraft, or null if unknown. */
+const PRESET_ALIASES: Record<string, string> = {
+	'noir-ch03-interrogation': 'noir-watchmaker',
+}
+
 export function universalPresetToBook(presetId: string): BookDraft | null {
-	const preset = UNIVERSAL_STORY_PRESETS[presetId]
+	const canonical = PRESET_ALIASES[presetId] ?? presetId
+	const preset = UNIVERSAL_STORY_PRESETS[canonical]
 	if (!preset) return null
 	return {
 		title: preset.title,

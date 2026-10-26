@@ -193,12 +193,12 @@ describe('Stage 4 — asset-locked pure camera prompt & conditional negative spa
 	const preset = UNIVERSAL_STORY_PRESETS['noir-watchmaker']
 
 	it('reserves 0% balloon space on silent / picture-specific panels', () => {
-		const beat = preset.panels[1] // silent, picture_specific
+		const beat = preset.panels[3] // P01-04 silent, picture_specific
 		const registry = registryForPreset(preset)
 		const panel = squarePanel()
-		const meta = metaFromBeat(beat, panel, 'noir', 1)
+		const meta = metaFromBeat(beat, panel, 'noir', 3)
 		const spec = compileStage4PureArtSpec({
-			panelIndex: 1,
+			panelIndex: 3,
 			beat,
 			meta,
 			panelPts: panel.pts,
@@ -327,8 +327,75 @@ describe('Universal story presets', () => {
 			expect(book).not.toBeNull()
 			expect(book?.chapters[0].pages[0].beats.length).toBeGreaterThan(0)
 			const registry = registryForPreset(UNIVERSAL_STORY_PRESETS[id])
-			expect(Object.keys(registry.assets)).toHaveLength(4)
+			expect(Object.keys(registry.assets).length).toBeGreaterThanOrEqual(4)
 		}
 		expect(universalPresetToBook('does-not-exist')).toBeNull()
+	})
+})
+
+
+describe('Interrogation Room (noir-ch03-interrogation) — full 5-stage verification', () => {
+	it('locks all 8 discrete assets, splits Chinese breathing dialogue, gates silent Ma panel P4, and solves 5-panel gaze HUD', () => {
+		const preset = UNIVERSAL_STORY_PRESETS['noir-watchmaker']
+		expect(preset.title).toContain('第三章：雨夜审讯室的停摆怀表')
+		expect(preset.assets).toHaveLength(8)
+		expect(preset.panels).toHaveLength(5)
+
+		const registry = registryForPreset(preset)
+		const gate = verifyAssetRegistryAndBackfill(
+			['@lu_chen', '@lin_ye', '@shen_mo', '#prop_pocket_watch', '#prop_rust_cuff', '#prop_brass_lighter', '#env_interrogation_room', '#style_seinen_noir'],
+			registry,
+		)
+		expect(gate.verified).toBe(true)
+		expect(gate.autoBackfilledTags).toHaveLength(0)
+
+		// Verify Chinese breathing pause splitter on P2, P3, P5 source lines
+		expect(
+			splitChineseDialogueBalloons('你说你整晚都在书店整理旧画册——那你袖口上的码头红丹防锈漆，也是书架上蹭的？', 26),
+		).toEqual(['你说你整晚都在书店整理旧画册——', '那你袖口上的码头红丹防锈漆，也是书架上蹭的？'])
+		expect(
+			splitChineseDialogueBalloons('看着它——这只表停下的时候，真正的凶手就在离你不到半米的地方。', 26),
+		).toEqual(['看着它——', '这只表停下的时候，真正的凶手就在离你不到半米的地方。'])
+		expect(
+			splitChineseDialogueBalloons('因为表盖内侧的刮痕只有左撇子反手调表才会留下——我说的对吗，沈副局长？！', 26),
+		).toEqual(['因为表盖内侧的刮痕只有左撇子反手调表才会留下——', '我说的对吗，沈副局长？！'])
+
+		// P2 has 0 SFX, P4 is silent Ma beat with 0 bubbles + 0% negative space + ambient micro-SFX '嚓……'
+		const p2Gate = solveOnDemandBubbleAndSfxGates({
+			wordPictureMode: preset.panels[1].wordPictureMode,
+			transition: preset.panels[1].mccloudTransition,
+			tension: preset.panels[1].tension ?? 0.58,
+			lines: preset.panels[1].lines,
+		})
+		expect(p2Gate.hasBubble).toBe(true)
+		expect(p2Gate.hasSfx).toBe(false)
+
+		const p4Gate = solveOnDemandBubbleAndSfxGates({
+			silent: preset.panels[3].silent,
+			wordPictureMode: preset.panels[3].wordPictureMode,
+			transition: preset.panels[3].mccloudTransition,
+			tension: preset.panels[3].tension ?? 0.3,
+			lines: preset.panels[3].lines,
+		})
+		expect(p4Gate.hasBubble).toBe(false)
+		expect(p4Gate.hasSfx).toBe(true)
+
+		const p4Panel = squarePanel()
+		const p4Art = compileStage4PureArtSpec({
+			panelIndex: 3,
+			beat: preset.panels[3],
+			meta: metaFromBeat(preset.panels[3], p4Panel, 'noir', 3),
+			panelPts: p4Panel.pts,
+			registry,
+			environment: preset.environment,
+			lighting: preset.lighting,
+		})
+		expect(p4Art.hasBubble).toBe(false)
+		expect(p4Art.negativeSpaceRatio).toBe(0)
+
+		// Alias 'noir-ch03-interrogation' resolves identically
+		const bookByAlias = universalPresetToBook('noir-ch03-interrogation')
+		expect(bookByAlias).not.toBeNull()
+		expect(bookByAlias?.chapters[0].pages[0].beats).toHaveLength(5)
 	})
 })

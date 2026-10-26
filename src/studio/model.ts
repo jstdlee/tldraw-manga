@@ -8,6 +8,7 @@ import {
 	type RealizedPanel,
 } from './layout/engine'
 import type {
+	McCloudChoice,
 	McCloudTransition,
 	NormalizedBox,
 	SubsplitInsetSpec,
@@ -20,7 +21,20 @@ export type Shot = 'EWS' | 'WS' | 'MS' | 'MCU' | 'CU' | 'ECU'
 export type Angle = 'low' | 'high' | 'eye' | 'bird' | 'dutch'
 export type Focal = '18mm' | '35mm' | '50mm' | '85mm'
 export type BubbleStyle = 'speech' | 'thought' | 'caption' | 'whisper' | 'shout' | 'broadcast' | 'sfx'
-export type Prosody = '' | '冷笑' | '颤抖' | '怒吼' | '低语' | '停顿'
+export type Prosody =
+	| ''
+	| '冷笑'
+	| '颤抖'
+	| '怒吼'
+	| '低语'
+	| '停顿'
+	| '冷峻低沉 · 叙述方框'
+	| '冷笑审视'
+	| '压迫追问'
+	| '低音叩击'
+	| '一字一顿'
+	| '锋芒毕露'
+	| '雷霆指认'
 export type FriesProp = 'none' | 'kanta' | 'gull' | 'air' | 'jar' | 'feather'
 
 export interface BubbleLine {
@@ -48,6 +62,7 @@ export interface Beat {
 	bgDistM?: number
 	// Universal (story-agnostic) JEV 5-stage fields.
 	assetRefs?: string[]
+	mccloudChoice?: McCloudChoice
 	mccloudTransition?: McCloudTransition
 	wordPictureMode?: WordPictureMode
 	tension?: number
@@ -83,6 +98,7 @@ export interface PanelMeta {
 	prevBeat?: string
 	// Universal (story-agnostic) JEV 5-stage fields mirrored from Beat.
 	assetRefs?: string[]
+	mccloudChoice?: McCloudChoice
 	mccloudTransition?: McCloudTransition
 	wordPictureMode?: WordPictureMode
 	tension?: number

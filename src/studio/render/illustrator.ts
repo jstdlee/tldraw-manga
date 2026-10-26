@@ -409,7 +409,312 @@ function actorId(name: string, index: number): string {
 	return index % 2 === 0 ? 'kanta' : 'mei'
 }
 
+
+function renderNoirInterrogationPanel(input: IllustrationInput): { viewBox: string; markup: string } {
+	const id = input.idPrefix
+	const pIdxMatch = id.match(/-p(\d+)$/)
+	const pIdx = pIdxMatch ? Number(pIdxMatch[1]) : -1
+
+	// Common Venetian blind & noir shadow defs
+	const defs = `
+		<defs>
+			<linearGradient id="${id}-noir-bg" x1="0" y1="0" x2="0" y2="1">
+				<stop offset="0" stop-color="#090d14"/>
+				<stop offset="0.55" stop-color="#111824"/>
+				<stop offset="1" stop-color="#070a10"/>
+			</linearGradient>
+			<linearGradient id="${id}-steel" x1="0" y1="0" x2="1" y2="0">
+				<stop offset="0" stop-color="#1e293b"/>
+				<stop offset="0.5" stop-color="#475569"/>
+				<stop offset="1" stop-color="#0f172a"/>
+			</linearGradient>
+			<radialGradient id="${id}-lamp-cone" cx="0.5" cy="0.18" r="0.65">
+				<stop offset="0" stop-color="#e2e8f0" stop-opacity="0.48"/>
+				<stop offset="0.55" stop-color="#94a3b8" stop-opacity="0.14"/>
+				<stop offset="1" stop-color="#090d14" stop-opacity="0"/>
+			</radialGradient>
+			<pattern id="${id}-blinds" width="1000" height="28" patternUnits="userSpaceOnUse">
+				<rect x="0" y="0" width="1000" height="15" fill="#05070b" opacity="0.68"/>
+				<rect x="0" y="15" width="1000" height="13" fill="#cbd5e1" opacity="0.08"/>
+			</pattern>
+		</defs>
+	`
+
+	// Panel 1 (P01-01): WS Establishing — Venetian blinds in heavy rain, swaying pendant lamp, steel table, Lu Chen & Lin Ye opposite
+	if (pIdx === 0 || (input.shot === 'WS' && !input.silent)) {
+		const rainLines = Array.from({ length: 28 }, (_, i) => {
+			const rx = 120 + i * 28
+			const ry = 60 + (i % 5) * 24
+			return `<line x1="${rx}" y1="${ry}" x2="${rx - 26}" y2="${ry + 180}" stroke="#94a3b8" stroke-width="1.6" opacity="0.35"/>`
+		}).join('')
+		const markup = `
+			${defs}
+			<rect x="0" y="0" width="1000" height="1000" fill="url(#${id}-noir-bg)"/>
+			<!-- Window with Venetian blinds and rain -->
+			<rect x="110" y="50" width="780" height="360" fill="#0f172a" stroke="#334155" stroke-width="4"/>
+			${rainLines}
+			<rect x="110" y="50" width="780" height="360" fill="url(#${id}-blinds)"/>
+			<!-- One-way observation mirror on left wall -->
+			<polygon points="30,140 105,170 105,520 30,560" fill="#0b1320" stroke="#475569" stroke-width="3"/>
+			<!-- Swaying pendant lamp -->
+			<line x1="500" y1="0" x2="485" y2="190" stroke="#cbd5e1" stroke-width="4"/>
+			<polygon points="435,225 535,225 505,185 465,185" fill="#1e293b" stroke="#e2e8f0" stroke-width="3"/>
+			<circle cx="485" cy="230" r="14" fill="#fef08a"/>
+			<polygon points="435,228 535,228 860,760 140,760" fill="url(#${id}-lamp-cone)"/>
+			<!-- Cold brushed-steel interrogation table -->
+			<polygon points="150,650 850,650 930,760 70,760" fill="url(#${id}-steel)" stroke="#94a3b8" stroke-width="3"/>
+			<rect x="210" y="760" width="26" height="190" fill="#1e293b"/>
+			<rect x="764" y="760" width="26" height="190" fill="#1e293b"/>
+			<!-- Detective Lu Chen (left, dark trench coat, leaning forward) -->
+			<g transform="translate(290 645)">
+				<path d="M-85,110 L-65,-115 L55,-125 L85,110 Z" fill="#0f172a" stroke="#cbd5e1" stroke-width="3"/>
+				<path d="M-25,-120 L10,-45 L35,-120" fill="#334155" stroke="#94a3b8" stroke-width="2"/>
+				<ellipse cx="5" cy="-168" rx="42" ry="48" fill="#1e293b" stroke="#e2e8f0" stroke-width="3"/>
+				<!-- Rembrandt half-face highlight -->
+				<path d="M5,-214 A42,48 0 0,1 47,-168 A42,48 0 0,1 5,-120 Z" fill="#cbd5e1" opacity="0.82"/>
+				<circle cx="24" cy="-172" r="4" fill="#090d14"/>
+			</g>
+			<!-- Suspect Lin Ye (right, worn grey coat, hands clasped on table) -->
+			<g transform="translate(705 648)">
+				<path d="M-75,110 L-58,-105 L62,-105 L78,110 Z" fill="#334155" stroke="#cbd5e1" stroke-width="3"/>
+				<ellipse cx="0" cy="-155" rx="40" ry="45" fill="#475569" stroke="#cbd5e1" stroke-width="3"/>
+				<path d="M-40,-155 A40,45 0 0,1 0,-200 L0,-110 A40,45 0 0,1 -40,-155 Z" fill="#cbd5e1" opacity="0.72"/>
+				<!-- Clasped hands + red-lead rust stain on right cuff -->
+				<rect x="-115" y="-18" width="52" height="22" rx="6" fill="#475569" stroke="#e2e8f0" stroke-width="2.5"/>
+				<path d="M-78,-14 Q-68,-4 -74,4 L-62,2 Z" fill="#dc2626"/>
+				<ellipse cx="-122" cy="-6" rx="18" ry="11" fill="#cbd5e1" stroke="#0f172a" stroke-width="2.5"/>
+			</g>
+		`
+		return { viewBox: '0 0 1000 1000', markup }
+	}
+
+	// Panel 2 (P01-02): MS Over-The-Shoulder — Lu Chen Rembrandt 50% side lighting, sharp gaze toward Lin Ye's rust-stained cuff
+	if (pIdx === 1 || (input.shot === 'MS' && !input.silent)) {
+		const markup = `
+			${defs}
+			<rect x="0" y="0" width="1000" height="1000" fill="url(#${id}-noir-bg)"/>
+			<rect x="0" y="0" width="1000" height="1000" fill="url(#${id}-blinds)"/>
+			<!-- Lu Chen medium close-up on upper-left with 50% Rembrandt split -->
+			<g transform="translate(330 470)">
+				<path d="M-210,380 L-165,-40 L175,-55 L230,380 Z" fill="#0f172a" stroke="#e2e8f0" stroke-width="4"/>
+				<!-- Double-breasted trench coat lapels -->
+				<path d="M-95,-45 L10,140 L95,-50" fill="none" stroke="#94a3b8" stroke-width="3.5"/>
+				<circle cx="-48" cy="95" r="7" fill="#64748b"/><circle cx="52" cy="90" r="7" fill="#64748b"/>
+				<!-- Head with stark 50% Rembrandt lighting -->
+				<ellipse cx="0" cy="-165" rx="92" ry="112" fill="#090d14" stroke="#e2e8f0" stroke-width="4"/>
+				<path d="M0,-277 A92,112 0 0,1 92,-165 A92,112 0 0,1 0,-53 Z" fill="#e2e8f0"/>
+				<!-- Rembrandt cheek triangle on shadow side -->
+				<polygon points="-52,-155 -18,-155 -34,-122" fill="#cbd5e1" opacity="0.85"/>
+				<!-- Hawk-like piercing eyes -->
+				<path d="M18,-182 L68,-192" stroke="#090d14" stroke-width="5" stroke-linecap="round"/>
+				<ellipse cx="44" cy="-170" rx="14" ry="8" fill="#090d14"/>
+				<circle cx="48" cy="-172" r="3.5" fill="#38bdf8"/>
+				<path d="M-64,-186 L-18,-178" stroke="#cbd5e1" stroke-width="4" stroke-linecap="round"/>
+				<circle cx="-40" cy="-168" r="3.5" fill="#e2e8f0"/>
+				<path d="M-14,-98 L36,-104" stroke="#090d14" stroke-width="4" stroke-linecap="round"/>
+			</g>
+			<!-- Steel table foreground & Lin Ye's right cuff with brick-red dock rust paint (#prop_rust_cuff) -->
+			<polygon points="0,700 1000,640 1000,1000 0,1000" fill="url(#${id}-steel)" stroke="#cbd5e1" stroke-width="3.5"/>
+			<!-- Gaze slash line from Lu Chen's eye to the rust cuff -->
+			<line x1="378" y1="300" x2="735" y2="755" stroke="#38bdf8" stroke-width="3" stroke-dasharray="12 8" opacity="0.8"/>
+			<g transform="translate(745 775)">
+				<!-- Worn grey sleeve cuff -->
+				<path d="M-110,-55 L125,-95 L155,45 L-85,65 Z" fill="#475569" stroke="#f8fafc" stroke-width="4"/>
+				<!-- Brick-red anti-rust paint stain (#prop_rust_cuff) -->
+				<path d="M-75,-18 Q-35,-42 12,-14 Q42,8 -8,36 Q-55,42 -75,-18 Z" fill="#dc2626" stroke="#fca5a5" stroke-width="2.5"/>
+				<circle cx="26" cy="18" r="9" fill="#b91c1c"/>
+				<!-- Clasped hands -->
+				<ellipse cx="-125" cy="12" rx="58" ry="34" fill="#cbd5e1" stroke="#0f172a" stroke-width="3.5"/>
+				<path d="M-165,2 H-85 M-160,16 H-88" stroke="#0f172a" stroke-width="3"/>
+				<!-- Target highlight ring around rust stain -->
+				<circle cx="-26" cy="8" r="64" fill="none" stroke="#ef4444" stroke-width="3" stroke-dasharray="8 6"/>
+			</g>
+		`
+		return { viewBox: '0 0 1000 1000', markup }
+	}
+
+	// Panel 3 (P01-03): ECU Macro — Cracked silver pocket watch frozen at 23:17 + PiP Lin Ye pupil/hand reaction inset
+	if (pIdx === 2 || input.shot === 'ECU') {
+		const radialLines = Array.from({ length: 36 }, (_, i) => {
+			const ang = (i / 36) * Math.PI * 2
+			const x1 = 440 + Math.cos(ang) * 210
+			const y1 = 500 + Math.sin(ang) * 210
+			const x2 = 440 + Math.cos(ang) * 620
+			const y2 = 500 + Math.sin(ang) * 620
+			return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#94a3b8" stroke-width="${i % 2 === 0 ? 2.6 : 1.2}" opacity="0.32"/>`
+		}).join('')
+		const markup = `
+			${defs}
+			<rect x="0" y="0" width="1000" height="1000" fill="url(#${id}-steel)"/>
+			${radialLines}
+			<!-- Shallow DOF f/1.4 bokeh highlights -->
+			<circle cx="170" cy="210" r="46" fill="#e2e8f0" opacity="0.16"/>
+			<circle cx="260" cy="150" r="28" fill="#e2e8f0" opacity="0.22"/>
+			<circle cx="780" cy="220" r="54" fill="#38bdf8" opacity="0.14"/>
+			<!-- Lu Chen's fingertip pushing the pocket watch -->
+			<path d="M120,180 L345,355 Q385,390 350,425 L95,250 Z" fill="#cbd5e1" stroke="#090d14" stroke-width="4"/>
+			<!-- Cracked silver pocket watch (#prop_pocket_watch) -->
+			<g transform="translate(445 515)">
+				<ellipse cx="12" cy="24" rx="195" ry="195" fill="#020617" opacity="0.65"/>
+				<!-- Crown & bow at top -->
+				<rect x="-24" y="-232" width="48" height="34" rx="8" fill="#cbd5e1" stroke="#0f172a" stroke-width="4"/>
+				<ellipse cx="0" cy="-248" rx="46" ry="26" fill="none" stroke="#e2e8f0" stroke-width="8"/>
+				<!-- Silver outer bezel -->
+				<circle cx="0" cy="0" r="192" fill="#e2e8f0" stroke="#0f172a" stroke-width="6"/>
+				<circle cx="0" cy="0" r="168" fill="#0b111e" stroke="#64748b" stroke-width="4"/>
+				<!-- Dial markings & 23:17 readout -->
+				<text x="0" y="-118" text-anchor="middle" font-size="34" font-weight="800" fill="#f8fafc" font-family="serif">XII</text>
+				<text x="128" y="12" text-anchor="middle" font-size="32" font-weight="800" fill="#f8fafc" font-family="serif">III</text>
+				<text x="0" y="144" text-anchor="middle" font-size="32" font-weight="800" fill="#f8fafc" font-family="serif">VI</text>
+				<text x="-128" y="12" text-anchor="middle" font-size="32" font-weight="800" fill="#f8fafc" font-family="serif">IX</text>
+				<rect x="-68" y="38" width="136" height="44" rx="6" fill="#1e293b" stroke="#38bdf8" stroke-width="2.5"/>
+				<text x="0" y="70" text-anchor="middle" font-size="30" font-weight="900" fill="#38bdf8" font-family="monospace">23:17</text>
+				<!-- Frozen blue-steel hands at 23:17 (hour hand near 11, minute hand at 17m) -->
+				<line x1="0" y1="0" x2="-58" y2="-88" stroke="#38bdf8" stroke-width="10" stroke-linecap="round"/>
+				<line x1="0" y1="0" x2="112" y2="68" stroke="#e2e8f0" stroke-width="7" stroke-linecap="round"/>
+				<circle cx="0" cy="0" r="12" fill="#f59e0b" stroke="#0f172a" stroke-width="3"/>
+				<!-- Spiderweb glass cracks -->
+				<path d="M-28,-36 L-145,-110 M-28,-36 L95,-145 M-28,-36 L152,-18 M-28,-36 L-130,98 M-28,-36 L45,148" stroke="#f8fafc" stroke-width="3" opacity="0.9"/>
+				<path d="M-85,-65 L-40,-125 L35,-92 L78,-12 L12,72 L-75,45 Z" fill="none" stroke="#cbd5e1" stroke-width="2" opacity="0.75"/>
+			</g>
+			<!-- PiP Sub-Split Reaction Inset (bottom-right: Lin Ye's dilated pupil & trembling knuckles) -->
+			<g transform="translate(620 600)">
+				<rect x="0" y="0" width="340" height="350" rx="8" fill="#090d14" stroke="#f8fafc" stroke-width="5"/>
+				<line x1="0" y1="190" x2="340" y2="165" stroke="#e2e8f0" stroke-width="3.5"/>
+				<!-- Upper PiP half: trembling contracted pupil -->
+				<path d="M35,95 Q170,18 305,95 Q170,172 35,95 Z" fill="#e2e8f0" stroke="#090d14" stroke-width="4"/>
+				<circle cx="170" cy="95" r="46" fill="#1e293b" stroke="#090d14" stroke-width="3"/>
+				<circle cx="170" cy="95" r="16" fill="#020617"/>
+				<circle cx="186" cy="80" r="8" fill="#f8fafc"/>
+				<circle cx="152" cy="106" r="5" fill="#38bdf8"/>
+				<!-- Lower PiP half: white-knuckled trembling fingers -->
+				<path d="M55,275 Q170,220 285,275" fill="none" stroke="#cbd5e1" stroke-width="28" stroke-linecap="round"/>
+				<path d="M40,245 L55,225 M295,245 L280,225 M170,210 L170,192" stroke="#38bdf8" stroke-width="3"/>
+				<rect x="8" y="8" width="215" height="30" rx="4" fill="#0f172a" opacity="0.9"/>
+				<text x="16" y="28" font-size="16" font-weight="700" fill="#38bdf8">PiP · 瞳孔微缩反应切格</text>
+			</g>
+		`
+		return { viewBox: '0 0 1000 1000', markup }
+	}
+
+	// Panel 4 (P01-04): Silent Ma Beat — 75% low-key chiaroscuro shadow, downcast Lin Ye, left-handed brass lighter spark in corner
+	if (pIdx === 3 || input.silent) {
+		const markup = `
+			${defs}
+			<!-- 75% heavy ink shadow background -->
+			<rect x="0" y="0" width="1000" height="1000" fill="#04060a"/>
+			<rect x="0" y="0" width="1000" height="520" fill="url(#${id}-blinds)" opacity="0.55"/>
+			<!-- Silent stillness vertical Ma hatch lines -->
+			${Array.from({ length: 18 }, (_, i) => `<line x1="${80 + i * 50}" y1="60" x2="${80 + i * 50}" y2="260" stroke="#475569" stroke-width="1.4" opacity="0.35"/>`).join('')}
+			<!-- Left foreground: Suspect Lin Ye with downcast eyes in chiaroscuro -->
+			<g transform="translate(275 585)">
+				<path d="M-190,390 L-145,-20 L145,-20 L185,390 Z" fill="#0f172a" stroke="#64748b" stroke-width="3"/>
+				<ellipse cx="0" cy="-135" rx="86" ry="104" fill="#090d14" stroke="#94a3b8" stroke-width="3.5"/>
+				<!-- Subtle rim highlight on bowed forehead & nose bridge -->
+				<path d="M-86,-135 A86,104 0 0,1 -10,-238 L-10,-32 A86,104 0 0,1 -86,-135 Z" fill="#94a3b8" opacity="0.45"/>
+				<!-- Downcast closed eyelids -->
+				<path d="M-58,-132 Q-34,-116 -12,-132" fill="none" stroke="#e2e8f0" stroke-width="4" stroke-linecap="round"/>
+				<path d="M16,-132 Q38,-116 60,-132" fill="none" stroke="#64748b" stroke-width="3.5" stroke-linecap="round"/>
+				<path d="M-24,-74 H22" stroke="#64748b" stroke-width="3" stroke-linecap="round"/>
+			</g>
+			<!-- Right background corner shadow (one-way mirror): Deputy Chief Shen Mo's LEFT hand striking the brass lighter (#prop_brass_lighter) -->
+			<g transform="translate(735 535)">
+				<radialGradient id="${id}-spark-glow" cx="0.5" cy="0.5" r="0.5">
+					<stop offset="0" stop-color="#fde047" stop-opacity="0.95"/>
+					<stop offset="0.35" stop-color="#f59e0b" stop-opacity="0.55"/>
+					<stop offset="1" stop-color="#04060a" stop-opacity="0"/>
+				</radialGradient>
+				<circle cx="0" cy="-45" r="190" fill="url(#${id}-spark-glow)"/>
+				<!-- Half-hidden silhouette of Shen Mo behind Venetian blinds -->
+				<ellipse cx="35" cy="-185" rx="68" ry="82" fill="#090d14" stroke="#475569" stroke-width="2.5"/>
+				<line x1="-35" y1="-175" x2="105" y2="-175" stroke="#f59e0b" stroke-width="2" opacity="0.45"/>
+				<!-- Weathered brass lighter body -->
+				<rect x="-28" y="-18" width="56" height="88" rx="6" fill="#b45309" stroke="#fde047" stroke-width="3"/>
+				<rect x="-22" y="-38" width="32" height="20" fill="#d97706" stroke="#fde047" stroke-width="2.5"/>
+				<!-- Flint wheel & warm amber spark -->
+				<circle cx="14" cy="-32" r="12" fill="#78350f" stroke="#fef08a" stroke-width="3"/>
+				<path d="M0,-44 C-22,-78 -6,-112 0,-132 C12,-108 26,-78 0,-44 Z" fill="#f59e0b"/>
+				<path d="M0,-50 C-10,-72 -3,-96 0,-110 C6,-94 12,-72 0,-50 Z" fill="#fef08a"/>
+				<!-- Sparks flying from left-handed thumb wheel strike -->
+				<line x1="14" y1="-32" x2="-38" y2="-68" stroke="#fef08a" stroke-width="3" stroke-linecap="round"/>
+				<line x1="14" y1="-32" x2="54" y2="-74" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round"/>
+				<line x1="14" y1="-32" x2="62" y2="-38" stroke="#fef08a" stroke-width="2.5" stroke-linecap="round"/>
+				<!-- Left hand thumb & fingers gripping from the left side -->
+				<path d="M-78,12 Q-42,-28 -8,-24 L-12,58 L-72,62 Z" fill="#cbd5e1" stroke="#090d14" stroke-width="3.5"/>
+			</g>
+		`
+		return { viewBox: '0 0 1000 1000', markup }
+	}
+
+	// Panel 5 (P01-05): Climax CU (-14 deg Dutch Roll) — Lu Chen pointing at left-handed Shen Mo + PiP watch-lid reverse scratch evidence
+	const climaxLines = Array.from({ length: 42 }, (_, i) => {
+		const ang = (i / 42) * Math.PI * 2
+		const x1 = 540 + Math.cos(ang) * 160
+		const y1 = 440 + Math.sin(ang) * 160
+		const x2 = 540 + Math.cos(ang) * 700
+		const y2 = 440 + Math.sin(ang) * 700
+		return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#e2e8f0" stroke-width="${i % 3 === 0 ? 3.5 : 1.5}" opacity="0.38"/>`
+	}).join('')
+	const markup = `
+		${defs}
+		<rect x="0" y="0" width="1000" height="1000" fill="url(#${id}-noir-bg)"/>
+		<g transform="rotate(-14 500 500)">
+			<rect x="-150" y="-150" width="1300" height="1300" fill="url(#${id}-blinds)" opacity="0.7"/>
+			${climaxLines}
+			<!-- Stark diagonal Venetian light slash -->
+			<polygon points="-100,260 1100,80 1100,240 -100,420" fill="#e2e8f0" opacity="0.18"/>
+			<!-- Detective Lu Chen turning sharply & pointing accusing finger right -->
+			<g transform="translate(450 520)">
+				<path d="M-210,380 L-150,-55 L175,-65 L235,380 Z" fill="#0f172a" stroke="#f8fafc" stroke-width="4.5"/>
+				<ellipse cx="-15" cy="-175" rx="88" ry="106" fill="#090d14" stroke="#f8fafc" stroke-width="4"/>
+				<path d="M-15,-281 A88,106 0 0,1 73,-175 A88,106 0 0,1 -15,-69 Z" fill="#f8fafc"/>
+				<!-- Fierce narrowed eyes & shouting mouth -->
+				<path d="M4,-196 L58,-212" stroke="#090d14" stroke-width="6" stroke-linecap="round"/>
+				<circle cx="32" cy="-184" r="9" fill="#090d14"/>
+				<circle cx="35" cy="-186" r="3.5" fill="#38bdf8"/>
+				<polygon points="-8,-118 42,-124 34,-94 -12,-96" fill="#090d14" stroke="#f8fafc" stroke-width="2"/>
+				<!-- Foreshortened accusing arm & pointing index finger -->
+				<path d="M85,-45 L335,-125 L355,-75 L105,25 Z" fill="#1e293b" stroke="#f8fafc" stroke-width="4"/>
+				<path d="M335,-122 L445,-148 L452,-118 L352,-88 Z" fill="#f8fafc" stroke="#090d14" stroke-width="4"/>
+			</g>
+			<!-- Deputy Chief Shen Mo (@shen_mo) exposed in right shadow with left-handed lighter -->
+			<g transform="translate(865 365)">
+				<ellipse cx="0" cy="-65" rx="64" ry="78" fill="#090d14" stroke="#94a3b8" stroke-width="3.5"/>
+				<path d="M-64,-65 A64,78 0 0,1 0,-143 L0,13 A64,78 0 0,1 -64,-65 Z" fill="#cbd5e1" opacity="0.78"/>
+				<circle cx="-24" cy="-72" r="6" fill="#f59e0b"/>
+				<!-- Left hand holding lit brass lighter -->
+				<rect x="-58" y="34" width="38" height="62" rx="5" fill="#b45309" stroke="#fde047" stroke-width="3"/>
+				<path d="M-39,28 C-52,2 -42,-24 -39,-38 C-28,-18 -22,4 -39,28 Z" fill="#fde047"/>
+			</g>
+		</g>
+		<!-- PiP Sub-Split Evidence Inset (bottom-left: Reverse left-handed scratch inside watch lid × left-handed lighter grip) -->
+		<g transform="translate(48 595)">
+			<rect x="0" y="0" width="370" height="355" rx="8" fill="#090d14" stroke="#f8fafc" stroke-width="5"/>
+			<line x1="185" y1="38" x2="185" y2="355" stroke="#e2e8f0" stroke-width="3"/>
+			<!-- Left half: Inside of silver pocket watch lid with reverse left-handed screwdriver scratch -->
+			<circle cx="95" cy="195" r="76" fill="#1e293b" stroke="#e2e8f0" stroke-width="4"/>
+			<circle cx="95" cy="195" r="62" fill="#334155" stroke="#94a3b8" stroke-width="2"/>
+			<path d="M135,155 L52,228 M142,168 L64,238" stroke="#ef4444" stroke-width="4.5" stroke-linecap="round"/>
+			<text x="95" y="305" text-anchor="middle" font-size="15" font-weight="700" fill="#fca5a5">左撇子反手调表刮痕</text>
+			<!-- Right half: Shen Mo's left thumb striking the brass lighter wheel -->
+			<rect x="252" y="165" width="48" height="76" rx="5" fill="#b45309" stroke="#fde047" stroke-width="3"/>
+			<path d="M276,155 C262,128 272,102 276,88 C288,108 294,130 276,155 Z" fill="#fde047"/>
+			<path d="M210,185 Q242,152 268,158 L262,228 L212,228 Z" fill="#cbd5e1" stroke="#090d14" stroke-width="3"/>
+			<text x="276" y="305" text-anchor="middle" font-size="15" font-weight="700" fill="#fde047">沈默左手反握打火机</text>
+			<rect x="8" y="8" width="245" height="30" rx="4" fill="#0f172a" opacity="0.92"/>
+			<text x="16" y="28" font-size="16" font-weight="700" fill="#38bdf8">PiP · 左撇子调表刮痕铁证</text>
+		</g>
+	`
+	return { viewBox: '0 0 1000 1000', markup }
+}
+
 export function renderIllustration(input: IllustrationInput): { viewBox: string; markup: string } {
+	if (
+		input.environment.includes('interrogation') ||
+		input.who.some((w) => w.includes('lu_chen') || w.includes('lin_ye') || w.includes('shen_mo'))
+	) {
+		return renderNoirInterrogationPanel(input)
+	}
 	const slots = slotsFor(input.environment)
 	const distant = input.who.length === 0
 	const names = distant ? ['kanta'] : input.who.map((name, index) => actorId(name, index))

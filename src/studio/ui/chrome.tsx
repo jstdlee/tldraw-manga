@@ -110,7 +110,7 @@ const PROSODIES: Prosody[] = ['', '冷笑', '颤抖', '怒吼', '低语', '停�
 // Chinese display labels for the story-agnostic universal 5-stage presets.
 const UNIVERSAL_PRESET_LABELS: Record<string, string> = {
 	'seagull-fries': '海堤双鸥 · 水彩哲思',
-	'noir-watchmaker': '雨夜钟表匠 · 赛博黑色',
+	'noir-watchmaker': '雨夜审讯室 · 停摆怀表 (硬派青年漫)',
 	'shonen-blade': '风暴神社 · 热血决斗',
 }
 
