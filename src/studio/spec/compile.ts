@@ -145,10 +145,23 @@ function bubblesOf(editor: Editor, page: MangaContainer): PlannedBubble[] {
 		.getSortedChildIdsForParent(page.id)
 		.map((id) => editor.getShape(id))
 		.filter((shape): shape is MangaBubble => shape?.type === BUBBLE)
+		.filter((shape) => {
+			if (shape.props.bubble === "sfx" && page.props.showSfxLayer === false) return false;
+			if (shape.props.bubble !== "sfx" && page.props.showBubblesLayer === false) return false;
+			return true;
+		})
 		.map((shape) => ({
 			style: shape.props.bubble,
 			text: shape.props.text,
 			prosody: shape.props.prosody,
+			prosodyStyle: shape.props.prosodyStyle,
+			prosodyOffsetX: shape.props.prosodyOffsetX,
+			prosodyOffsetY: shape.props.prosodyOffsetY,
+			prosodyScale: shape.props.prosodyScale,
+			prosodyColor: shape.props.prosodyColor,
+			fillColor: shape.props.fillColor,
+			fontWeight: shape.props.fontWeight,
+			hideProsody: page.props.showProsodyLayer === false,
 			emphasis: shape.props.emphasis,
 			w: shape.props.w,
 			h: shape.props.h,
@@ -274,6 +287,18 @@ export function compileBook(editor: Editor, filter?: { chapters?: TLShapeId[]; p
 				})
 				const prompts = metas.map((meta, index) => {
 					const bubble = bubbles.find((item) => item.panelIndex === index)
+					// Only reserve balloon negative space when the panel actually carries a
+					// (non-silent) bubble, and derive the corner from its real placement.
+					const hasBubble = Boolean(bubble) && !meta.silent
+					let corner = 'top-right'
+					if (hasBubble && bubble) {
+						const box = boundsOf(layout.panels[index].pts)
+						const cx = ((bubble.x + bubble.w / 2) / Math.max(1, page.props.w)) * layout.width
+						const cy = ((bubble.y + bubble.h / 2) / Math.max(1, page.props.h)) * layout.height
+						const relX = (cx - box.minX) / Math.max(1, box.maxX - box.minX)
+						const relY = (cy - box.minY) / Math.max(1, box.maxY - box.minY)
+						corner = `${relY < 0.5 ? 'top' : 'bottom'}-${relX < 0.5 ? 'left' : 'right'}`
+					}
 					return buildPanelPrompt({
 						environment: meta.environment || page.props.environment || block.environment,
 						lighting: page.props.lighting || block.lighting,
@@ -283,7 +308,9 @@ export function compileBook(editor: Editor, filter?: { chapters?: TLShapeId[]; p
 						aspect: meta.aspect,
 						beat: meta.beat,
 						locks,
-						corner: safeCorner(bubble ? 'top-right' : 'top-right'),
+						corner: safeCorner(corner),
+						silent: meta.silent,
+						hasBubble,
 					})
 				})
 				const judged = layoutScore(layoutFeatures(layout), page.props.targetPanels, asScenario(page.props.scenario))

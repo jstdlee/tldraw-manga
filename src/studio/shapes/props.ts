@@ -27,6 +27,9 @@ export const containerProps: RecordProps<MangaContainer> = {
 	reasonsJson: T.string,
 	showFlow: T.boolean,
 	selectedPanel: T.number,
+	showBubblesLayer: T.optional(T.boolean),
+	showProsodyLayer: T.optional(T.boolean),
+	showSfxLayer: T.optional(T.boolean),
 }
 
 export const cardProps: RecordProps<MangaCard> = {
@@ -63,4 +66,11 @@ export const bubbleProps: RecordProps<MangaBubble> = {
 	tailY: T.number,
 	panelIndex: T.number,
 	spin: T.number,
+	prosodyStyle: T.optional(T.string),
+	prosodyOffsetX: T.optional(T.number),
+	prosodyOffsetY: T.optional(T.number),
+	prosodyScale: T.optional(T.number),
+	prosodyColor: T.optional(T.string),
+	fillColor: T.optional(T.string),
+	fontWeight: T.optional(T.number),
 }

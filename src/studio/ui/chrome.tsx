@@ -13,22 +13,27 @@ import {
 } from '../demo/book'
 import {
 	addBubbleToPage,
+	addStandaloneProsodyToPage,
 	applyEditorialRemedyOnPage,
+	fillRealInterrogationArtworkOnPage,
 	applyEmotionStrategyOnPage,
 	applyLayoutChoice,
 	applyOpticsToPanel,
 	applySelectedCardAiAction,
+	applyUniversalFiveStagePreset,
 	createImageCardOnCanvas,
 	createTextCardOnCanvas,
 	getCardDiff,
 	getPageDiff,
 	mutateSelectedPages,
 	polishPageWithAi,
+	readCharacterLocks,
 	rerollSelectedPages,
 	revertCardDiff,
 	revertPageDiff,
 	rewriteStoryWithLlm,
 	runBlock,
+	runJevFiveStageCompile,
 	selectedPages,
 	spawnBook,
 	spawnPromptBlock,
@@ -38,6 +43,7 @@ import {
 	toggleSilentPanelOnPage,
 	updatePageParametric,
 } from '../editor/pipeline'
+import { compileProgrammaticLayoutGenome, listUniversalPresets } from '../jev/fiveStageEngine'
 import { readerHtml } from '../export/htmlReader'
 import { downloadBlob, downloadText, exportOpenRaster, exportPagePng2400, exportPageSvgFile } from '../export/ora'
 import {
@@ -60,12 +66,15 @@ import {
 } from '../layout/score'
 import {
 	buildPanelPrompt,
+	PROSODY_STYLE_LABELS,
 	readJson,
 	readPageParams,
 	safeCorner,
+	type Beat,
 	type BubbleStyle,
 	type PanelMeta,
 	type Prosody,
+	type ProsodyStyle,
 } from '../model'
 import { auditCameraAxis, computeOptics, defaultOpticsForMeta, SENSORS, type SensorId } from '../optics/shotLab'
 import { ANGLES, PROMPT_BLOCKS } from '../prompts/library'
@@ -101,7 +110,15 @@ import {
 
 const PRESETS = ['seizen', 'std', 'action', 'tobira'] as const
 const BUBBLES: BubbleStyle[] = ['speech', 'thought', 'caption', 'whisper', 'shout', 'broadcast', 'sfx']
-const PROSODIES: Prosody[] = ['', '冷笑', '颤抖', '怒吼', '低语', '停顿']
+const PROSODIES: Prosody[] = ['', '冷笑审视', '步步紧逼', '雷霆指认', '咬牙切齿', '低声颤抖', '冷笑', '颤抖', '怒吼', '低语', '停顿']
+const PROSODY_STYLES: ProsodyStyle[] = ['pill', 'seal', 'slant', 'burst', 'minimal', 'off']
+
+// Chinese display labels for the story-agnostic universal 5-stage presets.
+const UNIVERSAL_PRESET_LABELS: Record<string, string> = {
+	'seagull-fries': '海堤双鸥 · 水彩哲思',
+	'noir-watchmaker': '雨夜审讯室 · 停摆怀表 (硬派青年漫)',
+	'shonen-blade': '风暴神社 · 热血决斗',
+}
 
 export type SidebarTab = 'cards' | 'layout' | 'story' | 'camera' | 'llm'
 
@@ -176,6 +193,35 @@ export function TopBar({
 					</button>
 					<button type="button" onClick={() => void run('AI 提炼设定集', (ed) => runBlock(ed, 'extract'))}>
 						<IconFileText /> 提炼设定
+					</button>
+					<select
+						className="universal-preset-select"
+						aria-label="通用五阶段故事预设（百搭故事无关）"
+						title="一键载入任意通用五阶段故事预设（海鸥 / 黑色钟表 / 热血决斗）"
+						value=""
+						onChange={(event) => {
+							const presetId = event.target.value
+							if (!presetId) return
+							void run('载入通用五阶段预设', (ed) => applyUniversalFiveStagePreset(ed, presetId))
+							event.currentTarget.value = ''
+						}}
+					>
+						<option value="" disabled>
+							通用预设…
+						</option>
+						{listUniversalPresets().map((preset) => (
+							<option key={preset.id} value={preset.id}>
+								{UNIVERSAL_PRESET_LABELS[preset.id] ?? preset.title}
+							</option>
+						))}
+					</select>
+					<button
+						type="button"
+						className="accent-btn"
+						title="对选中页运行 JEV 四轮迭代轮询、McCloud 按需气泡门控与视线焦点轨迹"
+						onClick={() => void run('JEV 五阶段编译', (ed) => runJevFiveStageCompile(ed))}
+					>
+						<IconLayers /> JEV 五阶段编译
 					</button>
 				</div>
 
@@ -698,8 +744,47 @@ function LayoutWorkbenchSection({
 	const layout = realize(genome, config)
 	const judged = layoutScore(layoutFeatures(layout), page.props.targetPanels, asScenario(page.props.scenario))
 
+	const rawBeats = readJson<Beat[]>(page.props.scriptJson, [])
+	const progDecision = compileProgrammaticLayoutGenome(rawBeats, asScenario(page.props.scenario), page.props.seed)
+
 	return (
 		<>
+			<section className="side-section">
+				<div className="sec-head">
+					<h3>0. JEV 决策模型程式化版式与视角锁定</h3>
+					<span>Stage 2 → 3 确定性收敛</span>
+				</div>
+				<div className="emotion-tip-card" style={{ marginBottom: 8 }}>
+					<strong>张力曲线 τ_t → 14因子机位 + 多边形行高/斜切/列宽程式化合成</strong>
+					<div style={{ fontSize: 11, color: '#334155', lineHeight: 1.5, marginTop: 4, maxHeight: 120, overflowY: 'auto', background: 'rgba(248,250,252,0.9)', padding: '6px 8px', borderRadius: 6, border: '1px solid rgba(148,163,184,0.28)' }}>
+						{progDecision.decisionTrace.map((line, i) => (
+							<div key={i} style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 10.5 }}>
+								{line}
+							</div>
+						))}
+					</div>
+					<div className="quick-ai-grid" style={{ marginTop: 6 }}>
+						<button
+							type="button"
+							className="primary-full"
+							onClick={() => {
+								setStatus(runJevFiveStageCompile(editor))
+							}}
+						>
+							<IconSparkles /> 一键执行 JEV 程式化版式 + 14因子视角锁定
+						</button>
+						<button
+							type="button"
+							onClick={() => {
+								setStatus(fillRealInterrogationArtworkOnPage(editor, page))
+							}}
+						>
+							<IconImage /> 载入真实AI分镜原画
+						</button>
+					</div>
+				</div>
+			</section>
+
 			<section className="side-section">
 				<div className="sec-head">
 					<h3>1. 版式预设与几何参数 · {page.props.title}</h3>
@@ -1019,13 +1104,225 @@ function StoryAndDialogueSection({
 									type="button"
 									onClick={() => {
 										if (!editor) return
-										addBubbleToPage(editor, page, panelIdx, 'speech', '等一下——！')
-										setStatus(`已在第 ${panelIdx + 1} 格右上安全区添加对白气泡`)
+										addBubbleToPage(editor, page, panelIdx, 'speech', '等一下——！', '冷笑审视', 'pill')
+										setStatus(`已在第 ${panelIdx + 1} 格右上安全区添加独立对白气泡图层`)
 									}}
 								>
 									<IconBubble /> + 新增对白气泡
 								</button>
+								<button
+									type="button"
+									onClick={() => {
+										if (!editor) return
+										addStandaloneProsodyToPage(editor, page, panelIdx, '冷笑审视', 'seal', '咔哒！')
+										setStatus(`已在第 ${panelIdx + 1} 格添加独立语气助词/拟声图层`)
+									}}
+								>
+									<IconSparkles /> + 新增独立语气/拟声层
+								</button>
+								<button
+									type="button"
+									onClick={() => {
+										if (!editor) return
+										setStatus(fillRealInterrogationArtworkOnPage(editor, page))
+									}}
+								>
+									<IconImage /> 填入真实AI分镜原画
+								</button>
 							</div>
+
+							{(() => {
+								if (!editor) return null
+								const pageBubbles = editor
+									.getSortedChildIdsForParent(page.id)
+									.map((id) => editor.getShape(id))
+									.filter((s): s is MangaBubble => s?.type === BUBBLE)
+								return (
+									<div className="bubble-layer-workbench" style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(148,163,184,0.25)' }}>
+										<div className="sec-head" style={{ marginBottom: 6 }}>
+											<h3>独立图层总控 · 气泡({pageBubbles.length}) & 语气助词</h3>
+											<span>可拖拽位置/改样式</span>
+										</div>
+										<div className="preset-pill-row" style={{ marginBottom: 8 }}>
+											<button
+												type="button"
+												className={page.props.showBubblesLayer !== false ? 'preset-pill active' : 'preset-pill'}
+												onClick={() =>
+													editor.updateShape<MangaContainer>({
+														id: page.id,
+														type: CONTAINER,
+														props: { showBubblesLayer: page.props.showBubblesLayer === false },
+													})
+												}
+											>
+												💬 气泡层 {page.props.showBubblesLayer !== false ? '开' : '关'}
+											</button>
+											<button
+												type="button"
+												className={page.props.showProsodyLayer !== false ? 'preset-pill active' : 'preset-pill'}
+												onClick={() =>
+													editor.updateShape<MangaContainer>({
+														id: page.id,
+														type: CONTAINER,
+														props: { showProsodyLayer: page.props.showProsodyLayer === false },
+													})
+												}
+											>
+												🏷️ 语气层 {page.props.showProsodyLayer !== false ? '开' : '关'}
+											</button>
+											<button
+												type="button"
+												className={page.props.showSfxLayer !== false ? 'preset-pill active' : 'preset-pill'}
+												onClick={() =>
+													editor.updateShape<MangaContainer>({
+														id: page.id,
+														type: CONTAINER,
+														props: { showSfxLayer: page.props.showSfxLayer === false },
+													})
+												}
+											>
+												⚡ 拟声层 {page.props.showSfxLayer !== false ? '开' : '关'}
+											</button>
+											<button
+												type="button"
+												className={page.props.showFlow ? 'preset-pill active' : 'preset-pill'}
+												onClick={() =>
+													editor.updateShape<MangaContainer>({
+														id: page.id,
+														type: CONTAINER,
+														props: { showFlow: !page.props.showFlow },
+													})
+												}
+											>
+												👁️ 动线 {page.props.showFlow ? '开' : '关'}
+											</button>
+										</div>
+
+										<div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 230, overflowY: 'auto' }}>
+											{pageBubbles.map((b, bIdx) => (
+												<div
+													key={b.id}
+													style={{
+														padding: '6px 8px',
+														borderRadius: 8,
+														background: 'rgba(248,250,252,0.95)',
+														border: '1px solid rgba(148,163,184,0.35)',
+														display: 'flex',
+														flexDirection: 'column',
+														gap: 4,
+													}}
+												>
+													<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
+														<strong
+															style={{ cursor: 'pointer', color: '#0066cc' }}
+															onClick={() => editor.select(b.id)}
+														>
+															#{bIdx + 1} 格{b.props.panelIndex + 1} · {BUBBLE_LABELS[b.props.bubble] ?? b.props.bubble}
+														</strong>
+														<div style={{ display: 'flex', gap: 4 }}>
+															<button
+																type="button"
+																className="link-btn"
+																onClick={() => editor.select(b.id)}
+															>
+																定位选中
+															</button>
+															<button
+																type="button"
+																className="link-btn"
+																style={{ color: '#dc2626' }}
+																onClick={() => editor.deleteShapes([b.id])}
+															>
+																删除
+															</button>
+														</div>
+													</div>
+													<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+														<input
+															type="text"
+															value={b.props.text}
+															placeholder="气泡台词/拟声词…"
+															onChange={(e) =>
+																editor.updateShape<MangaBubble>({
+																	id: b.id,
+																	type: BUBBLE,
+																	props: { text: e.target.value },
+																})
+															}
+														/>
+														<input
+															type="text"
+															value={b.props.prosody}
+															placeholder="独立语气词（如：冷笑审视）"
+															onChange={(e) =>
+																editor.updateShape<MangaBubble>({
+																	id: b.id,
+																	type: BUBBLE,
+																	props: { prosody: e.target.value },
+																})
+															}
+														/>
+													</div>
+													<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4 }}>
+														<select
+															aria-label={`气泡#${bIdx + 1}框型`}
+															value={b.props.bubble}
+															onChange={(e) =>
+																editor.updateShape<MangaBubble>({
+																	id: b.id,
+																	type: BUBBLE,
+																	props: { bubble: e.target.value as BubbleStyle },
+																})
+															}
+														>
+															{BUBBLES.map((st) => (
+																<option key={st} value={st}>
+																	{BUBBLE_LABELS[st] ?? st}
+																</option>
+															))}
+														</select>
+														<select
+															aria-label={`气泡#${bIdx + 1}语气样式`}
+															value={(b.props.prosodyStyle as ProsodyStyle) || 'pill'}
+															onChange={(e) =>
+																editor.updateShape<MangaBubble>({
+																	id: b.id,
+																	type: BUBBLE,
+																	props: { prosodyStyle: e.target.value as ProsodyStyle },
+																})
+															}
+														>
+															{PROSODY_STYLES.map((ps) => (
+																<option key={ps} value={ps}>
+																	语气:{PROSODY_STYLE_LABELS[ps]}
+																</option>
+															))}
+														</select>
+														<select
+															aria-label={`气泡#${bIdx + 1}语气颜色`}
+															value={b.props.prosodyColor || ''}
+															onChange={(e) =>
+																editor.updateShape<MangaBubble>({
+																	id: b.id,
+																	type: BUBBLE,
+																	props: { prosodyColor: e.target.value },
+																})
+															}
+														>
+															<option value="">默认色</option>
+															<option value="#0066cc">经典蓝</option>
+															<option value="#c93d35">朱印红</option>
+															<option value="#18222c">玄墨黑</option>
+															<option value="#0f766e">青黛绿</option>
+															<option value="#d97706">琥珀金</option>
+														</select>
+													</div>
+												</div>
+											))}
+										</div>
+									</div>
+								)
+							})()}
 							{pageDiff ? (
 								<div className="card-diff-bar" style={{ marginTop: 6 }}>
 									<span>已应用 AI 导演润色</span>
@@ -1282,11 +1579,37 @@ function CameraAndCompositionSection({
 						<input
 							type="range"
 							aria-label="格内推拉缩放"
-							min={0.65}
-							max={2.4}
+							min={0.5}
+							max={2.8}
 							step={0.05}
 							value={meta.imageScale || 1}
 							onChange={(event) => updateMeta({ imageScale: Number(event.target.value) })}
+						/>
+					</label>
+					<label className="slider-row">
+						<span>水平平移 X</span>
+						<code>{Math.round(meta.imageOffsetX || 0)}px</code>
+						<input
+							type="range"
+							aria-label="格内水平平移"
+							min={-180}
+							max={180}
+							step={2}
+							value={meta.imageOffsetX || 0}
+							onChange={(event) => updateMeta({ imageOffsetX: Number(event.target.value) })}
+						/>
+					</label>
+					<label className="slider-row">
+						<span>垂直平移 Y</span>
+						<code>{Math.round(meta.imageOffsetY || 0)}px</code>
+						<input
+							type="range"
+							aria-label="格内垂直平移"
+							min={-180}
+							max={180}
+							step={2}
+							value={meta.imageOffsetY || 0}
+							onChange={(event) => updateMeta({ imageOffsetY: Number(event.target.value) })}
 						/>
 					</label>
 					<label className="slider-row">
@@ -1302,6 +1625,38 @@ function CameraAndCompositionSection({
 							onChange={(event) => updateMeta({ imageRotation: Number(event.target.value) })}
 						/>
 					</label>
+				</div>
+				<div className="quick-ai-grid" style={{ marginTop: 6 }}>
+					<label className="remedy-btn" style={{ cursor: 'pointer', justifyContent: 'center', margin: 0 }}>
+						<IconImage /> 上传本地图到此格
+						<input
+							type="file"
+							accept="image/*"
+							style={{ display: 'none' }}
+							onChange={(event) => {
+								const file = event.target.files?.[0]
+								if (!file) return
+								const reader = new FileReader()
+								reader.onload = () => {
+									const dataUrl = typeof reader.result === 'string' ? reader.result : ''
+									if (dataUrl) {
+										updateMeta({ imageDataUrl: dataUrl, imageOffsetX: 0, imageOffsetY: 0, imageScale: 1, imageRotation: 0 })
+										setStatus(`已将图片「${file.name}」插入第 ${panelIdx + 1} 格，可直接拖拽与滚轮缩放`)
+									}
+								}
+								reader.readAsDataURL(file)
+								event.target.value = ''
+							}}
+						/>
+					</label>
+					<button
+						type="button"
+						onClick={() => {
+							setStatus(fillRealInterrogationArtworkOnPage(editor, page))
+						}}
+					>
+						<IconSparkles /> 填入整页AI原画
+					</button>
 				</div>
 
 				<div className="bleed-grid-row" style={{ marginTop: 8 }}>
@@ -1474,10 +1829,10 @@ export function FloatingBar({ onSwitchTab }: { onSwitchTab?: (tab: SidebarTab) =
 		return (
 			<div className="floatbar" onPointerDown={(event) => event.stopPropagation()}>
 				<span className="float-title">
-					<IconBubble /> 气泡与拟声词工具栏
+					<IconBubble /> 气泡 & 独立语气图层
 				</span>
 				<label>
-					框型
+					气泡框型
 					<select
 						value={bubble.props.bubble}
 						onChange={(event) => editor.updateShape({ id: bubble.id, type: BUBBLE, props: { bubble: event.target.value as BubbleStyle } })}
@@ -1490,9 +1845,53 @@ export function FloatingBar({ onSwitchTab }: { onSwitchTab?: (tab: SidebarTab) =
 					</select>
 				</label>
 				<label>
-					语气标注
+					气泡底色
 					<select
+						value={bubble.props.fillColor || ''}
+						onChange={(event) => editor.updateShape({ id: bubble.id, type: BUBBLE, props: { fillColor: event.target.value } })}
+					>
+						<option value="">默认纸白</option>
+						<option value="#f1f5f9">冷灰审讯</option>
+						<option value="#fef2f2">绯红警示</option>
+						<option value="#fefce8">暖黄追忆</option>
+					</select>
+				</label>
+				<label>
+					字号缩放
+					<input
+						type="range"
+						min={0.75}
+						max={1.55}
+						step={0.05}
+						value={bubble.props.emphasis}
+						onChange={(event) => editor.updateShape({ id: bubble.id, type: BUBBLE, props: { emphasis: Number(event.target.value) } })}
+					/>
+				</label>
+				<label>
+					旋转倾角
+					<input
+						type="range"
+						min={-30}
+						max={30}
+						step={1}
+						value={bubble.props.spin || 0}
+						onChange={(event) => editor.updateShape({ id: bubble.id, type: BUBBLE, props: { spin: Number(event.target.value) } })}
+					/>
+				</label>
+				<label>
+					语气词(可手输)
+					<input
+						type="text"
+						style={{ width: 88 }}
 						value={bubble.props.prosody}
+						placeholder="如:冷笑审视"
+						onChange={(event) => editor.updateShape({ id: bubble.id, type: BUBBLE, props: { prosody: event.target.value } })}
+					/>
+				</label>
+				<label>
+					快捷语气
+					<select
+						value={PROSODIES.includes(bubble.props.prosody) ? bubble.props.prosody : ''}
 						onChange={(event) => editor.updateShape({ id: bubble.id, type: BUBBLE, props: { prosody: event.target.value } })}
 					>
 						{PROSODIES.map((prosody) => (
@@ -1503,16 +1902,61 @@ export function FloatingBar({ onSwitchTab }: { onSwitchTab?: (tab: SidebarTab) =
 					</select>
 				</label>
 				<label>
-					字号缩放
+					语气样式
+					<select
+						value={(bubble.props.prosodyStyle as ProsodyStyle) || 'pill'}
+						onChange={(event) =>
+							editor.updateShape({ id: bubble.id, type: BUBBLE, props: { prosodyStyle: event.target.value as ProsodyStyle } })
+						}
+					>
+						{PROSODY_STYLES.map((ps) => (
+							<option key={ps} value={ps}>
+								{PROSODY_STYLE_LABELS[ps]}
+							</option>
+						))}
+					</select>
+				</label>
+				<label>
+					语气配色
+					<select
+						value={bubble.props.prosodyColor || ''}
+						onChange={(event) => editor.updateShape({ id: bubble.id, type: BUBBLE, props: { prosodyColor: event.target.value } })}
+					>
+						<option value="">自动配色</option>
+						<option value="#0066cc">经典蓝</option>
+						<option value="#c93d35">朱印红</option>
+						<option value="#18222c">玄墨黑</option>
+						<option value="#0f766e">青黛绿</option>
+						<option value="#d97706">琥珀金</option>
+					</select>
+				</label>
+				<label>
+					语气大小
 					<input
 						type="range"
 						min={0.75}
-						max={1.45}
+						max={1.7}
 						step={0.05}
-						value={bubble.props.emphasis}
-						onChange={(event) => editor.updateShape({ id: bubble.id, type: BUBBLE, props: { emphasis: Number(event.target.value) } })}
+						value={bubble.props.prosodyScale ?? 1}
+						onChange={(event) =>
+							editor.updateShape({ id: bubble.id, type: BUBBLE, props: { prosodyScale: Number(event.target.value) } })
+						}
 					/>
 				</label>
+				<button
+					type="button"
+					className="float-ai-btn"
+					title="也可直接拖拽气泡上方橙色菱形手柄自由移动语气助词图层"
+					onClick={() =>
+						editor.updateShape({
+							id: bubble.id,
+							type: BUBBLE,
+							props: { prosodyOffsetX: 0, prosodyOffsetY: 0, prosodyScale: 1 },
+						})
+					}
+				>
+					复位语气位置
+				</button>
 				<button
 					type="button"
 					className="float-ai-btn"
@@ -1686,9 +2130,10 @@ export function FloatingBar({ onSwitchTab }: { onSwitchTab?: (tab: SidebarTab) =
 								focal: meta.focal,
 								aspect: meta.aspect,
 								beat: `${meta.beat} ${customInput}`.trim(),
-								locks: '@kanta @mei @boss',
+								locks: [readCharacterLocks(editor), ...(meta.assetRefs ?? [])].filter(Boolean).join(' '),
 								corner: safeCorner('top-right'),
 								silent: meta.silent,
+								hasBubble: !meta.silent,
 								opticsClause: computedOpt.promptClause,
 							})
 							const dataUrl = await askImage(prompt, meta.aspect)

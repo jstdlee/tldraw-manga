@@ -1,5 +1,5 @@
 import type { TLBaseShape } from 'tldraw'
-import type { BubbleStyle } from '../model'
+import type { BubbleStyle, ProsodyStyle } from '../model'
 import type { BlockId } from '../prompts/library'
 
 export const CONTAINER = 'manga-container' as const
@@ -38,6 +38,9 @@ export type MangaContainer = TLBaseShape<
 		reasonsJson: string
 		showFlow: boolean
 		selectedPanel: number
+		showBubblesLayer?: boolean
+		showProsodyLayer?: boolean
+		showSfxLayer?: boolean
 	}
 >
 
@@ -83,6 +86,13 @@ export type MangaBubble = TLBaseShape<
 		tailY: number
 		panelIndex: number
 		spin: number
+		prosodyStyle?: ProsodyStyle | string
+		prosodyOffsetX?: number
+		prosodyOffsetY?: number
+		prosodyScale?: number
+		prosodyColor?: string
+		fillColor?: string
+		fontWeight?: number
 	}
 >
 

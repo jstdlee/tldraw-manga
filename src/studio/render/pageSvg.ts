@@ -1,4 +1,8 @@
-import { boundsOf, centroid, type Pt } from '../layout/engine'
+import { boundsOf, centroid, type Layout, type Pt } from '../layout/engine'
+import {
+	renderGazeFocalTrajectorySvg,
+	solvePageGazeFocalTrajectory,
+} from '../jev/fiveStageEngine'
 import type { PanelMeta } from '../model'
 import { auditCameraAxis } from '../optics/shotLab'
 import { bubbleMarkup, escapeXml, type BubbleDraw } from './bubbles'
@@ -42,16 +46,21 @@ export interface PageRenderModel {
 	showRuleOfThirds?: boolean
 	showAxis180?: boolean
 	selectedPanel?: number
-	part?: 'all' | 'background' | 'art' | 'frames' | 'bubbles' | 'director'
+	part?: 'all' | 'background' | 'art' | 'frames' | 'bubbles' | 'director' | 'stage4-pure-art' | 'gaze-flow'
+	readingDirection?: 'rtl' | 'ltr'
+	showGazeTrajectory?: boolean
 }
 
 export function renderPageSvg(model: PageRenderModel): string {
 	const part = model.part ?? 'all'
-	const includeBg = part === 'all' || part === 'background'
-	const includeArt = part === 'all' || part === 'art'
-	const includeFrames = part === 'all' || part === 'frames'
+	const includeBg = part === 'all' || part === 'background' || part === 'stage4-pure-art'
+	const includeArt = part === 'all' || part === 'art' || part === 'stage4-pure-art'
+	const includeFrames = part === 'all' || part === 'frames' || part === 'stage4-pure-art' || part === 'gaze-flow'
+	// Stage 4 pure-art renders the asset-locked composition with zero balloon layer.
 	const includeBubbles = part === 'all' || part === 'bubbles'
 	const includeDirector = (part === 'all' && model.director) || part === 'director'
+	// The Saccadic Focal-Gaze-Bubble Trajectory rides alongside the director markers.
+	const includeGaze = includeDirector || (part === 'all' && Boolean(model.showGazeTrajectory)) || part === 'gaze-flow'
 	const strokeW = model.lineWidth ?? 3.2
 
 	const defs: string[] = [
@@ -206,7 +215,7 @@ export function renderPageSvg(model: PageRenderModel): string {
 
 	const bubbleLayers = includeBubbles
 		? model.bubbles
-				.filter((b) => !silentSet.has(b.panelIndex))
+				.filter((b) => !silentSet.has(b.panelIndex) || b.style === 'sfx')
 				.map(
 					(bubble) =>
 						`<g transform="translate(${bubble.x.toFixed(1)} ${bubble.y.toFixed(1)})">${bubbleMarkup(bubble)}</g>`,
@@ -243,6 +252,30 @@ export function renderPageSvg(model: PageRenderModel): string {
 		}
 	}
 
+	// Saccadic Focal-Gaze-Bubble Trajectory layer (focal rings, gaze vectors,
+	// intra-panel bubble->focal->exit chains, cross-gutter cubic Bezier saccades).
+	let gazeLayer = ''
+	if (includeGaze && model.panels.length) {
+		const trajectory = solvePageGazeFocalTrajectory(
+			{ panels: model.panels.map((panel) => ({ pts: panel.pts, row: 0, col: 0, sub: 0 })) } as Layout,
+			model.panels.map((panel) => panel.meta),
+			model.bubbles.map((bubble) => ({
+				panelIndex: bubble.panelIndex,
+				style: bubble.style,
+				x: bubble.x,
+				y: bubble.y,
+				w: bubble.w,
+				h: bubble.h,
+			})),
+			model.readingDirection ?? 'rtl',
+		)
+		gazeLayer = renderGazeFocalTrajectorySvg(
+			`${model.uid}-gaze`,
+			trajectory,
+			model.panels.map((panel) => ({ pts: panel.pts, meta: panel.meta })),
+		)
+	}
+
 	const bg = includeBg ? `<rect width="${model.width}" height="${model.height}" fill="#ffffff"/>` : ''
-	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${model.width} ${model.height}" class="page-svg"><defs>${defs.join('')}</defs>${bg}<g class="layer-art">${artLayers.join('')}</g><g class="layer-frames">${frameLayers.join('')}</g><g class="layer-bubbles">${bubbleLayers.join('')}</g><g class="layer-director">${directorLayers.join('')}</g></svg>`
+	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${model.width} ${model.height}" class="page-svg"><defs>${defs.join('')}</defs>${bg}<g class="layer-art">${artLayers.join('')}</g><g class="layer-frames">${frameLayers.join('')}</g><g class="layer-bubbles">${bubbleLayers.join('')}</g><g class="layer-director">${directorLayers.join('')}</g><g class="layer-gaze">${gazeLayer}</g></svg>`
 }

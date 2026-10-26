@@ -5,7 +5,6 @@ import { energyFor } from '../editor/placement'
 import { rerollSelectedPages } from '../editor/pipeline'
 import { downloadBlob, exportPagePng2400, exportPageSvgFile } from '../export/ora'
 import {
-	centroid,
 	clamp,
 	configFor,
 	dragColDivider,
@@ -15,13 +14,35 @@ import {
 	sanitize,
 	type Divider,
 	type Genome,
+	type Layout,
 } from '../layout/engine'
 import { asScenario, layoutFeatures, layoutScore } from '../layout/score'
+import { renderGazeFocalTrajectorySvg, solvePageGazeFocalTrajectory } from '../jev/fiveStageEngine'
 import { readJson, readPageParams, refreshAspects, type PanelMeta } from '../model'
 import { renderPageSvg, type PageRenderModel } from '../render/pageSvg'
 import { IconBook, IconDownload, IconFrame, IconRefresh } from '../ui/icons'
 import { containerProps } from './props'
 import { BUBBLE, CONTAINER, type MangaBubble, type MangaContainer } from './schema'
+
+function placeholderMeta(seed: string, index: number): PanelMeta {
+	return {
+		imageSeed: `${seed}-p${index}`,
+		imageOffsetX: 0,
+		imageOffsetY: 0,
+		imageScale: 1,
+		imageRotation: 0,
+		aspect: '1:1',
+		shot: 'MS',
+		angle: 'eye',
+		focal: '50mm',
+		beat: '',
+		who: [],
+		fries: 'none',
+		eyeline: [8, -4],
+		imageDataUrl: '',
+		environment: '',
+	}
+}
 
 export class MangaContainerUtil extends BaseBoxShapeUtil<MangaContainer> {
 	static override type = CONTAINER
@@ -120,6 +141,7 @@ function ContainerView({ shape }: { shape: MangaContainer }) {
 }
 
 function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType<typeof useEditor> }) {
+	const fileInputRef = useRef<HTMLInputElement | null>(null)
 	const dragRef = useRef<{
 		mode: 'divider' | 'pan'
 		divider?: Divider
@@ -231,13 +253,29 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 	const reasons = readJson<string[]>(shape.props.reasonsJson, [])
 	const scenarioZh = SCENARIO_LABELS[shape.props.scenario] ?? shape.props.scenario
 
-	const centers = layout.panels.map((panel) => centroid(panel.pts))
 	const sx = layout.width / shape.props.w
 	const sy = layout.height / Math.max(1, shape.props.h - 60)
-	const bubbleChain = childBubbles
-		.slice()
-		.sort((a, b) => a.props.panelIndex - b.props.panelIndex || a.y - b.y)
-		.map((bubble) => `${((bubble.x + bubble.props.w / 2) * sx).toFixed(1)},${((bubble.y + bubble.props.h / 2) * sy).toFixed(1)}`)
+
+	// Live Saccadic Focal-Gaze-Bubble Trajectory for the on-canvas page: focal rings,
+	// gaze vectors, intra-panel bubble->focal->exit chains and cross-gutter saccades.
+	const gazeMarkup = useMemo(() => {
+		if (!shape.props.showFlow) return ''
+		const safeMetas = layout.panels.map((_, index) => metas[index] ?? placeholderMeta(shape.props.seed, index))
+		const gazeBubbles = childBubbles.map((bubble) => ({
+			panelIndex: bubble.props.panelIndex,
+			style: bubble.props.bubble,
+			x: bubble.x * sx,
+			y: bubble.y * sy,
+			w: bubble.props.w * sx,
+			h: bubble.props.h * sy,
+		}))
+		const trajectory = solvePageGazeFocalTrajectory(layout as Layout, safeMetas, gazeBubbles, 'rtl')
+		return renderGazeFocalTrajectorySvg(
+			`${shape.id.replace(/[^a-zA-Z0-9]/g, '')}flow`,
+			trajectory,
+			layout.panels.map((panel, index) => ({ pts: panel.pts, meta: safeMetas[index] })),
+		)
+	}, [shape.props.showFlow, shape.props.seed, shape.id, layout, metas, childBubbles, sx, sy])
 
 	const stopEvent = (event: React.SyntheticEvent) => {
 		event.stopPropagation()
@@ -290,13 +328,59 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 			</header>
 			<div
 				className="page-stage"
-				onWheel={(event) => {
-					if (selected < 0 || !metas[selected]) return
+				onDragOver={(event) => {
+					event.preventDefault()
 					event.stopPropagation()
+				}}
+				onDrop={(event) => {
+					event.preventDefault()
+					event.stopPropagation()
+					const file = event.dataTransfer?.files?.[0]
+					if (!file || !file.type.startsWith('image/')) return
+					const pos = toLocalLayout(event.clientX, event.clientY)
+					const hit = layout.panels.findIndex((panel) => pointInPoly(pos.x, pos.y, panel.pts))
+					const targetIdx = hit >= 0 ? hit : Math.max(0, selected)
+					const reader = new FileReader()
+					reader.onload = () => {
+						const dataUrl = typeof reader.result === 'string' ? reader.result : ''
+						if (!dataUrl) return
+						const next = metas.slice()
+						if (!next[targetIdx]) return
+						next[targetIdx] = {
+							...next[targetIdx],
+							imageDataUrl: dataUrl,
+							imageOffsetX: 0,
+							imageOffsetY: 0,
+							imageScale: 1,
+							imageRotation: 0,
+						}
+						editor.updateShape({
+							id: shape.id,
+							type: CONTAINER,
+							props: { selectedPanel: targetIdx, panelsJson: JSON.stringify(next) },
+						})
+					}
+					reader.readAsDataURL(file)
+				}}
+				onWheel={(event) => {
+					const pos = toLocalLayout(event.clientX, event.clientY)
+					const hit = layout.panels.findIndex((panel) => pointInPoly(pos.x, pos.y, panel.pts))
+					const targetIdx = hit >= 0 ? hit : selected
+					if (targetIdx < 0 || !metas[targetIdx]) return
+					event.stopPropagation()
+					event.preventDefault()
+					editor.markEventAsHandled(event.nativeEvent)
 					const next = metas.slice()
 					const factor = event.deltaY < 0 ? 1.07 : 0.93
-					next[selected] = { ...next[selected], imageScale: clamp((next[selected].imageScale || 1) * factor, 0.6, 2.6) }
-					editor.updateShape({ id: shape.id, type: CONTAINER, props: { panelsJson: JSON.stringify(next) } })
+					next[targetIdx] = {
+						...next[targetIdx],
+						imageScale: Number(clamp((next[targetIdx].imageScale || 1) * factor, 0.45, 3.2).toFixed(2)),
+					}
+					editor.updateShape({
+						id: shape.id,
+						type: CONTAINER,
+						props: { selectedPanel: targetIdx, panelsJson: JSON.stringify(next) },
+					})
 				}}
 			>
 				<div className="page-art" dangerouslySetInnerHTML={{ __html: artSvg }} />
@@ -304,6 +388,7 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 					className="page-overlay"
 					viewBox={`0 0 ${layout.width} ${layout.height}`}
 					preserveAspectRatio="none"
+					style={{ cursor: 'grab' }}
 					onPointerMove={(event) => {
 						const state = dragRef.current
 						if (!state) return
@@ -333,7 +418,11 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 							const next = state.metas.slice()
 							const base = next[state.panelIndex]
 							if (!base) return
-							next[state.panelIndex] = { ...base, imageOffsetX: Math.round(base.imageOffsetX + dx), imageOffsetY: Math.round(base.imageOffsetY + dy) }
+							next[state.panelIndex] = {
+								...base,
+								imageOffsetX: Math.round((base.imageOffsetX || 0) + dx),
+								imageOffsetY: Math.round((base.imageOffsetY || 0) + dy),
+							}
 							editor.updateShape({ id: shape.id, type: CONTAINER, props: { panelsJson: JSON.stringify(next) } })
 						}
 					}}
@@ -352,18 +441,18 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 					onPointerDown={(event) => {
 						const pos = toLocalLayout(event.clientX, event.clientY)
 						const hit = layout.panels.findIndex((panel) => pointInPoly(pos.x, pos.y, panel.pts))
+						const activePanel = hit >= 0 ? hit : selected
 						if (hit >= 0 && hit !== selected) {
 							editor.select(shape.id)
 							editor.updateShape({ id: shape.id, type: CONTAINER, props: { selectedPanel: hit } })
 						}
-						if (selected < 0) return
-						if (!layout.panels[selected] || !pointInPoly(pos.x, pos.y, layout.panels[selected].pts)) return
+						if (activePanel < 0 || !layout.panels[activePanel]) return
 						event.stopPropagation()
 						editor.markEventAsHandled(event)
 						event.currentTarget.setPointerCapture(event.pointerId)
 						dragRef.current = {
 							mode: 'pan',
-							panelIndex: selected,
+							panelIndex: activePanel,
 							startX: pos.x,
 							startY: pos.y,
 							genome,
@@ -382,31 +471,8 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 						/>
 					) : null}
 
-					{shape.props.showFlow ? (
-						<g className="flow-overlay" pointerEvents="none">
-							{centers.length > 1 ? (
-								<polyline
-									points={centers.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')}
-									fill="none"
-									stroke="#c93d35"
-									strokeWidth={4}
-									strokeLinecap="round"
-								/>
-							) : null}
-							{centers.map(([cx, cy], index) => {
-								const eye = metas[index]?.eyeline ?? [12, -4]
-								return (
-									<g key={index}>
-										<circle cx={cx} cy={cy} r={14} fill="#c93d35" />
-										<text x={cx} y={cy + 5} textAnchor="middle" fontSize="13" fontWeight="900" fill="#fff">
-											{index + 1}
-										</text>
-										<line x1={cx} y1={cy} x2={cx + eye[0] * 3} y2={cy + eye[1] * 3} stroke="#1f8a5b" strokeWidth={3.5} />
-									</g>
-								)
-							})}
-							{bubbleChain.length > 1 ? <polyline points={bubbleChain.join(' ')} fill="none" stroke="#1e78c8" strokeWidth={3} strokeDasharray="8 6" /> : null}
-						</g>
+					{shape.props.showFlow && gazeMarkup ? (
+						<g className="flow-overlay" pointerEvents="none" dangerouslySetInnerHTML={{ __html: gazeMarkup }} />
 					) : null}
 
 					{layout.dividers.map((divider, index) => (
@@ -436,8 +502,160 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 					))}
 				</svg>
 			</div>
-			<footer className="page-foot">
-				<span>{reasons.slice(0, 2).join(' · ') || '单击选格联动光学镜头 · 拖拽分割点调斜切分格'}</span>
+			<footer
+				className="page-foot"
+				onPointerDown={(e) => {
+					e.stopPropagation()
+					editor.markEventAsHandled(e)
+				}}
+			>
+				<input
+					ref={fileInputRef}
+					type="file"
+					accept="image/*"
+					style={{ display: 'none' }}
+					onChange={(e) => {
+						const file = e.target.files?.[0]
+						if (!file) return
+						const targetIdx = Math.max(0, selected)
+						const reader = new FileReader()
+						reader.onload = () => {
+							const dataUrl = typeof reader.result === 'string' ? reader.result : ''
+							if (!dataUrl) return
+							const next = metas.slice()
+							if (!next[targetIdx]) return
+							next[targetIdx] = {
+								...next[targetIdx],
+								imageDataUrl: dataUrl,
+								imageOffsetX: 0,
+								imageOffsetY: 0,
+								imageScale: 1,
+								imageRotation: 0,
+							}
+							editor.updateShape({
+								id: shape.id,
+								type: CONTAINER,
+								props: { selectedPanel: targetIdx, panelsJson: JSON.stringify(next) },
+							})
+						}
+						reader.readAsDataURL(file)
+						e.target.value = ''
+					}}
+				/>
+				{(() => {
+					const activeIdx = Math.max(0, selected)
+					const activeMeta = metas[activeIdx]
+					const scaleVal = Number(activeMeta?.imageScale || 1)
+					const presetSamples = [
+						'/assets/interrogation/panel1_establishing.jpg',
+						'/assets/interrogation/panel2_cuff_probe.jpg',
+						'/assets/interrogation/panel3_watch_macro.jpg',
+						'/assets/interrogation/panel4_silent_lighter_spark.jpg',
+						'/assets/interrogation/panel5_climax_accusation.jpg',
+					]
+					return (
+						<div className="page-cell-hud" style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', justifyContent: 'space-between', flexWrap: 'nowrap' }}>
+							<div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+								<span className="pill accent" style={{ fontSize: 10, padding: '1px 6px' }}>格#{activeIdx + 1}</span>
+								<button
+									className="mini-btn"
+									title="上传或替换当前单元格底图（也支持直接把图片拖入画格）"
+									onClick={() => fileInputRef.current?.click()}
+								>
+									📷 插图
+								</button>
+								<button
+									className="mini-btn"
+									title="载入预置 AI 原画样图到当前格"
+									onClick={() => {
+										const next = metas.slice()
+										if (!next[activeIdx]) return
+										next[activeIdx] = {
+											...next[activeIdx],
+											imageDataUrl: presetSamples[activeIdx % presetSamples.length],
+											imageOffsetX: 0,
+											imageOffsetY: 0,
+											imageScale: 1,
+											imageRotation: 0,
+										}
+										editor.updateShape({
+											id: shape.id,
+											type: CONTAINER,
+											props: { selectedPanel: activeIdx, panelsJson: JSON.stringify(next) },
+										})
+									}}
+								>
+									🖼️ 样图
+								</button>
+							</div>
+							<div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+								<span style={{ fontSize: 10, color: '#475569' }}>缩放</span>
+								<input
+									type="range"
+									min={0.5}
+									max={2.8}
+									step={0.05}
+									value={scaleVal}
+									style={{ width: 64, accentColor: '#0066cc', cursor: 'pointer' }}
+									onChange={(e) => {
+										const nextScale = Number(e.target.value)
+										const next = metas.slice()
+										if (!next[activeIdx]) return
+										next[activeIdx] = { ...next[activeIdx], imageScale: nextScale }
+										editor.updateShape({ id: shape.id, type: CONTAINER, props: { panelsJson: JSON.stringify(next) } })
+									}}
+								/>
+								<span style={{ fontSize: 10, fontVariantNumeric: 'tabular-nums', minWidth: 30 }}>{Math.round(scaleVal * 100)}%</span>
+								<button
+									className="mini-btn"
+									title="复位当前格图片位置、缩放与旋转"
+									onClick={() => {
+										const next = metas.slice()
+										if (!next[activeIdx]) return
+										next[activeIdx] = {
+											...next[activeIdx],
+											imageOffsetX: 0,
+											imageOffsetY: 0,
+											imageScale: 1,
+											imageRotation: 0,
+										}
+										editor.updateShape({ id: shape.id, type: CONTAINER, props: { panelsJson: JSON.stringify(next) } })
+									}}
+								>
+									✥ 复位
+								</button>
+							</div>
+							<div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+								<button
+									className={`mini-btn ${shape.props.showBubblesLayer !== false ? 'active' : ''}`}
+									title="显示/隐藏文字气泡独立图层"
+									onClick={() =>
+										editor.updateShape({
+											id: shape.id,
+											type: CONTAINER,
+											props: { showBubblesLayer: shape.props.showBubblesLayer === false },
+										})
+									}
+								>
+									气泡
+								</button>
+								<button
+									className={`mini-btn ${shape.props.showProsodyLayer !== false ? 'active' : ''}`}
+									title="显示/隐藏语气助词独立图层"
+									onClick={() =>
+										editor.updateShape({
+											id: shape.id,
+											type: CONTAINER,
+											props: { showProsodyLayer: shape.props.showProsodyLayer === false },
+										})
+									}
+								>
+									语气
+								</button>
+							</div>
+						</div>
+					)
+				})()}
 			</footer>
 		</HTMLContainer>
 	)

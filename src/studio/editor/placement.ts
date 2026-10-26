@@ -1,6 +1,11 @@
-import { boundsOf, pagePixelSize, type Layout } from '../layout/engine'
+import { boundsOf, clamp, pagePixelSize, type Layout } from '../layout/engine'
+import {
+	solveAntiOcclusionBubblePlacement,
+	solveOnDemandBubbleAndSfxGates,
+	type NormalizedBox,
+} from '../jev/fiveStageEngine'
 import type { Beat, PanelMeta } from '../model'
-import type { BubbleDraw } from '../render/bubbles'
+import { inferProsodyStyleFromText, type BubbleDraw } from '../render/bubbles'
 import type { PageBubble, PagePanel, PageRenderModel } from '../render/pageSvg'
 
 const ANCHORS: Record<string, [number, number]> = {
@@ -23,21 +28,47 @@ export function planBubbles(layout: Layout, beats: Beat[], pageW = pagePixelSize
 	const planned: PlannedBubble[] = []
 	layout.panels.forEach((panel, panelIndex) => {
 		const beat = beats[panelIndex]
-		if (!beat || beat.silent) return
+		if (!beat) return
+		const gates = solveOnDemandBubbleAndSfxGates({
+			silent: beat.silent,
+			wordPictureMode: beat.wordPictureMode,
+			transition: beat.mccloudTransition,
+			tension: beat.tension ?? 0.5,
+			lines: beat.lines,
+		})
+		if (!gates.hasBubble && !gates.hasSfx) return
 		const box = boundsOf(panel.pts)
-		beat.lines.forEach((line, lineIndex) => {
+		const boxW = box.maxX - box.minX
+		const boxH = box.maxY - box.minY
+		const focalRel = beat.focalPointRel ?? [0.5, 0.58]
+		const subjectBoxesRel: NormalizedBox[] = beat.subjectBoxesRel ?? [
+			[
+				clamp(focalRel[0] - 0.24, 0, 1),
+				clamp(focalRel[1] - 0.34, 0, 1),
+				clamp(focalRel[0] + 0.24, 0, 1),
+				clamp(focalRel[1] + 0.34, 0, 1),
+			],
+		]
+		gates.filteredLines.forEach((line, lineIndex) => {
 			const placement =
 				line.placement ??
 				(line.type === 'sfx' ? 'bottom-right' : line.type === 'caption' ? 'top-right' : lineIndex % 2 ? 'top-left' : 'top-right')
-			const [px, py] = ANCHORS[placement] ?? ANCHORS['top-right']
+			const candidateRel = ANCHORS[placement] ?? ANCHORS['top-right']
 			const w = (line.type === 'sfx' ? 156 : 188) * sx
 			const h = (line.type === 'sfx' ? 64 : 96) * sy
-			const cx = (box.minX + (box.maxX - box.minX) * px) * sx
-			const cy = (box.minY + (box.maxY - box.minY) * py) * sy
+			const wRel = clamp(w / sx / boxW, 0.05, 0.9)
+			const hRel = clamp(h / sy / boxH, 0.05, 0.9)
+			const solved =
+				line.type === 'caption' || line.type === 'sfx'
+					? { centerRel: candidateRel }
+					: solveAntiOcclusionBubblePlacement(panel.pts, subjectBoxesRel, candidateRel, wRel, hRel)
+			const [px, py] = solved.centerRel
+			const cx = (box.minX + boxW * px) * sx
+			const cy = (box.minY + boxH * py) * sy
 			const x = cx - w / 2
 			const y = cy - h / 2
-			const mouthX = ((box.minX + box.maxX) / 2) * sx
-			const mouthY = (box.minY + (box.maxY - box.minY) * (beat.who.includes('boss') ? 0.4 : 0.62)) * sy
+			const mouthX = (box.minX + boxW * focalRel[0]) * sx
+			const mouthY = (box.minY + boxH * focalRel[1]) * sy
 			let dx = mouthX - cx
 			let dy = mouthY - cy
 			const len = Math.hypot(dx, dy) || 1
@@ -47,11 +78,20 @@ export function planBubbles(layout: Layout, beats: Beat[], pageW = pagePixelSize
 				dy = (dy / len) * max
 			}
 			const tailless = line.type === 'caption' || line.type === 'broadcast' || line.type === 'sfx'
+			const prosody = line.prosody ?? ''
+			const prosodyStyle = inferProsodyStyleFromText(prosody, line.prosodyStyle)
 			planned.push({
 				style: line.type,
 				text: line.text,
-				prosody: line.prosody ?? '',
-				emphasis: line.type === 'shout' || line.type === 'sfx' ? 1.3 : line.prosody === '低语' ? 0.85 : 1,
+				prosody,
+				prosodyStyle,
+				prosodyOffsetX: line.prosodyOffsetX ?? 0,
+				prosodyOffsetY: line.prosodyOffsetY ?? 0,
+				prosodyScale: line.prosodyScale ?? 1,
+				prosodyColor: line.prosodyColor ?? '',
+				fillColor: '#fffefb',
+				fontWeight: line.type === 'shout' || line.type === 'sfx' ? 800 : 600,
+				emphasis: line.type === 'shout' || line.type === 'sfx' ? 1.3 : prosody === '低语' ? 0.85 : 1,
 				panelIndex,
 				x,
 				y,
@@ -77,6 +117,8 @@ export function toLayoutBubbles(bubbles: PlannedBubble[], pageW: number, pageH: 
 		h: bubble.h * sy,
 		tailX: bubble.tailX * sx,
 		tailY: bubble.tailY * sy,
+		prosodyOffsetX: (bubble.prosodyOffsetX ?? 0) * sx,
+		prosodyOffsetY: (bubble.prosodyOffsetY ?? 0) * sy,
 	}))
 }
 
