@@ -26,13 +26,11 @@ import {
 	type Scenario,
 } from '../layout/score'
 import {
-	buildPanelPrompt,
 	fitBeats,
 	metaFromBeat,
 	readJson,
 	readPageParams,
 	refreshAspects,
-	safeCorner,
 	serializePageParams,
 	type Beat,
 	type BookDraft,
@@ -43,7 +41,7 @@ import {
 	type ProsodyStyle,
 } from '../model'
 import { computeOptics, defaultOpticsForMeta } from '../optics/shotLab'
-import { compileStage4PureArtSpec, compileTensionCoupledLayout, registryForPreset, runIterativePolling4Pass, UNIVERSAL_STORY_PRESETS, universalPresetToBook } from '../jev/fiveStageEngine'
+import { categoryForTag, compileStage4PureArtSpec, compileTensionCoupledLayout, createAssetRegistry, registryForPreset, runIterativePolling4Pass, UNIVERSAL_STORY_PRESETS, universalPresetToBook, verifyAssetRegistryAndBackfill, type AssetRegistry } from '../jev/fiveStageEngine'
 import { blockTitle, defaultParams, type BlockId } from '../prompts/library'
 import { BUBBLE, CARD, CONTAINER, PROMPT, type CardKind, type MangaBubble, type MangaCard, type MangaContainer } from '../shapes/schema'
 import { planBubbles } from './placement'
@@ -229,7 +227,7 @@ export function spawnBook(editor: Editor, book: BookDraft): void {
 	const referenceTags = isNoir
 		? ['#prop_pocket_watch', '#env_interrogation_room']
 		: isWutai
-			? ['#prop_poem_scroll', '#prop_zen_tea_pond', '#env_wutai_monastery']
+			? ['#env_wutai_monastery_steps', '#env_zen_tea_chamber', '#prop_poem_brush_inkstone']
 			: []
 	const lockedAssetTags = Array.from(new Set([...castTags, ...beatTags, ...referenceTags]))
 
@@ -1187,30 +1185,44 @@ export async function runBlock(
 	}
 
 	let rendered = 0
-	const bibleLocks = readCharacterLocks(editor)
 	for (const page of selectedPages(editor)) {
+		const ctx = readPageContext(editor, page)
+		const registry = buildCanvasAssetRegistryForPage(editor, page, ctx)
 		const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
+		const beats = readJson<Beat[]>(page.props.scriptJson, [])
 		const next: PanelMeta[] = []
 		for (let index = 0; index < metas.length; index += 1) {
 			const meta = metas[index]
-			const opt = computeOptics(defaultOpticsForMeta(meta))
-			// Dynamic locks: Bible-derived character tags plus this panel's asset refs.
-			const locks = [bibleLocks, ...(meta.assetRefs ?? [])].filter(Boolean).join(' ')
-			const prompt = buildPanelPrompt({
-				environment: meta.environment || page.props.environment,
-				lighting: page.props.lighting,
+			const beat: Beat = beats[index] ?? {
 				shot: meta.shot,
 				angle: meta.angle,
 				focal: meta.focal,
-				aspect: meta.aspect,
 				beat: meta.beat,
-				locks,
-				corner: safeCorner('top-right'),
+				who: meta.who,
+				assetRefs: meta.assetRefs?.length ? meta.assetRefs : ctx.lockedAssetTags.slice(0, 3),
 				silent: meta.silent,
-				opticsClause: opt.promptClause,
+			}
+			const stage4 = compileStage4PureArtSpec({
+				panelIndex: index,
+				beat,
+				meta,
+				panelPts: [
+					[0, 0],
+					[320, 0],
+					[320, 220],
+					[0, 220],
+				],
+				registry,
+				environment: meta.environment || page.props.environment,
+				lighting: page.props.lighting,
 			})
-			const dataUrl = await askImage(prompt, meta.aspect)
-			next.push({ ...meta, imageSeed: `${meta.imageSeed}-r`, imageDataUrl: dataUrl || meta.imageDataUrl })
+			const dataUrl = await askImage(stage4.pureCameraPrompt, meta.aspect, stage4.referenceImagePaths)
+			next.push({
+				...meta,
+				assetRefs: stage4.assetTags,
+				imageSeed: `${meta.imageSeed}-r`,
+				imageDataUrl: dataUrl || meta.imageDataUrl,
+			})
 			rendered += 1
 		}
 		editor.updateShape<MangaContainer>({ id: page.id, type: CONTAINER, props: { panelsJson: JSON.stringify(next) } })
@@ -1956,7 +1968,9 @@ function buildContinuationTemplate(
 		}
 	}
 
-	// Generic continuation template for any custom story
+	// Generic continuation template for any custom story (always locks active #env_* + @char + #prop assets)
+	const genericEnvTag = outgoing.lockedAssetTags.find((t) => t.startsWith('#env')) || `#env_${(outgoing.environment || 'scene').replace(/[^a-z0-9_]+/gi, '_').toLowerCase()}`
+	const genericAllLocks = Array.from(new Set([genericEnvTag, ...outgoing.lockedAssetTags]))
 	return {
 		titleSuffix: `Page ${nextPageIndex} · Continuity Extension`,
 		scenario: nextPageIndex % 2 === 0 ? 'tension' : 'climax',
@@ -1971,7 +1985,7 @@ function buildContinuationTemplate(
 				focal: '35mm',
 				beat: `P0${nextPageIndex}-01 · Picking up from the previous exit frame (${outgoing.prevExitShot}/${outgoing.prevExitAngle}), the tension tightens.`,
 				who: outgoing.lockedAssetTags.filter((t) => t.startsWith('@')).slice(0, 2),
-				assetRefs: outgoing.lockedAssetTags,
+				assetRefs: genericAllLocks,
 				tension: 0.68,
 				eyeline: [eyeSign * 18, 2],
 				lines: [{ type: 'caption', text: outgoing.prevPageSummary.slice(0, 34), placement: 'top-right' }],
@@ -1982,7 +1996,7 @@ function buildContinuationTemplate(
 				focal: '50mm',
 				beat: `P0${nextPageIndex}-02 · The lead confronts the core clue with a sharp counter-gaze.`,
 				who: outgoing.lockedAssetTags.filter((t) => t.startsWith('@')).slice(0, 1),
-				assetRefs: outgoing.lockedAssetTags,
+				assetRefs: genericAllLocks,
 				tension: 0.78,
 				eyeline: [eyeSign * 22, 0],
 				lines: [{ type: 'speech', text: 'Every clue pointed from the start to the flaw left on the previous page.', prosody: 'Steady Pressing', placement: 'top-right' }],
@@ -2005,7 +2019,7 @@ function buildContinuationTemplate(
 				focal: '35mm',
 				beat: `P0${nextPageIndex}-04 · The tables turn sharply, launching a cliffhanger hook toward the next page.`,
 				who: outgoing.lockedAssetTags.filter((t) => t.startsWith('@')),
-				assetRefs: outgoing.lockedAssetTags,
+				assetRefs: genericAllLocks,
 				tension: 0.94,
 				eyeline: [eyeSign * 26, -2],
 				lines: [
@@ -2318,19 +2332,155 @@ export function cloneVariantPage(editor: Editor, sourcePageId?: TLShapeId): stri
 	return `Cloned layout variant for "${page.props.title}" (JEV ${Math.round(judged.score * 100)})`
 }
 
-function resolvePresetRegistryForPage(page: MangaContainer, ctx: PagePipelineContext) {
-	const isWutai =
-		ctx.stylePreset === 'shanshui_ink' ||
-		page.props.stylePreset === 'shanshui_ink' ||
-		ctx.lockedAssetTags.some((t) => t === '@ding_yuanying' || t === '@master_zhixuan') ||
-		page.props.title.toLowerCase().includes('wutai')
-	const isSeagull =
-		ctx.stylePreset === 'shonen_water' ||
-		page.props.stylePreset === 'shonen_water' ||
-		ctx.lockedAssetTags.some((t) => t.includes('gull') || t === '@kanta')
-	const presetKey = isWutai ? 'wutai-lundao' : isSeagull ? 'seagull-debate' : 'noir-watchmaker'
-	const preset = UNIVERSAL_STORY_PRESETS[presetKey] ?? UNIVERSAL_STORY_PRESETS['noir-watchmaker']
-	return registryForPreset(preset)
+/**
+ * Story-agnostic Stage 1 Asset Registry Builder:
+ * Dynamically aggregates all locked `MangaCard` reference sheets on the canvas (`@char`, `#env`, `#prop`)
+ * together with any matching universal preset assets and backfills missing tags so ANY story on the canvas
+ * has a complete Stage 1 `AssetRegistry` with multi-image `referenceImagePaths` for Stage 4 I2I rendering.
+ */
+export function buildCanvasAssetRegistryForPage(
+	editor: Editor | null,
+	page: MangaContainer,
+	ctx: PagePipelineContext,
+): AssetRegistry {
+	const registry = createAssetRegistry(`canvas-${page.id}`, {
+		preset: ctx.stylePreset || page.props.stylePreset || 'shanshui_ink',
+		lighting: `${ctx.lighting || page.props.lighting} · ${ctx.worldRules || page.props.worldRules || 'Consistent lighting'}`,
+	})
+
+	// 1. Seed baseline assets from all universal presets so built-in tags resolve their canonical sheets
+	for (const preset of Object.values(UNIVERSAL_STORY_PRESETS)) {
+		const presetReg = registryForPreset(preset)
+		for (const [tag, asset] of Object.entries(presetReg.assets)) {
+			registry.assets[tag] = { ...asset }
+		}
+	}
+
+	// 2. Override / extend with live `MangaCard` reference asset cards placed on the canvas by the user or Stage 1
+	if (editor) {
+		const cards = editor
+			.getCurrentPageShapes()
+			.filter((s): s is MangaCard => s.type === CARD && Boolean(s.props.tag))
+		for (const card of cards) {
+			const rawTag = card.props.tag.trim()
+			if (!rawTag) continue
+			const tag = rawTag.startsWith('@') || rawTag.startsWith('#') ? rawTag : `@${rawTag}`
+			const category = categoryForTag(tag)
+			const existing = registry.assets[tag]
+			registry.assets[tag] = {
+				assetId: `canvas_asset_${tag.replace(/^[@#]/, '')}`,
+				tag,
+				name: card.props.title || existing?.name || tag,
+				category,
+				fileName: existing?.fileName || `asset_${category}_${tag.replace(/^[@#]/, '')}.png`,
+				filePath: card.props.imageDataUrl || existing?.filePath || `/assets/stage1/asset_${category}_${tag.replace(/^[@#]/, '')}.png`,
+				visualLockTokens: card.props.body || existing?.visualLockTokens || `${card.props.title} (${tag})`,
+				viewsIncluded: existing?.viewsIncluded ?? ['front', 'three-quarter'],
+				approved: true,
+			}
+		}
+	}
+
+	// 3. Ensure the page's active fixed scene environment has a dedicated `#env_*` asset in the registry
+	const envSlug = (ctx.environment || page.props.environment || 'scene_interior').replace(/[^a-z0-9_]+/gi, '_').toLowerCase()
+	const hasActiveEnvTag = ctx.lockedAssetTags.some((t) => t.startsWith('#env') && registry.assets[t])
+	if (!hasActiveEnvTag) {
+		const envTag = `#env_${envSlug}`
+		if (!registry.assets[envTag]) {
+			registry.assets[envTag] = {
+				assetId: `asset_env_${envSlug}`,
+				tag: envTag,
+				name: `Fixed Scene Environment (${ctx.environment || page.props.environment})`,
+				category: 'environment',
+				fileName: `asset_env_${envSlug}.png`,
+				filePath: `/assets/stage1/asset_env_${envSlug}.png`,
+				visualLockTokens: `Fixed scene environment: ${ctx.environment || page.props.environment}, lighting: ${ctx.lighting || page.props.lighting}, world rules: ${ctx.worldRules || page.props.worldRules}`,
+				viewsIncluded: ['establishing-wide', 'reverse-angle'],
+				approved: true,
+			}
+		}
+	}
+
+	// 4. Backfill any custom user tags referenced in lockedAssetTags so Stage 4 never drops a tag
+	verifyAssetRegistryAndBackfill(ctx.lockedAssetTags, registry)
+	return registry
+}
+
+/**
+ * Spawn or update Stage 1 Reference Asset Sheet cards directly on the canvas to the left of Page 1
+ * (and optionally generate missing reference sheet images via `askImage`), working for ANY story.
+ */
+export async function spawnStage1AssetSheetCardsOnCanvas(
+	editor: Editor,
+	page?: MangaContainer,
+	generateMissingImages = false,
+): Promise<string> {
+	const targetPage = page ?? selectedPages(editor)[0]
+	if (!targetPage) return 'Select a page first to materialize its Stage 1 Reference Asset Sheets'
+	const ctx = readPageContext(editor, targetPage)
+	const registry = buildCanvasAssetRegistryForPage(editor, targetPage, ctx)
+	const existingCards = editor
+		.getCurrentPageShapes()
+		.filter((s): s is MangaCard => s.type === CARD)
+
+	const activeTags = Array.from(
+		new Set([
+			...ctx.lockedAssetTags,
+			...Object.keys(registry.assets).filter((t) => ctx.lockedAssetTags.includes(t)),
+		]),
+	)
+	let spawned = 0
+	for (let i = 0; i < activeTags.length; i += 1) {
+		const tag = activeTags[i]
+		const asset = registry.assets[tag]
+		if (!asset) continue
+		const col = i % 2
+		const row = Math.floor(i / 2)
+		const x = targetPage.x - 640 + col * 304
+		const y = targetPage.y + row * 296
+		let imgUrl = asset.filePath.startsWith('/assets/stage1/') ? '' : asset.filePath
+		if (!imgUrl && generateMissingImages) {
+			const sheetPrompt = `Stage 1 Canonical Reference Turnaround Sheet for ${asset.tag} (${asset.name}, ${asset.category}): ${asset.visualLockTokens}. Clean character/environment/prop concept sheet, neutral parchment background, no text or speech bubbles.`
+			imgUrl = await askImage(sheetPrompt, '4:3')
+		}
+		const found = existingCards.find((c) => c.props.tag === tag)
+		if (found) {
+			editor.updateShape<MangaCard>({
+				id: found.id,
+				type: CARD,
+				props: {
+					title: asset.name,
+					body: asset.visualLockTokens,
+					locked: true,
+					imageDataUrl: imgUrl || found.props.imageDataUrl,
+					aiStatus: `Stage 1 Locked · ${asset.category.toUpperCase()}`,
+				},
+			})
+		} else {
+			const id = createShapeId(`stage1-asset-${tag.replace(/^[@#]/, '')}`)
+			editor.createShape<MangaCard>({
+				id,
+				type: CARD,
+				x,
+				y,
+				props: {
+					w: 288,
+					h: 276,
+					kind: asset.category === 'character' ? 'character' : 'image',
+					title: asset.name,
+					tag: asset.tag,
+					body: asset.visualLockTokens,
+					voice: asset.fileName,
+					locked: true,
+					imageDataUrl: imgUrl,
+					customPrompt: '',
+					aiStatus: `Stage 1 Canonical Sheet · ${asset.category.toUpperCase()}`,
+				},
+			})
+			spawned += 1
+		}
+	}
+	return `Materialized ${activeTags.length} Stage 1 Reference Asset Sheet cards (${spawned} new) for ${targetPage.props.title}`
 }
 
 export async function regenerateSelectedPanel(
@@ -2345,7 +2495,7 @@ export async function regenerateSelectedPanel(
 	if (!target) return 'Target panel not found'
 
 	const ctx = readPageContext(editor, page)
-	const registry = resolvePresetRegistryForPage(page, ctx)
+	const registry = buildCanvasAssetRegistryForPage(editor, page, ctx)
 	const beat: Beat = beats[idx] ?? {
 		shot: target.shot,
 		angle: target.angle,

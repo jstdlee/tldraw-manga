@@ -16,7 +16,9 @@ import {
 	formatBeatsToScriptText,
 	loadPresetArtIntoPanel,
 	readPageContext,
+	buildCanvasAssetRegistryForPage,
 	regenerateSelectedPanel,
+	spawnStage1AssetSheetCardsOnCanvas,
 	rerollSelectedPages,
 	resetPanelTransformOnPage,
 	rotatePanelImageOnPage,
@@ -565,14 +567,51 @@ export function CanvasContextMenu({
 					))}
 				</MenuSub>
 				<MenuRow
-					label="Regenerate Panel with AI"
+					label="Regenerate Panel with AI (Multi-Image I2I)"
 					shortcut="⌘R"
 					onSelect={async () => {
-						onStatus(`Regenerating panel ${panelIndex + 1}...`)
+						onStatus(`Regenerating panel ${panelIndex + 1} via Multi-Image I2I...`)
 						onClose()
 						onStatus(await regenerateSelectedPanel(editor, page, panelIndex))
 					}}
 				/>
+				<MenuSub id="panel-asset-refs" label={`Bound Asset Refs (${(meta.assetRefs ?? []).length})`} openLeft={openLeft}>
+					{(() => {
+						const pCtx = readPageContext(editor, page)
+						const reg = buildCanvasAssetRegistryForPage(editor, page, pCtx)
+						const candidateTags = Array.from(new Set([...pCtx.lockedAssetTags, ...(meta.assetRefs ?? []), ...(meta.who ?? [])]))
+						return candidateTags.map((tag) => {
+							const currentRefs = meta.assetRefs ?? []
+							const isBound = currentRefs.includes(tag)
+							const assetInfo = reg.assets[tag]
+							return (
+								<MenuRow
+									key={tag}
+									label={assetInfo ? `${tag} · ${assetInfo.name}` : tag}
+									checked={isBound}
+									onSelect={() => {
+										const nextRefs = isBound ? currentRefs.filter((t) => t !== tag) : [...currentRefs, tag]
+										const nextMetas = metas.map((m, idx) => (idx === panelIndex ? { ...m, assetRefs: nextRefs } : m))
+										editor.updateShape<MangaContainer>({
+											id: page.id,
+											type: CONTAINER,
+											props: { panelsJson: JSON.stringify(nextMetas) },
+										})
+										onStatus(`Panel ${panelIndex + 1} asset refs: ${nextRefs.join(' ') || 'none'}`)
+									}}
+								/>
+							)
+						})
+					})()}
+					<MenuDivider />
+					<MenuRow
+						label="Materialize Stage 1 Asset Sheets on Canvas"
+						onSelect={async () => {
+							onClose()
+							onStatus(await spawnStage1AssetSheetCardsOnCanvas(editor, page, false))
+						}}
+					/>
+				</MenuSub>
 				<MenuRow
 					label="Reset Pan & Zoom 100%"
 					shortcut="⌘0"
@@ -1332,11 +1371,11 @@ export function PageContextModal({
 		}
 	}
 	const builtinAssets: Array<{ tag: string; title: string; kind: string; imageDataUrl?: string }> = [
-		{ tag: '@ding_yuanying', title: 'Ding Yuanying (Strategist)', kind: 'character', imageDataUrl: '/assets/wutai/p2_02_three_realms.jpg' },
-		{ tag: '@master_zhixuan', title: 'Master Zhixuan (Abbot)', kind: 'character', imageDataUrl: '/assets/wutai/p1_03_master_zhixuan.jpg' },
-		{ tag: '#prop_poem_scroll', title: 'Xuan-Paper Poem Scroll & Brush', kind: 'prop', imageDataUrl: '/assets/wutai/p3_02_brush_correction.jpg' },
-		{ tag: '#prop_zen_tea_pond', title: 'Cliffside Tea Table & Lotus Pond', kind: 'prop', imageDataUrl: '/assets/wutai/p2_03_stone_ripples.jpg' },
-		{ tag: '#env_wutai_monastery', title: 'Wutai Mountain Zen Monastery', kind: 'environment', imageDataUrl: '/assets/wutai/p1_01_mountain_mist.jpg' },
+		{ tag: '@ding_yuanying', title: 'Ding Yuanying (Canonical Character Sheet)', kind: 'character', imageDataUrl: '/assets/wutai/asset_char_ding_yuanying.jpg' },
+		{ tag: '@master_zhixuan', title: 'Master Zhixuan (Canonical Character Sheet)', kind: 'character', imageDataUrl: '/assets/wutai/asset_char_master_zhixuan.jpg' },
+		{ tag: '#env_wutai_monastery_steps', title: 'Mount Wutai Monastery Stone Steps (Env Sheet)', kind: 'environment', imageDataUrl: '/assets/wutai/asset_env_wutai_monastery_steps.jpg' },
+		{ tag: '#env_zen_tea_chamber', title: 'Cliffside Zen Tea Chamber & Moon Window (Fixed Scene Sheet)', kind: 'environment', imageDataUrl: '/assets/wutai/asset_env_zen_tea_chamber.jpg' },
+		{ tag: '#prop_poem_brush_inkstone', title: 'Xuan Scroll, Brush, Inkstone & Stone Lotus Bowl (Prop Sheet)', kind: 'prop', imageDataUrl: '/assets/wutai/asset_prop_poem_brush_inkstone.jpg' },
 		{ tag: '@lu_chen', title: 'Detective Lu Chen', kind: 'character', imageDataUrl: '/assets/interrogation/asset_char_lu_chen.jpg' },
 		{ tag: '@lin_ye', title: 'Suspect Lin Ye', kind: 'character', imageDataUrl: '/assets/interrogation/asset_char_lin_ye.jpg' },
 		{ tag: '@shen_mo', title: 'Deputy Chief Shen Mo', kind: 'character', imageDataUrl: '/assets/interrogation/asset_char_shen_mo.jpg' },

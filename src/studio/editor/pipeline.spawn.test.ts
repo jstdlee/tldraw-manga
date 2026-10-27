@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { spawnBook } from './pipeline'
+import { buildCanvasAssetRegistryForPage, readPageContext, spawnBook, spawnStage1AssetSheetCardsOnCanvas } from './pipeline'
 import { defaultBook } from '../demo/book'
-import { universalPresetToBook } from '../jev/fiveStageEngine'
+import { compileStage4PureArtSpec, universalPresetToBook } from '../jev/fiveStageEngine'
 import { CARD, CONTAINER } from '../shapes/schema'
 import type { PagePipelineContext } from '../model'
 
@@ -26,6 +26,10 @@ function makeEditor() {
 	const editor = {
 		createShape(shape: Partial<MockShape> & { id: string; type: string }) {
 			shapes.set(shape.id, { x: 0, y: 0, props: {}, ...shape } as MockShape)
+		},
+		updateShape(shape: Partial<MockShape> & { id: string }) {
+			const cur = shapes.get(shape.id)
+			if (cur) shapes.set(shape.id, { ...cur, ...shape, props: { ...cur.props, ...(shape.props ?? {}) } })
 		},
 		getShape(id: string) {
 			return shapes.get(id)
@@ -153,5 +157,91 @@ describe('spawnBook clean 2-page pipeline', () => {
 		expect(ctx2.inheritedFromPageIndex).toBe(1)
 		expect(ctx3.inheritedFromPageIndex).toBe(2)
 		expect(ctx3.lockedAssetTags).toContain('@ding_yuanying')
+	})
+	it('dynamically binds custom user MangaCard reference sheets and fixed scene #env into Stage 4 Multi-Image I2I for ANY story', async () => {
+		const { editor, shapes } = makeEditor()
+		spawnBook(editor, defaultBook())
+		const [p1] = pagesOf(shapes)
+
+		// Place a custom user character sheet card and a custom prop sheet card on the canvas
+		editor.createShape({
+			id: 'shape:custom-hero-card' as never,
+			type: CARD,
+			x: -300,
+			y: 80,
+			props: {
+				kind: 'character',
+				title: 'Astronaut Lin',
+				tag: '@astro_lin',
+				body: 'silver orbital pressure suit, cracked gold visor, tether hook',
+				locked: true,
+				imageDataUrl: '/assets/custom/sheet_astro_lin.png',
+			},
+		})
+		editor.createShape({
+			id: 'shape:custom-env-card' as never,
+			type: CARD,
+			x: -300,
+			y: 380,
+			props: {
+				kind: 'image',
+				title: 'Orbital Airlock Bay 09',
+				tag: '#env_airlock_bay09',
+				body: 'cylindrical zero-g airlock with octagonal viewport and amber warning strobes',
+				locked: true,
+				imageDataUrl: '/assets/custom/sheet_env_airlock_bay09.png',
+			},
+		})
+
+		const ctx = readPageContext(editor, p1 as never)
+		expect(ctx.lockedAssetTags).toContain('@astro_lin')
+		expect(ctx.lockedAssetTags).toContain('#env_airlock_bay09')
+
+		const registry = buildCanvasAssetRegistryForPage(editor, p1 as never, ctx)
+		expect(registry.assets['@astro_lin']?.filePath).toBe('/assets/custom/sheet_astro_lin.png')
+		expect(registry.assets['#env_airlock_bay09']?.filePath).toBe('/assets/custom/sheet_env_airlock_bay09.png')
+
+		const spec = compileStage4PureArtSpec({
+			panelIndex: 0,
+			beat: {
+				shot: 'MS',
+				angle: 'eye',
+				focal: '35mm',
+				beat: 'Astronaut Lin checks the pressure seal inside the airlock.',
+				who: ['@astro_lin'],
+				assetRefs: ['@astro_lin'],
+				lines: [],
+			},
+			meta: {
+				shot: 'MS',
+				angle: 'eye',
+				focal: '35mm',
+				aspect: '4:3',
+				beat: 'Astronaut Lin checks the pressure seal inside the airlock.',
+				who: ['@astro_lin'],
+				assetRefs: ['@astro_lin', '#env_airlock_bay09'],
+				imageSeed: 'test-seed',
+				silent: false,
+				environment: 'airlock_bay09',
+				imageOffsetX: 0,
+				imageOffsetY: 0,
+				imageScale: 1,
+				imageRotation: 0,
+				 focalMm: 35,
+				fStop: 2.8,
+				sensor: 'ff35',
+			} as never,
+			panelPts: [[0, 0], [320, 0], [320, 220], [0, 220]],
+			registry,
+			environment: 'airlock_bay09',
+			lighting: 'rim',
+		})
+		expect(spec.referenceImagePaths).toContain('/assets/custom/sheet_astro_lin.png')
+		expect(spec.referenceImagePaths).toContain('/assets/custom/sheet_env_airlock_bay09.png')
+		expect(spec.pureCameraPrompt).toContain('Reference Image #1 = @astro_lin')
+		expect(spec.pureCameraPrompt).toContain('Reference Image #2 = #env_airlock_bay09')
+
+		const msg = await spawnStage1AssetSheetCardsOnCanvas(editor, p1 as never, false)
+		expect(msg).toContain('Stage 1 Reference Asset Sheet cards')
 	})
 })
