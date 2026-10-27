@@ -45,18 +45,34 @@ function clamp(v: number, lo: number, hi: number): number {
 	return Math.max(lo, Math.min(hi, v))
 }
 
-function wrap(text: string, maxChars: number): string[] {
+function wrap(text: string, maxUnits: number): string[] {
 	const raw = String(text ?? '').trim()
 	if (!raw.length) return ['…']
 	const lines: string[] = []
-	const size = Math.max(4, maxChars)
+	const limit = Math.max(6, maxUnits)
 	for (const paragraph of raw.split(/\n+/)) {
-		const chars = Array.from(paragraph)
-		for (let index = 0; index < chars.length; index += size) {
-			lines.push(chars.slice(index, index + size).join(''))
+		const hasSpaces = paragraph.includes(' ') && /^[\x00-\x7F\s“”‘’—…·「」『』]+$/.test(paragraph)
+		if (hasSpaces) {
+			const words = paragraph.split(/\s+/).filter(Boolean)
+			let current = ''
+			for (const word of words) {
+				const candidate = current ? `${current} ${word}` : word
+				if (candidate.length <= limit || !current) {
+					current = candidate
+				} else {
+					lines.push(current)
+					current = word
+				}
+			}
+			if (current) lines.push(current)
+		} else {
+			const chars = Array.from(paragraph)
+			for (let index = 0; index < chars.length; index += limit) {
+				lines.push(chars.slice(index, index + limit).join(''))
+			}
 		}
 	}
-	return lines.slice(0, 5)
+	return lines.slice(0, 6)
 }
 
 function tailPolygon(w: number, h: number, tailX: number, tailY: number, bgFill: string, stroke: string): string {
@@ -85,14 +101,31 @@ function textBlock(
 	emphasis: number,
 	weight: number,
 	fillColor = '#1a242c',
+	style = 'speech',
 ): string {
-	const font = Math.max(11, Math.min(28, (emphasis >= 1.2 ? 18 : 14) * (w / 130) * clamp(emphasis || 1, 0.7, 1.65)))
-	const lines = wrap(text, Math.max(4, Math.floor(w / (font * 0.95))))
-	const start = h / 2 - ((lines.length - 1) * font * 1.15) / 2
+	const raw = String(text ?? '').trim()
+	const isLatin = /^[\x00-\x7F\s“”‘’—…·]+$/.test(raw)
+	const isRect = style === 'caption' || style === 'broadcast'
+	const usableW = isRect ? Math.max(40, w - 22) : Math.max(40, w * 0.80)
+	const usableH = isRect ? Math.max(24, h - 16) : Math.max(24, h * 0.78)
+	const charCount = Math.max(1, Array.from(raw).length)
+	const baseFont = clamp((emphasis >= 1.2 ? 14 : 11.8) * clamp(emphasis || 1, 0.8, 1.35), 9.5, 18)
+	let font = baseFont
+	if (charCount > 28) font = Math.min(font, isLatin ? 10.2 : 11.0)
+	if (charCount > 45) font = Math.min(font, isLatin ? 9.6 : 10.2)
+	const glyphW = isLatin ? font * 0.54 : font * 1.02
+	const maxCharsPerLine = Math.max(6, Math.floor(usableW / glyphW))
+	const lines = wrap(raw, maxCharsPerLine)
+	const lineH = font * 1.22
+	if (lines.length * lineH > usableH && lines.length > 1) {
+		font = Math.max(8.8, (usableH / (lines.length * 1.22)))
+	}
+	const finalLineH = font * 1.22
+	const start = h / 2 - ((lines.length - 1) * finalLineH) / 2 + font * 0.34
 	const tspans = lines
-		.map((line, index) => `<tspan x="${(w / 2).toFixed(1)}" y="${(start + index * font * 1.15).toFixed(1)}">${escapeXml(line)}</tspan>`)
+		.map((line, index) => `<tspan x="${(w / 2).toFixed(1)}" y="${(start + index * finalLineH).toFixed(1)}">${escapeXml(line)}</tspan>`)
 		.join('')
-	return `<text class="bubble-text-layer" text-anchor="middle" font-family="Hiragino Sans, PingFang SC, Noto Sans SC, sans-serif" font-size="${font.toFixed(1)}" font-weight="${weight}" fill="${fillColor}">${tspans}</text>`
+	return `<text class="bubble-text-layer" text-anchor="middle" font-family="Hiragino Sans, PingFang SC, Noto Serif SC, Noto Sans SC, sans-serif" font-size="${font.toFixed(1)}" font-weight="${weight}" fill="${fillColor}">${tspans}</text>`
 }
 
 export function normalizeProsodyStyle(raw?: string): ProsodyStyle {
@@ -253,7 +286,7 @@ export function bubbleMarkup(bubble: BubbleDraw): string {
 			: style === 'shout'
 				? 800
 				: 600
-	const words = style === 'sfx' ? '' : textBlock(bubble.text, w, h, emphasis, weight, textFill)
+	const words = style === 'sfx' ? '' : textBlock(bubble.text, w, h, emphasis, weight, textFill, style)
 	return `${body}${words}${label}`
 }
 

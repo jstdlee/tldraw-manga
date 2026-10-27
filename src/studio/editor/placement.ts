@@ -54,8 +54,9 @@ export function planBubbles(layout: Layout, beats: Beat[], pageW = pagePixelSize
 				line.placement ??
 				(line.type === 'sfx' ? 'bottom-right' : line.type === 'caption' ? 'top-right' : lineIndex % 2 ? 'top-left' : 'top-right')
 			const candidateRel = ANCHORS[placement] ?? ANCHORS['top-right']
-			const w = (line.type === 'sfx' ? 156 : 188) * sx
-			const h = (line.type === 'sfx' ? 64 : 96) * sy
+			const isWidePanel = boxW >= 420
+			const w = (line.type === 'sfx' ? 148 : isWidePanel ? (line.type === 'caption' ? 264 : 252) : 188) * sx
+			const h = (line.type === 'sfx' ? 58 : isWidePanel ? 104 : 96) * sy
 			const wRel = clamp(w / sx / boxW, 0.05, 0.9)
 			const hRel = clamp(h / sy / boxH, 0.05, 0.9)
 			const solved =
@@ -89,7 +90,7 @@ export function planBubbles(layout: Layout, beats: Beat[], pageW = pagePixelSize
 				prosodyOffsetY: line.prosodyOffsetY ?? 0,
 				prosodyScale: line.prosodyScale ?? 1,
 				prosodyColor: line.prosodyColor ?? '',
-				fillColor: '#fffefb',
+				fillColor: line.fillColor ?? '#fffefb',
 				fontWeight: line.type === 'shout' || line.type === 'sfx' ? 800 : 600,
 				emphasis: line.type === 'shout' || line.type === 'sfx' ? 1.3 : prosody === 'whisper' ? 0.85 : 1,
 				panelIndex,

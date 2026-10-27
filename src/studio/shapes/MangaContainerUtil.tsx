@@ -286,7 +286,9 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 	const lockedTagCount = Array.isArray(parsedCtx.lockedAssetTags) && parsedCtx.lockedAssetTags.length > 0 ? parsedCtx.lockedAssetTags.length : 5
 	const inheritedIdx = parsedCtx.inheritedFromPageIndex
 	const styleRaw = (parsedCtx.stylePreset || shape.props.stylePreset || '').toLowerCase()
-	const styleShort = styleRaw.includes('noir')
+	const styleShort = styleRaw.includes('shanshui') || styleRaw.includes('wutai')
+		? 'Shan-Shui'
+		: styleRaw.includes('noir')
 		? 'Noir'
 		: styleRaw.includes('water')
 			? 'Watercolor'

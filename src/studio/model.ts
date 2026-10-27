@@ -54,6 +54,7 @@ export interface BubbleLine {
 	prosody?: Prosody
 	prosodyStyle?: ProsodyStyle
 	prosodyColor?: string
+	fillColor?: string
 	prosodyScale?: number
 	prosodyOffsetX?: number
 	prosodyOffsetY?: number

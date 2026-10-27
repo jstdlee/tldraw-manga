@@ -587,6 +587,9 @@ function solveProgrammaticRowCols(beats: Beat[], tensions: number[]): number[] {
 	if (n === 1) return [1]
 	if (n === 2) return [1, 1]
 	if (n === 3) {
+		if (beats.some((b) => b.imageDataUrl?.includes('/wutai/') || b.assetRefs?.includes('#env_wutai_monastery'))) {
+			return [1, 1, 1]
+		}
 		return tensions[2] >= tensions[0] ? [2, 1] : [1, 2]
 	}
 	if (n === 4) {
@@ -1719,6 +1722,131 @@ export const UNIVERSAL_STORY_PRESETS: Record<string, UniversalStoryPreset> = {
 			{ shot: 'ECU', angle: 'eye', focal: '85mm', beat: 'Silent beat: a single raindrop hangs before the clash.', who: [], assetRefs: ['#prop_broken_katana'], mccloudTransition: 'aspect_to_aspect', wordPictureMode: 'picture_specific', tension: 0.72, silent: true, eyeline: [0, -4], focalPointRel: [0.5, 0.48], lines: [] },
 			{ shot: 'WS', angle: 'dutch', focal: '18mm', beat: 'The clash: both charge as lightning splits the sky.', who: ['@ronin_ren', '@warden_taka'], assetRefs: ['@ronin_ren', '@warden_taka', '#prop_broken_katana'], mccloudTransition: 'action_to_action', wordPictureMode: 'duo_specific', tension: 0.94, eyeline: [-22, 2], focalPointRel: [0.5, 0.5], subsplitInset: { enabled: true, targetTag: '@warden_taka', rectRel: [0.6, 0.58, 0.95, 0.95], shot: 'MCU', caption: 'reaction' }, lines: [{ type: 'sfx', text: 'RUMBLE—!!', placement: 'top-right' }, { type: 'shout', text: 'COME ON—!', placement: 'bottom-left' }] },
 			{ shot: 'MCU', angle: 'eye', focal: '50mm', beat: 'Aftermath: back-to-back, blades lowered, breath ragged.', who: ['@ronin_ren', '@warden_taka'], assetRefs: ['@ronin_ren', '@warden_taka'], mccloudTransition: 'scene_to_scene', wordPictureMode: 'parallel', tension: 0.5, eyeline: [12, 8], focalPointRel: [0.5, 0.5], lines: [{ type: 'speech', text: '...You\'ve got some skill after all.', prosody: 'Pause', placement: 'top-right' }] },
+		],
+	},
+	'wutai-lundao': {
+		id: 'wutai-lundao',
+		title: 'Wutai Mountain Debate on the Dao',
+		subtitle: 'Song Shan-Shui Ink Wash · 3-Page Philosophical Pipeline',
+		logline:
+			'Before launching his "plunder the rich to aid the poor" campaign in Wangmiao Village, strategist Ding Yuanying ascends mist-veiled Wutai Mountain to test his conscience against Abbot Master Zhixuan across three acts: the poem probe, Cultivation vs. Awakening & Three Realms, and the brush revision awakening.',
+		world:
+			'Classical Song-dynasty Shan-Shui ink wash painting on warm Xuan rice paper, axe-cut cliff brushstrokes, misty pine peaks, mineral indigo-ochre accents, and vermilion seal prosody stamps.',
+		stylePreset: 'shanshui_ink',
+		readingDirection: 'ltr',
+		scenario: 'establishing',
+		layoutPreset: 'std',
+		mood: 'zen clarity · philosophical tension',
+		environment: 'wutai-monastery',
+		lighting: 'ink-wash-diffused',
+		characters: [
+			{
+				tag: '@ding_yuanying',
+				name: 'Ding Yuanying',
+				appearance: 'composed middle-aged scholar-strategist in dark slate coat, sharp contemplative eyes',
+				voice: 'razor-sharp, dialectical, introspective',
+				locked: true,
+			},
+			{
+				tag: '@master_zhixuan',
+				name: 'Master Zhixuan',
+				appearance: 'venerable Zen abbot in ochre-and-ash robes, long white eyebrows, serene penetrating gaze',
+				voice: 'tranquil, compassionate, all-seeing',
+				locked: true,
+			},
+		],
+		assets: [
+			lockAsset('@ding_yuanying', 'Ding Yuanying', 'character', 'composed strategist in slate coat, contemplative eyes', '/assets/wutai/p2_02_three_realms.jpg'),
+			lockAsset('@master_zhixuan', 'Master Zhixuan', 'character', 'venerable Zen abbot in ochre robes, white eyebrows', '/assets/wutai/p1_03_master_zhixuan.jpg'),
+			lockAsset('#prop_poem_scroll', 'Xuan-Paper Poem Scroll', 'prop', 'vertical rice-paper calligraphy scroll and bamboo wolf-hair brush', '/assets/wutai/p3_02_brush_correction.jpg'),
+			lockAsset('#prop_zen_tea_pond', 'Cliffside Tea Table & Lotus Pond', 'prop', 'steaming celadon teacups on low wooden table and still temple pond', '/assets/wutai/p2_03_stone_ripples.jpg'),
+			lockAsset('#env_wutai_monastery', 'Wutai Mountain Zen Monastery', 'environment', 'mist-shrouded ancient monastery perched among towering crags and pine clouds', '/assets/wutai/p1_01_mountain_mist.jpg'),
+		],
+		panels: [
+			{
+				shot: 'EWS',
+				angle: 'high',
+				focal: '18mm',
+				focalMm: 18,
+				fStop: 5.6,
+				imageDataUrl: '/assets/wutai/p1_01_mountain_mist.jpg',
+				beat: 'P01-01 · Mist locks the ancient pines of Wutai Mountain as Ding Yuanying ascends the stone steps—not to pray for fortune, but to seek a place to examine his conscience before unleashing his ruthless market campaign.',
+				who: ['@ding_yuanying'],
+				assetRefs: ['#env_wutai_monastery', '@ding_yuanying'],
+				mccloudTransition: 'scene_to_scene',
+				wordPictureMode: 'additive',
+				tension: 0.62,
+				eyeline: [22, -4],
+				focalPointRel: [0.48, 0.58],
+				lines: [
+					{
+						type: 'caption',
+						text: 'Mist locks the ancient pines of Wutai Mountain. Ding Yuanying ascends not for blessings, but to question his own conscience before unleashing a storm that "plunders the rich to aid the poor."',
+						prosody: 'Conscience Probe',
+						prosodyStyle: 'seal',
+						prosodyColor: '#b91c1c',
+						fillColor: '#fef9c3',
+						placement: 'top-left',
+					},
+				],
+			},
+			{
+				shot: 'CU',
+				angle: 'eye',
+				focal: '50mm',
+				focalMm: 50,
+				fStop: 2.8,
+				imageDataUrl: '/assets/wutai/p1_02_offering_poem.jpg',
+				beat: 'P01-02 · Inside the incense-veiled hall, Ding Yuanying offers generous alms and presents his self-composed verse on a Xuan-paper scroll as a sharp philosophical probe.',
+				who: ['@ding_yuanying'],
+				assetRefs: ['@ding_yuanying', '#prop_poem_scroll', '#env_wutai_monastery'],
+				mccloudTransition: 'action_to_action',
+				wordPictureMode: 'interdependent',
+				tension: 0.78,
+				eyeline: [24, 2],
+				focalPointRel: [0.46, 0.48],
+				lines: [
+					{ type: 'sfx', text: 'WISP—', placement: 'top-left' },
+					{
+						type: 'speech',
+						speaker: '@ding_yuanying',
+						text: `"Speak not of Heaven's Mandate when seeking the Dao; fetch no True Sutra when practicing cultivation. Joy and sorrow, flourishing and withering—which was ever predestined?"`,
+						prosody: 'Sharp Verse Probe',
+						prosodyStyle: 'seal',
+						prosodyColor: '#b91c1c',
+						fillColor: '#fffdf4',
+						placement: 'top-right',
+					},
+				],
+			},
+			{
+				shot: 'MCU',
+				angle: 'eye',
+				focal: '85mm',
+				focalMm: 85,
+				fStop: 2.0,
+				imageDataUrl: '/assets/wutai/p1_03_master_zhixuan.jpg',
+				beat: 'P01-03 · Abbot Master Zhixuan unrolls the scroll; seeing the fierce attachment and blade-like defiance hidden between the ink strokes, he makes a rare exception to receive the guest.',
+				who: ['@master_zhixuan'],
+				assetRefs: ['@master_zhixuan', '#prop_poem_scroll'],
+				mccloudTransition: 'subject_to_subject',
+				wordPictureMode: 'duo_specific',
+				tension: 0.88,
+				eyeline: [-22, 4],
+				focalPointRel: [0.54, 0.44],
+				lines: [
+					{
+						type: 'speech',
+						speaker: '@master_zhixuan',
+						text: '"This benefactor carries a hidden blade in his heart; every line bristles with forceful attachment. Since he comes seeking verification, invite him into the Zen chamber."',
+						prosody: 'Seeing Through Wrath',
+						prosodyStyle: 'seal',
+						prosodyColor: '#0f172a',
+						fillColor: '#fffdf4',
+						placement: 'bottom-left',
+					},
+				],
+			},
 		],
 	},
 }

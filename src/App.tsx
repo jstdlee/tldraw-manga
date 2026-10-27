@@ -155,6 +155,7 @@ export function App() {
 							InFrontOfTheCanvas: () => <FloatingBar onSwitchTab={(tab) => setActiveTab(tab)} />,
 						}}
 						onMount={(mounted) => {
+							;(window as unknown as { __MANGA_EDITOR__?: Editor }).__MANGA_EDITOR__ = mounted
 							setEditor(mounted)
 							mounted.user.updateUserPreferences({ colorScheme: theme })
 							seedDefaultIfEmpty(mounted)

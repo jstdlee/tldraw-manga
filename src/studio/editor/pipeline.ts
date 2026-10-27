@@ -225,10 +225,17 @@ export function spawnBook(editor: Editor, book: BookDraft): void {
 		.flatMap((beat) => [...(beat.who ?? []), ...(beat.assetRefs ?? [])])
 		.filter(Boolean)
 	const isNoir = book.stylePreset === 'seinen_noir' || book.title.toLowerCase().includes('interrogation')
-	const referenceTags = isNoir ? ['#prop_pocket_watch', '#env_interrogation_room'] : []
+	const isWutai = book.stylePreset === 'shanshui_ink' || book.title.toLowerCase().includes('wutai')
+	const referenceTags = isNoir
+		? ['#prop_pocket_watch', '#env_interrogation_room']
+		: isWutai
+			? ['#prop_poem_scroll', '#prop_zen_tea_pond', '#env_wutai_monastery']
+			: []
 	const lockedAssetTags = Array.from(new Set([...castTags, ...beatTags, ...referenceTags]))
 
-	const sceneTitle = (chapter?.title || book.title).split(/[·:]/)[0].trim() || 'Opening Scene'
+	const sceneTitle = isWutai
+		? 'Ascending Wutai & The Probe'
+		: (chapter?.title || book.title).split(/[·:]/)[0].trim() || 'Opening Scene'
 
 	// Page 1 -- top-left origin, clean and focused.
 	const page1Id = createPageShape(editor, firstPage, {
@@ -247,11 +254,13 @@ export function spawnBook(editor: Editor, book: BookDraft): void {
 		pageDirective: `${sceneTitle}: establish the scene, lock the ${lockedAssetTags.length} reference assets and the 180° camera axis, and land a page-turn hook on the final panel to hand off into P2.`,
 	})
 
-	// Page 2 -- automatically extended to the right of Page 1, inheriting the full
-	// page context (locked assets, 180° axis, world rules). This immediately shows
-	// the P1 -> P2 page pipeline with inherited context in action.
+	// Page 2 (and Page 3 for 3-act Wutai Debate) -- automatically extended to the right,
+	// inheriting the full page context (locked assets, 180° axis, world rules).
 	try {
-		extendNextPageFromPage(editor, page1Id)
+		const p2 = extendNextPageFromPage(editor, page1Id)
+		if (isWutai && p2?.pageId) {
+			extendNextPageFromPage(editor, p2.pageId)
+		}
 	} catch {
 		// In headless / mock environments the extension step may be unavailable;
 		// Page 1 still stands as a valid single-page pipeline root.
@@ -1468,8 +1477,205 @@ function buildContinuationTemplate(
 		outgoing.lockedAssetTags.some((t) => t.includes('gull') || t === '@kanta') ||
 		sourcePage.props.stylePreset === 'shonen_water' ||
 		sourcePage.props.title.toLowerCase().includes('seagull')
+	const isWutai =
+		outgoing.stylePreset === 'shanshui_ink' ||
+		sourcePage.props.stylePreset === 'shanshui_ink' ||
+		outgoing.lockedAssetTags.some((t) => t === '@ding_yuanying' || t === '@master_zhixuan') ||
+		sourcePage.props.title.toLowerCase().includes('wutai')
 
 	const eyeSign = outgoing.prevExitEyeline[0] >= 0 ? 1 : -1
+
+	if (isWutai) {
+		if (nextPageIndex === 2) {
+			return {
+				titleSuffix: 'Cultivation vs Awakening & Three Realms',
+				scenario: 'tension',
+				layoutPreset: 'std',
+				environment: outgoing.environment || 'wutai-zen-hall',
+				lighting: outgoing.lighting || 'ink-wash-diffused',
+				directive:
+					'Inherited from P1 (Ascending Wutai & The Probe): Ding Yuanying and Master Zhixuan sit over tea in the cliffside chamber, debating outward Cultivation (Xiu) vs inward Awakening (Wu), the Three Realms of Buddhism, and the metaphor of a stone cast into still water.',
+				beats: [
+					{
+						shot: 'WS',
+						angle: 'eye',
+						focal: '35mm',
+						focalMm: 35,
+						fStop: 4.0,
+						imageDataUrl: '/assets/wutai/p2_01_tea_debate.jpg',
+						beat: 'P02-01 · Across a low wooden tea table before the round lattice window opening onto a sea of clouds, Ding Yuanying distinguishes outward Cultivation from inward Awakening.',
+						who: ['@ding_yuanying', '@master_zhixuan'],
+						assetRefs: ['@ding_yuanying', '@master_zhixuan', '#prop_zen_tea_pond', '#env_wutai_monastery'],
+						mccloudTransition: 'scene_to_scene',
+						wordPictureMode: 'interdependent',
+						tension: 0.78,
+						eyeline: [eyeSign * 20, 0],
+						focalPointRel: [0.46, 0.48],
+						lines: [
+							{
+								type: 'speech',
+								text: 'Master, Cultivation is merely outward behavioral restraint—seeking outside oneself. Only Awakening is the inward realization of true nature.',
+								prosody: 'Inward Awakening',
+								prosodyStyle: 'seal',
+								prosodyColor: '#b91c1c',
+								fillColor: '#fffdf4',
+								placement: 'top-left',
+							},
+						],
+					},
+					{
+						shot: 'MCU',
+						angle: 'eye',
+						focal: '50mm',
+						focalMm: 50,
+						fStop: 2.8,
+						imageDataUrl: '/assets/wutai/p2_02_three_realms.jpg',
+						beat: 'P02-02 · Ding Yuanying dissects the Three Realms of Buddhism while three translucent ink rings of cosmic clouds, temple eaves, and mortal smoke rise behind him.',
+						who: ['@ding_yuanying'],
+						assetRefs: ['@ding_yuanying', '#env_wutai_monastery'],
+						mccloudTransition: 'subject_to_subject',
+						wordPictureMode: 'duo_specific',
+						tension: 0.85,
+						eyeline: [eyeSign * 24, -2],
+						focalPointRel: [0.38, 0.44],
+						lines: [
+							{
+								type: 'speech',
+								text: 'To me, the Dharma has three tiers: profound Dao-Law as objective reality, Exoteric Teaching as moral governance, and Expedient Means as mortal consolation.',
+								prosody: 'Dao · Teaching · Means',
+								prosodyStyle: 'seal',
+								prosodyColor: '#1e3a8a',
+								fillColor: '#fffdf4',
+								placement: 'top-right',
+							},
+						],
+					},
+					{
+						shot: 'ECU',
+						angle: 'high',
+						focal: '85mm',
+						focalMm: 85,
+						fStop: 2.0,
+						imageDataUrl: '/assets/wutai/p2_03_stone_ripples.jpg',
+						beat: 'P02-03 · Metaphor Beat: a dark river pebble drops into a mirror-still lotus pond, sending concentric sumi-e ink ripples outward as it sinks into the depths.',
+						who: ['@master_zhixuan'],
+						assetRefs: ['#prop_zen_tea_pond', '@master_zhixuan'],
+						mccloudTransition: 'aspect_to_aspect',
+						wordPictureMode: 'interdependent',
+						tension: 0.91,
+						eyeline: [eyeSign * 16, 4],
+						focalPointRel: [0.5, 0.52],
+						lines: [
+							{ type: 'sfx', text: 'PLOP—', placement: 'top-left' },
+							{
+								type: 'caption',
+								text: 'Your plan to "plunder the rich to aid the poor" in Wangmiao Village is but a stone cast into still water: the stone sinks, leaving only passing ripples.',
+								prosody: 'Stone in Still Water',
+								prosodyStyle: 'seal',
+								prosodyColor: '#0f172a',
+								fillColor: '#fef9c3',
+								placement: 'bottom-right',
+							},
+						],
+					},
+				],
+			}
+		}
+
+		return {
+			titleSuffix: 'Stone in Still Water & The Brush Awakening',
+			scenario: 'climax',
+			layoutPreset: 'std',
+			environment: outgoing.environment || 'wutai-summit',
+			lighting: outgoing.lighting || 'ink-wash-diffused',
+			directive:
+				`Inherited from P2 (Cultivation vs Awakening & Three Realms): Master Zhixuan exposes the illusion of "waiting, relying, and demanding" (Deng-Kao-Yao), revises two characters on Ding Yuanying's scroll with a calligrapher's brush, and sends him forth into the clearing mountain clouds.`,
+			beats: [
+				{
+					shot: 'MS',
+					angle: 'low',
+					focal: '35mm',
+					focalMm: 35,
+					fStop: 2.8,
+					imageDataUrl: '/assets/wutai/p3_01_salvation_truth.jpg',
+					beat: 'P03-01 · Master Zhixuan speaks with serene authority on the stone terrace as sunlight pierces the mountain clouds, naming the true path of salvation.',
+					who: ['@master_zhixuan', '@ding_yuanying'],
+					assetRefs: ['@master_zhixuan', '@ding_yuanying', '#env_wutai_monastery'],
+					mccloudTransition: 'subject_to_subject',
+					wordPictureMode: 'interdependent',
+					tension: 0.88,
+					eyeline: [eyeSign * 22, -4],
+					focalPointRel: [0.48, 0.42],
+					lines: [
+						{
+							type: 'speech',
+							text: 'True salvation lies in shattering the reflex of "waiting, relying, and demanding"! Because survival of the fittest is ruthless, the strong must bear higher moral duty.',
+							prosody: 'Shatter Dependency',
+							prosodyStyle: 'seal',
+							prosodyColor: '#b91c1c',
+							fillColor: '#fffdf4',
+							placement: 'top-right',
+						},
+					],
+				},
+				{
+					shot: 'ECU',
+					angle: 'high',
+					focal: '85mm',
+					focalMm: 85,
+					fStop: 1.8,
+					imageDataUrl: '/assets/wutai/p3_02_brush_correction.jpg',
+					beat: 'P03-02 · Extreme close-up: Master Zhixuan dips a bamboo wolf-hair brush in rich ink and alters two characters on the rice-paper scroll—turning defiance into harmony with the Dao.',
+					who: ['@master_zhixuan'],
+					assetRefs: ['@master_zhixuan', '#prop_poem_scroll'],
+					mccloudTransition: 'action_to_action',
+					wordPictureMode: 'duo_specific',
+					tension: 0.96,
+					eyeline: [eyeSign * 18, 2],
+					focalPointRel: [0.52, 0.48],
+					lines: [
+						{ type: 'sfx', text: 'SWISH—', placement: 'top-left' },
+						{
+							type: 'speech',
+							text: `Let this old monk revise two words: "Awakening to the Dao reveals Heaven's Mandate; Cultivation must seek the True Sutra." Karma never errs—why harbor wrath?`,
+							prosody: 'Two Words Revised',
+							prosodyStyle: 'seal',
+							prosodyColor: '#b91c1c',
+							fillColor: '#fffdf4',
+							placement: 'bottom-left',
+						},
+					],
+				},
+				{
+					shot: 'EWS',
+					angle: 'high',
+					focal: '18mm',
+					focalMm: 24,
+					fStop: 5.6,
+					imageDataUrl: '/assets/wutai/p3_03_clouds_awakening.jpg',
+					beat: 'P03-03 · Vast Shan-Shui finale: golden dawn parts the sea of clouds over Wutai Mountain as Ding Yuanying bows in silent clarity on the cliffside stone steps.',
+					who: ['@ding_yuanying', '@master_zhixuan'],
+					assetRefs: ['@ding_yuanying', '@master_zhixuan', '#env_wutai_monastery'],
+					mccloudTransition: 'scene_to_scene',
+					wordPictureMode: 'additive',
+					tension: 0.92,
+					eyeline: [eyeSign * 26, -6],
+					focalPointRel: [0.5, 0.46],
+					lines: [
+						{
+							type: 'caption',
+							text: 'Strong and weak alike abide within the karma of the Dao. There has never been a savior—only self-awakening walks the true path.',
+							prosody: 'Harmony with the Dao',
+							prosodyStyle: 'seal',
+							prosodyColor: '#0f172a',
+							fillColor: '#fef9c3',
+							placement: 'top-right',
+						},
+					],
+				},
+			],
+		}
+	}
 
 	if (isNoir) {
 		if (nextPageIndex === 2) {
@@ -1551,7 +1757,7 @@ function buildContinuationTemplate(
 						who: ['@shen_mo'],
 						assetRefs: ['@shen_mo', '#prop_brass_lighter'],
 						mccloudTransition: 'aspect_to_aspect',
-						wordPictureMode: 'picture_specific',
+						wordPictureMode: 'interdependent',
 						tension: 0.9,
 						silent: true,
 						eyeline: [eyeSign * 14, 0],
@@ -2170,11 +2376,23 @@ export function loadPresetArtIntoPanel(
 		'/assets/seagull/char_gull_foodie.jpg',
 		'/assets/seagull/prop_pier_fries_cone.jpg',
 	]
+	const wutaiUrls = [
+		'/assets/wutai/p1_01_mountain_mist.jpg',
+		'/assets/wutai/p1_02_offering_poem.jpg',
+		'/assets/wutai/p1_03_master_zhixuan.jpg',
+		'/assets/wutai/p2_01_tea_debate.jpg',
+		'/assets/wutai/p2_02_three_realms.jpg',
+		'/assets/wutai/p2_03_stone_ripples.jpg',
+		'/assets/wutai/p3_01_salvation_truth.jpg',
+		'/assets/wutai/p3_02_brush_correction.jpg',
+		'/assets/wutai/p3_03_clouds_awakening.jpg',
+	]
 	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
 	const target = metas[panelIndex]
 	if (!target) return 'Target panel not found'
+	const isWutai = page.props.stylePreset === 'shanshui_ink' || page.props.title.toLowerCase().includes('wutai')
 	const isSeagull = page.props.stylePreset === 'shonen_water' || page.props.title.toLowerCase().includes('seagull')
-	const pool = isSeagull ? seagullUrls : noirUrls
+	const pool = isWutai ? wutaiUrls : isSeagull ? seagullUrls : noirUrls
 	const currentIdx = pool.indexOf(target.imageDataUrl || '')
 	const chosenUrl = customUrl || pool[(currentIdx >= 0 ? currentIdx + 1 : panelIndex) % pool.length]
 

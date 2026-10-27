@@ -158,6 +158,15 @@ const BUBBLE_FILL_PRESETS: Array<{ color: string; label: string }> = [
 // The 5 interrogation + 4 seagull studio artwork plates surfaced by the
 // "Apply Studio Artwork" flyout.
 const STUDIO_ART_PRESETS: Array<{ url: string; label: string }> = [
+	{ url: '/assets/wutai/p1_01_mountain_mist.jpg', label: 'Wutai P1 · Mountain Mist & Monastery' },
+	{ url: '/assets/wutai/p1_02_offering_poem.jpg', label: 'Wutai P1 · Offering the Poem Scroll' },
+	{ url: '/assets/wutai/p1_03_master_zhixuan.jpg', label: 'Wutai P1 · Master Zhixuan Sees Through Wrath' },
+	{ url: '/assets/wutai/p2_01_tea_debate.jpg', label: 'Wutai P2 · Cliffside Tea Debate (Xiu vs Wu)' },
+	{ url: '/assets/wutai/p2_02_three_realms.jpg', label: 'Wutai P2 · Three Realms of the Dharma' },
+	{ url: '/assets/wutai/p2_03_stone_ripples.jpg', label: 'Wutai P2 · Stone Cast into Still Water' },
+	{ url: '/assets/wutai/p3_01_salvation_truth.jpg', label: 'Wutai P3 · Shattering Dependency (Deng-Kao-Yao)' },
+	{ url: '/assets/wutai/p3_02_brush_correction.jpg', label: 'Wutai P3 · Two Characters Revised by Brush' },
+	{ url: '/assets/wutai/p3_03_clouds_awakening.jpg', label: 'Wutai P3 · Golden Summit Clouds Parting' },
 	{ url: '/assets/interrogation/panel1_establishing.jpg', label: 'Interrogation · Establishing' },
 	{ url: '/assets/interrogation/panel2_cuff_probe.jpg', label: 'Interrogation · Cuff Probe' },
 	{ url: '/assets/interrogation/panel3_watch_macro.jpg', label: 'Interrogation · Watch Macro' },
@@ -1323,6 +1332,11 @@ export function PageContextModal({
 		}
 	}
 	const builtinAssets: Array<{ tag: string; title: string; kind: string; imageDataUrl?: string }> = [
+		{ tag: '@ding_yuanying', title: 'Ding Yuanying (Strategist)', kind: 'character', imageDataUrl: '/assets/wutai/p2_02_three_realms.jpg' },
+		{ tag: '@master_zhixuan', title: 'Master Zhixuan (Abbot)', kind: 'character', imageDataUrl: '/assets/wutai/p1_03_master_zhixuan.jpg' },
+		{ tag: '#prop_poem_scroll', title: 'Xuan-Paper Poem Scroll & Brush', kind: 'prop', imageDataUrl: '/assets/wutai/p3_02_brush_correction.jpg' },
+		{ tag: '#prop_zen_tea_pond', title: 'Cliffside Tea Table & Lotus Pond', kind: 'prop', imageDataUrl: '/assets/wutai/p2_03_stone_ripples.jpg' },
+		{ tag: '#env_wutai_monastery', title: 'Wutai Mountain Zen Monastery', kind: 'environment', imageDataUrl: '/assets/wutai/p1_01_mountain_mist.jpg' },
 		{ tag: '@lu_chen', title: 'Detective Lu Chen', kind: 'character', imageDataUrl: '/assets/interrogation/asset_char_lu_chen.jpg' },
 		{ tag: '@lin_ye', title: 'Suspect Lin Ye', kind: 'character', imageDataUrl: '/assets/interrogation/asset_char_lin_ye.jpg' },
 		{ tag: '@shen_mo', title: 'Deputy Chief Shen Mo', kind: 'character', imageDataUrl: '/assets/interrogation/asset_char_shen_mo.jpg' },
@@ -1446,6 +1460,7 @@ export function PageContextModal({
 								<label>
 									<span>Style Guide</span>
 									<select value={stylePreset} onChange={(e) => setStylePreset(e.target.value)}>
+										<option value="shanshui_ink">Song Shan-Shui Ink Wash & Vermilion Seal (shanshui_ink)</option>
 										<option value="seinen_noir">Hardboiled Seinen · Film Noir (seinen_noir)</option>
 										<option value="shonen_water">Coastal Shonen · Crisp Screentone (shonen_water)</option>
 										<option value="classic">Classic Narrative Manga (classic)</option>

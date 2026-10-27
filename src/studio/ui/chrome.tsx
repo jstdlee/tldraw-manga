@@ -108,6 +108,7 @@ const PROSODY_STYLES: ProsodyStyle[] = ['pill', 'seal', 'slant', 'burst', 'minim
 
 // Display labels for the story-agnostic universal 5-stage presets.
 const UNIVERSAL_PRESET_LABELS: Record<string, string> = {
+	'wutai-lundao': 'Wutai Mountain Debate on the Dao · Song Shan-Shui Ink Wash',
 	'seagull-fries': 'Two Gulls on the Pier · Coastal Watercolor',
 	'noir-watchmaker': 'Rainy Interrogation · Stopped Watch (Seinen Noir)',
 	'shonen-blade': 'Storm Shrine · Shonen Duel',

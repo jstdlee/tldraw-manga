@@ -130,4 +130,28 @@ describe('spawnBook clean 2-page pipeline', () => {
 		const ctx1 = JSON.parse(pages[0].props.contextJson as string) as PagePipelineContext
 		expect(ctx1.lockedAssetTags.length).toBeGreaterThan(0)
 	})
+
+	it('spawns a complete 3-page Shan-Shui pipeline (P1 -> P2 -> P3) with context inheritance for wutai-lundao', () => {
+		const { editor, shapes } = makeEditor()
+		const book = universalPresetToBook('wutai-lundao')!
+		spawnBook(editor, book)
+
+		const pages = pagesOf(shapes)
+		expect(pages).toHaveLength(3)
+		const [p1, p2, p3] = pages
+		expect(p1.props.pageIndex).toBe(1)
+		expect(p2.props.pageIndex).toBe(2)
+		expect(p3.props.pageIndex).toBe(3)
+		expect(p2.x).toBeGreaterThan(p1.x)
+		expect(p3.x).toBeGreaterThan(p2.x)
+
+		const ctx1 = JSON.parse(p1.props.contextJson as string) as PagePipelineContext
+		const ctx2 = JSON.parse(p2.props.contextJson as string) as PagePipelineContext
+		const ctx3 = JSON.parse(p3.props.contextJson as string) as PagePipelineContext
+		expect(ctx1.lockedAssetTags).toContain('@ding_yuanying')
+		expect(ctx1.lockedAssetTags).toContain('@master_zhixuan')
+		expect(ctx2.inheritedFromPageIndex).toBe(1)
+		expect(ctx3.inheritedFromPageIndex).toBe(2)
+		expect(ctx3.lockedAssetTags).toContain('@ding_yuanying')
+	})
 })

@@ -24,7 +24,7 @@ import { formatBeatsToScriptText, parseScriptTextToBeats } from '../editor/pipel
 import type { Beat } from '../model'
 import type { Pt, RealizedPanel } from '../layout/engine'
 
-const PRESET_IDS = ['seagull-fries', 'noir-watchmaker', 'shonen-blade'] as const
+const PRESET_IDS = ['seagull-fries', 'noir-watchmaker', 'shonen-blade', 'wutai-lundao'] as const
 
 function squarePanel(size = 400): RealizedPanel {
 	return {
