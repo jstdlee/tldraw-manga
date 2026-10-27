@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useEditor, useValue, type Editor } from 'tldraw'
-import { askImage, askText } from '../ai/client'
+import { useValue, type Editor } from 'tldraw'
 import { applyProviderPreset, loadSettings, PROVIDER_PRESETS, saveSettings, type ApiSettings, type ProviderId } from '../ai/settings'
 import {
 	ANGLE_LABELS,
@@ -23,21 +22,18 @@ import {
 	applyUniversalFiveStagePreset,
 	createImageCardOnCanvas,
 	createTextCardOnCanvas,
-	getCardDiff,
 	getPageDiff,
 	mutateSelectedPages,
 	polishPageWithAi,
-	readCharacterLocks,
 	rerollSelectedPages,
-	revertCardDiff,
 	revertPageDiff,
 	rewriteStoryWithLlm,
 	runBlock,
+	extendNextPageFromPage,
 	runJevFiveStageCompile,
 	selectedPages,
 	spawnBook,
 	spawnPromptBlock,
-	toggleAllFlow,
 	togglePanelBleedOnPage,
 	togglePanelNestOnPage,
 	toggleSilentPanelOnPage,
@@ -45,7 +41,7 @@ import {
 } from '../editor/pipeline'
 import { compileProgrammaticLayoutGenome, listUniversalPresets } from '../jev/fiveStageEngine'
 import { readerHtml } from '../export/htmlReader'
-import { downloadBlob, downloadText, exportOpenRaster, exportPagePng2400, exportPageSvgFile } from '../export/ora'
+import { downloadBlob, downloadText, exportPagePng2400, exportPageSvgFile } from '../export/ora'
 import {
 	configFor,
 	generate,
@@ -65,15 +61,12 @@ import {
 	SCENARIOS,
 } from '../layout/score'
 import {
-	buildPanelPrompt,
 	PROSODY_STYLE_LABELS,
 	readJson,
 	readPageParams,
-	safeCorner,
 	type Beat,
 	type BubbleStyle,
 	type PanelMeta,
-	type Prosody,
 	type ProsodyStyle,
 } from '../model'
 import { auditCameraAxis, computeOptics, defaultOpticsForMeta, SENSORS, type SensorId } from '../optics/shotLab'
@@ -81,6 +74,7 @@ import { ANGLES, PROMPT_BLOCKS } from '../prompts/library'
 import { renderPageSvg, type PageRenderModel } from '../render/pageSvg'
 import { BUBBLE, CARD, CONTAINER, type MangaBubble, type MangaCard, type MangaContainer } from '../shapes/schema'
 import { compileBook, type CompiledBook } from '../spec/compile'
+import { openPageContextInspector } from './contextMenu'
 import {
 	IconBook,
 	IconBubble,
@@ -91,7 +85,6 @@ import {
 	IconDownload,
 	IconEye,
 	IconFileText,
-	IconFrame,
 	IconGrid,
 	IconImage,
 	IconLayers,
@@ -110,7 +103,6 @@ import {
 
 const PRESETS = ['seizen', 'std', 'action', 'tobira'] as const
 const BUBBLES: BubbleStyle[] = ['speech', 'thought', 'caption', 'whisper', 'shout', 'broadcast', 'sfx']
-const PROSODIES: Prosody[] = ['', '冷笑审视', '步步紧逼', '雷霆指认', '咬牙切齿', '低声颤抖', '冷笑', '颤抖', '怒吼', '低语', '停顿']
 const PROSODY_STYLES: ProsodyStyle[] = ['pill', 'seal', 'slant', 'burst', 'minimal', 'off']
 
 // Chinese display labels for the story-agnostic universal 5-stage presets.
@@ -124,15 +116,17 @@ export type SidebarTab = 'cards' | 'layout' | 'story' | 'camera' | 'llm'
 
 export function TopBar({
 	editor,
-	story,
+	story: _story,
 	status,
 	setStatus,
-	onOpenCompare,
+	onOpenCompare: _onOpenCompare,
 	onOpenReader,
 	onOpenSettings,
 	onSwitchTab,
 	theme,
 	onToggleTheme,
+	drawerOpen = true,
+	onToggleDrawer,
 }: {
 	editor: Editor | null
 	story: string
@@ -144,6 +138,8 @@ export function TopBar({
 	onSwitchTab: (tab: SidebarTab) => void
 	theme: 'light' | 'dark'
 	onToggleTheme: () => void
+	drawerOpen?: boolean
+	onToggleDrawer?: () => void
 }) {
 	const settings = loadSettings()
 	const run = async (label: string, fn: (ed: Editor) => Promise<string | void> | string | void) => {
@@ -154,60 +150,40 @@ export function TopBar({
 	}
 
 	return (
-		<header className="topbar">
+		<header className="topbar apple-clean-topbar">
 			<div className="brand-cluster">
+				{onToggleDrawer ? (
+					<button
+						type="button"
+						className={`drawer-toggle-btn ${drawerOpen ? 'active' : ''}`}
+						onClick={onToggleDrawer}
+						title={drawerOpen ? '收起左侧工作台抽屉（全屏画布模式）' : '展开左侧工作台抽屉'}
+					>
+						<IconSliders /> {drawerOpen ? '收起抽屉' : '工作台抽屉'}
+					</button>
+				) : null}
 				<div className="brand">
 					<strong>tldraw-manga</strong>
-					<span>漫剧分镜与光学制作台</span>
+					<span>单页流水线漫剧制作台</span>
 				</div>
-				<button
-					type="button"
-					className="llm-status-pill"
-					onClick={() => {
-						onSwitchTab('llm')
-						onOpenSettings()
-					}}
-					title="点击配置内置文本 LLM、Vision 视觉识图与图像生成模型"
-				>
-					<span className="dot" />
-					<span>
-						<IconSettings /> 文本 <b>{settings.model}</b> · 视觉 <b>{settings.visionModel}</b> · 生图 <b>{settings.imageModel}</b>
-					</span>
-				</button>
 			</div>
 
 			<div className="pipeline-steps">
 				<div className="step-group">
-					<span className="step-badge">1 剧本</span>
-					<button
-						type="button"
-						className="primary"
-						onClick={() =>
-							void run('AI 一键拆解剧本与分镜', (ed) => {
-								spawnBook(ed, bookFromText(story))
-								return '已由 Text LLM 拆解设定集、双话章节与多边形分镜页'
-							})
-						}
-					>
-						<IconPlay /> 一键生成漫剧
-					</button>
-					<button type="button" onClick={() => void run('AI 提炼设定集', (ed) => runBlock(ed, 'extract'))}>
-						<IconFileText /> 提炼设定
-					</button>
 					<select
 						className="universal-preset-select"
-						aria-label="通用五阶段故事预设（百搭故事无关）"
-						title="一键载入任意通用五阶段故事预设（海鸥 / 黑色钟表 / 热血决斗）"
+						aria-label="切换故事预设"
+						title="切换内置故事与设定集预设"
 						value=""
 						onChange={(event) => {
 							const presetId = event.target.value
 							if (!presetId) return
-							void run('载入通用五阶段预设', (ed) => applyUniversalFiveStagePreset(ed, presetId))
+							void run('切换故事预设', (ed) => applyUniversalFiveStagePreset(ed, presetId))
 							event.currentTarget.value = ''
 						}}
 					>
 						<option value="" disabled>
-							通用预设…
+							故事预设…
 						</option>
 						{listUniversalPresets().map((preset) => (
 							<option key={preset.id} value={preset.id}>
@@ -215,105 +191,91 @@ export function TopBar({
 							</option>
 						))}
 					</select>
+
 					<button
 						type="button"
-						className="accent-btn"
-						title="对选中页运行 JEV 四轮迭代轮询、McCloud 按需气泡门控与视线焦点轨迹"
+						title="对当前页运行 JEV 五阶段分镜编译与视线动线求解"
 						onClick={() => void run('JEV 五阶段编译', (ed) => runJevFiveStageCompile(ed))}
 					>
-						<IconLayers /> JEV 五阶段编译
+						<IconLayers /> 编译本页
 					</button>
-				</div>
 
-				<span className="step-arrow">/</span>
-
-				<div className="step-group">
-					<span className="step-badge">2 版式</span>
-					<button type="button" onClick={() => void run('智能换分格', (ed) => rerollSelectedPages(ed))}>
-						<IconRefresh /> 智能换格
-					</button>
-					<button type="button" onClick={onOpenCompare}>
-						<IconGrid /> 8选1评分
-					</button>
-					<button type="button" onClick={() => void run('局部斜切变异', (ed) => mutateSelectedPages(ed))}>
-						<IconSliders /> 派生变体
-					</button>
-				</div>
-
-				<span className="step-arrow">/</span>
-
-				<div className="step-group">
-					<span className="step-badge">3 润色与生图</span>
-					<button type="button" className="accent-btn" onClick={() => void run('AI 导演润色分镜与台词', (ed) => polishPageWithAi(ed))}>
-						<IconSparkles /> AI 润色分镜
-					</button>
-					<button type="button" className="accent-btn" onClick={() => void run('AI 渲染漫画画面', (ed) => runBlock(ed, 'render'))}>
-						<IconWand /> AI 渲染成稿
-					</button>
-				</div>
-
-				<span className="step-arrow">/</span>
-
-				<div className="step-group">
-					<span className="step-badge">4 审计与完稿</span>
 					<button
 						type="button"
+						title="浏览或编辑当前页继承的角色、道具、180°视线轴与剧情 Context"
+						onClick={() => {
+							if (!editor) return
+							const page = selectedPages(editor)[0]
+							if (page) openPageContextInspector(page.id)
+						}}
+					>
+						<IconCompass /> 本页 Context 设定
+					</button>
+
+					<button
+						type="button"
+						className="primary"
+						title="以当前页为母本，继承锁定设定与180°镜头轴线延续生成下一页 (P+1)"
 						onClick={() =>
-							void run('切换阅读动线审计', (ed) => {
-								const next = toggleAllFlow(ed)
-								return next ? '已开启右→左阅读动线审计层（红：格序 / 蓝：视线 / 绿：气泡）' : '已关闭阅读动线审计层'
+							void run('流水线延续下一页', (ed) => {
+								const active = selectedPages(ed)[0]
+								return extendNextPageFromPage(ed, active?.id).message
 							})
 						}
 					>
-						<IconCompass /> 阅读动线
-					</button>
-					<button
-						type="button"
-						onClick={() => {
-							if (!editor) return
-							onOpenReader(compileBook(editor))
-						}}
-					>
-						<IconBook /> 整书预览
-					</button>
-					<button
-						type="button"
-						onClick={() => {
-							if (!editor) return
-							const book = compileBook(editor)
-							downloadText(`${book.spec.title}.html`, readerHtml(book), 'text/html;charset=utf-8')
-							setStatus('已导出单文件 HTML 阅读器（支持双页/条漫/分镜推镜/设定集）')
-						}}
-					>
-						<IconDownload /> 导出 HTML
-					</button>
-					<button
-						type="button"
-						onClick={() =>
-							void run('导出分层 ORA', async (ed) => {
-								const book = compileBook(ed)
-								const first = book.pages[0]
-								if (!first) return '没有可导出的页面'
-								const bytes = await exportOpenRaster(first.model)
-								downloadBlob(`${book.spec.title}-P1.ora`, bytes, 'image/openraster')
-								return '已导出 5 层 OpenRaster (.ora) 分层工程包'
-							})
-						}
-					>
-						<IconLayers /> 导出 ORA
-					</button>
-					<button
-						type="button"
-						onClick={onToggleTheme}
-						title="切换浅色 / 深色主题（与 tldraw 原生画布同步）"
-					>
-						{theme === 'light' ? <IconMoon /> : <IconSun />} {theme === 'light' ? '深色' : '浅色'}
+						<IconPlus /> 续写下一页 (继承 Context)
 					</button>
 				</div>
 			</div>
 
 			<div className="status-pill" title={status}>
 				{status}
+			</div>
+
+			<div className="topbar-right-actions">
+				<button
+					type="button"
+					onClick={() => {
+						if (!editor) return
+						onOpenReader(compileBook(editor))
+					}}
+					title="打开整书翻页/条漫阅读器"
+				>
+					<IconBook /> 阅读预览
+				</button>
+				<button
+					type="button"
+					onClick={() => {
+						if (!editor) return
+						const book = compileBook(editor)
+						downloadText(`${book.spec.title}.html`, readerHtml(book), 'text/html;charset=utf-8')
+						setStatus('已导出单文件 HTML 阅读器')
+					}}
+					title="导出独立 HTML 漫剧阅读器"
+				>
+					<IconDownload /> 导出
+				</button>
+				<button
+					type="button"
+					className="llm-status-pill"
+					onClick={() => {
+						onSwitchTab('llm')
+						onOpenSettings()
+					}}
+					title={`当前模型：${settings.model} / ${settings.imageModel}`}
+				>
+					<span className="dot" />
+					<span>
+						<IconSettings /> 模型设置
+					</span>
+				</button>
+				<button
+					type="button"
+					onClick={onToggleTheme}
+					title="切换浅色 / 深色主题"
+				>
+					{theme === 'light' ? <IconMoon /> : <IconSun />}
+				</button>
 			</div>
 		</header>
 	)
@@ -1727,443 +1689,18 @@ function CameraAndCompositionSection({
 	)
 }
 
-export function FloatingBar({ onSwitchTab }: { onSwitchTab?: (tab: SidebarTab) => void }) {
-	const editor = useEditor()
-	const selected = useValue('selected', () => editor.getSelectedShapes(), [editor])
-	const [customInput, setCustomInput] = useState('')
-	const [feedback, setFeedback] = useState('')
-
-	const card = selected.find((shape): shape is MangaCard => shape.type === CARD)
-	const page = selected.find((shape): shape is MangaContainer => shape.type === CONTAINER && shape.props.role === 'page')
-	const bubble = selected.find((shape): shape is MangaBubble => shape.type === BUBBLE)
-
-	if (!card && !page && !bubble) return null
-
-	if (card) {
-		const isImg = card.props.kind === 'image' || card.props.kind === 'character'
-		const diff = getCardDiff(card.id)
-		return (
-			<div className="floatbar" onPointerDown={(event) => event.stopPropagation()}>
-				<span className="float-title">
-					{isImg ? <IconImage /> : <IconFileText />} <b>{card.props.title}</b>
-				</span>
-				<button
-					type="button"
-					className="float-ai-btn"
-					onClick={async () => {
-						const msg = await applySelectedCardAiAction(editor, card, 'polish', customInput || undefined)
-						setFeedback(msg)
-					}}
-				>
-					<IconSparkles /> AI 润色美化
-				</button>
-				<button
-					type="button"
-					className="float-ai-btn"
-					onClick={async () => {
-						const msg = await applySelectedCardAiAction(editor, card, 'regenerate', customInput || undefined)
-						setFeedback(msg)
-					}}
-				>
-					<IconRefresh /> AI 重新生成
-				</button>
-				{isImg ? (
-					<>
-						<button
-							type="button"
-							className="float-ai-btn accent"
-							onClick={async () => {
-								const msg = await applySelectedCardAiAction(editor, card, 'vision', customInput || undefined)
-								setFeedback(msg)
-							}}
-						>
-							<IconEye /> Vision 识图反推
-						</button>
-						<button
-							type="button"
-							className="float-ai-btn accent"
-							onClick={async () => {
-								const msg = await applySelectedCardAiAction(editor, card, 'redraw', customInput || undefined)
-								setFeedback(msg)
-							}}
-						>
-							<IconWand /> AI 重新生图
-						</button>
-					</>
-				) : null}
-				{diff ? (
-					<button
-						type="button"
-						className="float-ai-btn"
-						onClick={() => {
-							revertCardDiff(editor, card)
-							setFeedback('已回退至改写前版本')
-						}}
-					>
-						回退原版
-					</button>
-				) : null}
-				<div className="float-custom-input">
-					<input
-						type="text"
-						value={customInput}
-						onChange={(event) => setCustomInput(event.target.value)}
-						placeholder="输入自定义指令改写此卡…"
-					/>
-					<button
-						type="button"
-						onClick={async () => {
-							const msg = await applySelectedCardAiAction(editor, card, 'polish', customInput || '强化漫画镜头表现力')
-							setFeedback(msg)
-						}}
-					>
-						<IconSend /> 发送
-					</button>
-				</div>
-				{feedback ? <span className="float-feedback">{feedback}</span> : null}
-			</div>
-		)
-	}
-
-	if (bubble) {
-		return (
-			<div className="floatbar" onPointerDown={(event) => event.stopPropagation()}>
-				<span className="float-title">
-					<IconBubble /> 气泡 & 独立语气图层
-				</span>
-				<label>
-					气泡框型
-					<select
-						value={bubble.props.bubble}
-						onChange={(event) => editor.updateShape({ id: bubble.id, type: BUBBLE, props: { bubble: event.target.value as BubbleStyle } })}
-					>
-						{BUBBLES.map((style) => (
-							<option key={style} value={style}>
-								{BUBBLE_LABELS[style] ?? style}
-							</option>
-						))}
-					</select>
-				</label>
-				<label>
-					气泡底色
-					<select
-						value={bubble.props.fillColor || ''}
-						onChange={(event) => editor.updateShape({ id: bubble.id, type: BUBBLE, props: { fillColor: event.target.value } })}
-					>
-						<option value="">默认纸白</option>
-						<option value="#f1f5f9">冷灰审讯</option>
-						<option value="#fef2f2">绯红警示</option>
-						<option value="#fefce8">暖黄追忆</option>
-					</select>
-				</label>
-				<label>
-					字号缩放
-					<input
-						type="range"
-						min={0.75}
-						max={1.55}
-						step={0.05}
-						value={bubble.props.emphasis}
-						onChange={(event) => editor.updateShape({ id: bubble.id, type: BUBBLE, props: { emphasis: Number(event.target.value) } })}
-					/>
-				</label>
-				<label>
-					旋转倾角
-					<input
-						type="range"
-						min={-30}
-						max={30}
-						step={1}
-						value={bubble.props.spin || 0}
-						onChange={(event) => editor.updateShape({ id: bubble.id, type: BUBBLE, props: { spin: Number(event.target.value) } })}
-					/>
-				</label>
-				<label>
-					语气词(可手输)
-					<input
-						type="text"
-						style={{ width: 88 }}
-						value={bubble.props.prosody}
-						placeholder="如:冷笑审视"
-						onChange={(event) => editor.updateShape({ id: bubble.id, type: BUBBLE, props: { prosody: event.target.value } })}
-					/>
-				</label>
-				<label>
-					快捷语气
-					<select
-						value={PROSODIES.includes(bubble.props.prosody) ? bubble.props.prosody : ''}
-						onChange={(event) => editor.updateShape({ id: bubble.id, type: BUBBLE, props: { prosody: event.target.value } })}
-					>
-						{PROSODIES.map((prosody) => (
-							<option key={prosody} value={prosody}>
-								{prosody || '无标注'}
-							</option>
-						))}
-					</select>
-				</label>
-				<label>
-					语气样式
-					<select
-						value={(bubble.props.prosodyStyle as ProsodyStyle) || 'pill'}
-						onChange={(event) =>
-							editor.updateShape({ id: bubble.id, type: BUBBLE, props: { prosodyStyle: event.target.value as ProsodyStyle } })
-						}
-					>
-						{PROSODY_STYLES.map((ps) => (
-							<option key={ps} value={ps}>
-								{PROSODY_STYLE_LABELS[ps]}
-							</option>
-						))}
-					</select>
-				</label>
-				<label>
-					语气配色
-					<select
-						value={bubble.props.prosodyColor || ''}
-						onChange={(event) => editor.updateShape({ id: bubble.id, type: BUBBLE, props: { prosodyColor: event.target.value } })}
-					>
-						<option value="">自动配色</option>
-						<option value="#0066cc">经典蓝</option>
-						<option value="#c93d35">朱印红</option>
-						<option value="#18222c">玄墨黑</option>
-						<option value="#0f766e">青黛绿</option>
-						<option value="#d97706">琥珀金</option>
-					</select>
-				</label>
-				<label>
-					语气大小
-					<input
-						type="range"
-						min={0.75}
-						max={1.7}
-						step={0.05}
-						value={bubble.props.prosodyScale ?? 1}
-						onChange={(event) =>
-							editor.updateShape({ id: bubble.id, type: BUBBLE, props: { prosodyScale: Number(event.target.value) } })
-						}
-					/>
-				</label>
-				<button
-					type="button"
-					className="float-ai-btn"
-					title="也可直接拖拽气泡上方橙色菱形手柄自由移动语气助词图层"
-					onClick={() =>
-						editor.updateShape({
-							id: bubble.id,
-							type: BUBBLE,
-							props: { prosodyOffsetX: 0, prosodyOffsetY: 0, prosodyScale: 1 },
-						})
-					}
-				>
-					复位语气位置
-				</button>
-				<button
-					type="button"
-					className="float-ai-btn"
-					onClick={async () => {
-						const line = await askText(
-							'把这句漫画台词改写得更有潜台词，不超过 18 个汉字，全部使用中文。',
-							bubble.props.text,
-							() => `${bubble.props.text.replace(/[。！!]+$/, '')}……才怪！`,
-						)
-						editor.updateShape({ id: bubble.id, type: BUBBLE, props: { text: line } })
-					}}
-				>
-					<IconSparkles /> AI 润色台词
-				</button>
-			</div>
-		)
-	}
-
-	if (!page) return null
-	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
-	const hasSelectedPanel = page.props.selectedPanel >= 0
-	const panelIdx = hasSelectedPanel ? page.props.selectedPanel : 0
-	const meta = hasSelectedPanel ? metas[panelIdx] : undefined
-	const optParams = meta ? defaultOpticsForMeta(meta) : null
-	const computedOpt = optParams ? computeOptics(optParams) : null
-	const updateMeta = (patch: Partial<PanelMeta>) => {
-		const next = metas.map((item, idx) => (idx === panelIdx ? { ...item, ...patch } : item))
-		editor.updateShape<MangaContainer>({ id: page.id, type: CONTAINER, props: { panelsJson: JSON.stringify(next) } })
-	}
-
+export function FloatingBar(_props: { onSwitchTab?: (tab: SidebarTab) => void }) {
+	const [dismissed, setDismissed] = useState(false)
+	if (dismissed) return null
 	return (
-		<div className="floatbar" onPointerDown={(event) => event.stopPropagation()}>
-			<span className="float-title">
-				<IconFrame /> {page.props.title}
+		<div className="canvas-context-hint-pill" onPointerDown={(e) => e.stopPropagation()}>
+			<span className="hint-dot" />
+			<span>
+				在画格、气泡、页面或空白处 <b>右键点击</b> 使用分组菜单 · 点击页面右侧 <b>+ 续写 P2</b> 流水线继承 Context
 			</span>
-			<label>
-				情绪场景
-				<select
-					value={page.props.scenario}
-					onChange={(event) => {
-						const scenario = asScenario(event.target.value)
-						const msg = applyEmotionStrategyOnPage(editor, page, scenario)
-						setFeedback(msg)
-					}}
-				>
-					{SCENARIOS.map((scenario) => (
-						<option key={scenario} value={scenario}>
-							{SCENARIO_LABELS[scenario] ?? scenario}
-						</option>
-					))}
-				</select>
-			</label>
-			<label>
-				分格预设
-				<select
-					value={page.props.layoutPreset}
-					onChange={(event) => {
-						const layoutPreset = event.target.value
-						const config = configFor(layoutPreset, page.props.targetPanels)
-						const best = pickLayoutBundle(page.props.seed, config, page.props.targetPanels, asScenario(page.props.scenario), { count: 8 }).top[0]
-						editor.updateShape<MangaContainer>({ id: page.id, type: CONTAINER, props: { layoutPreset, mood: '' } })
-						const refreshed = editor.getShape<MangaContainer>(page.id) ?? page
-						applyLayoutChoice(editor, refreshed, { seed: best.seed, genome: best.layout.genome, score: best.score, reasons: best.reasons })
-					}}
-				>
-					{PRESETS.map((preset) => (
-						<option key={preset} value={preset}>
-							{PRESET_LABELS[preset] ?? preset}
-						</option>
-					))}
-				</select>
-			</label>
-			<label>
-				目标格数
-				<input
-					type="number"
-					min={3}
-					max={9}
-					value={page.props.targetPanels}
-					onChange={(event) => {
-						const targetPanels = Math.min(9, Math.max(3, Number(event.target.value)))
-						const overrides = readPageParams(page.props.mood, page.props.layoutPreset)
-						const config = configFor(page.props.layoutPreset, targetPanels, overrides)
-						const best = pickLayoutBundle(page.props.seed, config, targetPanels, asScenario(page.props.scenario), { count: 8 }).top[0]
-						editor.updateShape<MangaContainer>({ id: page.id, type: CONTAINER, props: { targetPanels } })
-						const refreshed = editor.getShape<MangaContainer>(page.id) ?? page
-						applyLayoutChoice(editor, refreshed, { seed: best.seed, genome: best.layout.genome, score: best.score, reasons: best.reasons })
-					}}
-				/>
-			</label>
-			<button
-				type="button"
-				onClick={() => editor.updateShape<MangaContainer>({ id: page.id, type: CONTAINER, props: { showFlow: !page.props.showFlow } })}
-			>
-				<IconCompass /> {page.props.showFlow ? '隐藏动线' : '阅读动线'}
+			<button type="button" onClick={() => setDismissed(true)} title="隐藏操作提示">
+				×
 			</button>
-			<button type="button" onClick={() => rerollSelectedPages(editor)}>
-				<IconRefresh /> 换分格
-			</button>
-			{onSwitchTab ? (
-				<button type="button" onClick={() => onSwitchTab('layout')}>
-					<IconSliders /> 版式台
-				</button>
-			) : null}
-
-			{meta && optParams && computedOpt ? (
-				<>
-					<span className="sep" />
-					<span className="float-sub">
-						第 {panelIdx + 1} 格 ({computedOpt.shotLabelZh})：
-					</span>
-					<label title="拖动焦距滑块实时缩放分镜透视与景别">
-						焦距 <code>{optParams.focalMm}mm</code>
-						<input
-							type="range"
-							min={12}
-							max={200}
-							step={2}
-							value={optParams.focalMm}
-							onChange={(event) => {
-								const msg = applyOpticsToPanel(editor, page, panelIdx, { focalMm: Number(event.target.value) })
-								setFeedback(msg)
-							}}
-						/>
-					</label>
-					<label title="拖动光圈滑块实时控制背景景深虚化圆斑">
-						光圈 <code>f/{optParams.fStop.toFixed(1)}</code>
-						<input
-							type="range"
-							min={1.4}
-							max={22}
-							step={0.4}
-							value={optParams.fStop}
-							onChange={(event) => {
-								const msg = applyOpticsToPanel(editor, page, panelIdx, { fStop: Number(event.target.value) })
-								setFeedback(msg)
-							}}
-						/>
-					</label>
-					<select value={meta.angle} onChange={(event) => updateMeta({ angle: event.target.value as PanelMeta['angle'] })}>
-						{ANGLES.map((angle) => (
-							<option key={angle} value={angle}>
-								{ANGLE_LABELS[angle] ?? angle}
-							</option>
-						))}
-					</select>
-					<button
-						type="button"
-						className={meta.silent ? 'float-ai-btn active' : 'float-ai-btn'}
-						onClick={() => {
-							const msg = toggleSilentPanelOnPage(editor, page, panelIdx)
-							setFeedback(msg)
-						}}
-					>
-						{meta.silent ? '✓ 无声格' : '无声格'}
-					</button>
-					{onSwitchTab ? (
-						<button type="button" onClick={() => onSwitchTab('camera')}>
-							<IconCamera /> 镜头台
-						</button>
-					) : null}
-					<button
-						type="button"
-						className="float-ai-btn accent"
-						onClick={async () => {
-							const prompt = buildPanelPrompt({
-								environment: meta.environment || page.props.environment,
-								lighting: page.props.lighting,
-								shot: meta.shot,
-								angle: meta.angle,
-								focal: meta.focal,
-								aspect: meta.aspect,
-								beat: `${meta.beat} ${customInput}`.trim(),
-								locks: [readCharacterLocks(editor), ...(meta.assetRefs ?? [])].filter(Boolean).join(' '),
-								corner: safeCorner('top-right'),
-								silent: meta.silent,
-								hasBubble: !meta.silent,
-								opticsClause: computedOpt.promptClause,
-							})
-							const dataUrl = await askImage(prompt, meta.aspect)
-							updateMeta({ imageSeed: `${meta.imageSeed}~`, imageDataUrl: dataUrl })
-							setFeedback(`已重绘第 ${panelIdx + 1} 格`)
-						}}
-					>
-						<IconWand /> 单格重绘
-					</button>
-				</>
-			) : null}
-
-			<div className="float-custom-input">
-				<input
-					type="text"
-					value={customInput}
-					onChange={(event) => setCustomInput(event.target.value)}
-					placeholder="输入指令让 LLM 美化本页分镜…"
-				/>
-				<button
-					type="button"
-					onClick={async () => {
-						const msg = await polishPageWithAi(editor, customInput || '强化镜头节奏与台词表现力')
-						setFeedback(msg)
-					}}
-				>
-					<IconSparkles /> AI 润色
-				</button>
-			</div>
-			{feedback ? <span className="float-feedback">{feedback}</span> : null}
 		</div>
 	)
 }

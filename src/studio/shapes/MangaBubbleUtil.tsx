@@ -127,6 +127,19 @@ function BubbleView({ shape }: { shape: MangaBubble }) {
 
 	return (
 		<HTMLContainer className="manga-bubble">
+			<div
+				data-bubble-id={shape.id}
+				style={{ width: "100%", height: "100%" }}
+				onWheel={(event) => {
+					if (!event.altKey) return
+					event.stopPropagation()
+					event.preventDefault()
+					editor.markEventAsHandled(event.nativeEvent)
+					const delta = event.deltaY < 0 ? -4 : 4
+					const nextSpin = Math.max(-45, Math.min(45, (shape.props.spin || 0) + delta))
+					editor.updateShape({ id: shape.id, type: BUBBLE, props: { spin: nextSpin } })
+				}}
+			>
 			<svg
 				viewBox={`0 0 ${shape.props.w} ${shape.props.h}`}
 				style={{ overflow: 'visible', transform: `rotate(${shape.props.spin}deg)`, transformOrigin: 'center' }}
@@ -275,6 +288,7 @@ function BubbleView({ shape }: { shape: MangaBubble }) {
 					}}
 				/>
 			) : null}
+			</div>
 		</HTMLContainer>
 	)
 }

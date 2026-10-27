@@ -2,8 +2,6 @@ import { useMemo, useRef } from 'react'
 import { BaseBoxShapeUtil, HTMLContainer, resizeBox, useEditor, useValue, type TLResizeInfo } from 'tldraw'
 import { ENV_LABELS, LIGHT_LABELS, SCENARIO_LABELS } from '../demo/book'
 import { energyFor } from '../editor/placement'
-import { rerollSelectedPages } from '../editor/pipeline'
-import { downloadBlob, exportPagePng2400, exportPageSvgFile } from '../export/ora'
 import {
 	clamp,
 	configFor,
@@ -18,9 +16,10 @@ import {
 } from '../layout/engine'
 import { asScenario, layoutFeatures, layoutScore } from '../layout/score'
 import { renderGazeFocalTrajectorySvg, solvePageGazeFocalTrajectory } from '../jev/fiveStageEngine'
-import { readJson, readPageParams, refreshAspects, type PanelMeta } from '../model'
+import { readJson, readPageParams, refreshAspects, type PagePipelineContext, type PanelMeta } from '../model'
+import { openCustomContextMenu, openPageContextInspector, triggerExtendNextPage } from '../ui/contextMenu'
 import { renderPageSvg, type PageRenderModel } from '../render/pageSvg'
-import { IconBook, IconDownload, IconFrame, IconRefresh } from '../ui/icons'
+import { IconBook, IconFrame } from '../ui/icons'
 import { containerProps } from './props'
 import { BUBBLE, CONTAINER, type MangaBubble, type MangaContainer } from './schema'
 
@@ -75,6 +74,7 @@ export class MangaContainerUtil extends BaseBoxShapeUtil<MangaContainer> {
 			reasonsJson: '[]',
 			showFlow: false,
 			selectedPanel: -1,
+			contextJson: '{}',
 		}
 	}
 
@@ -141,7 +141,7 @@ function ContainerView({ shape }: { shape: MangaContainer }) {
 }
 
 function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType<typeof useEditor> }) {
-	const fileInputRef = useRef<HTMLInputElement | null>(null)
+	const _fileInputRef = useRef<HTMLInputElement | null>(null)
 	const dragRef = useRef<{
 		mode: 'divider' | 'pan'
 		divider?: Divider
@@ -251,7 +251,7 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 
 	const selected = shape.props.selectedPanel
 	const reasons = readJson<string[]>(shape.props.reasonsJson, [])
-	const scenarioZh = SCENARIO_LABELS[shape.props.scenario] ?? shape.props.scenario
+	const _scenarioZh = SCENARIO_LABELS[shape.props.scenario] ?? shape.props.scenario
 
 	const sx = layout.width / shape.props.w
 	const sy = layout.height / Math.max(1, shape.props.h - 60)
@@ -282,47 +282,57 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 		editor.markEventAsHandled(event.nativeEvent)
 	}
 
+	const parsedCtx = readJson<Partial<PagePipelineContext>>(shape.props.contextJson || '{}', {})
+	const lockedTagCount = Array.isArray(parsedCtx.lockedAssetTags) && parsedCtx.lockedAssetTags.length > 0 ? parsedCtx.lockedAssetTags.length : 5
+	const inheritedIdx = parsedCtx.inheritedFromPageIndex
+
+	void [_fileInputRef, _scenarioZh]
 	return (
 		<HTMLContainer className="manga-container role-page">
-			<header className="container-bar">
+			<div className="page-dom-root" data-page-id={shape.id}>
+			<button
+				type="button"
+				className="page-extend-handle"
+				onPointerDown={stopEvent}
+				onClick={(e) => {
+					stopEvent(e)
+					triggerExtendNextPage(shape.id)
+				}}
+				title={`基于 ${shape.props.title} 的设定 Context 流水线续写 P${(shape.props.pageIndex || 1) + 1}`}
+			>
+				<span className="extend-plus">+</span>
+				<span className="extend-label">续写 P{(shape.props.pageIndex || 1) + 1}</span>
+			</button>
+			<header className="container-bar page-bar">
 				<span className="role-pill">
 					<IconFrame /> {shape.props.title}
 				</span>
-				<span className="badge">{scenarioZh}</span>
-				<span className="badge">{layout.panels.length}格</span>
+				<button
+					type="button"
+					className={`page-context-pill ${inheritedIdx ? 'inherited' : ''}`}
+					onPointerDown={stopEvent}
+					onClick={(e) => {
+						stopEvent(e)
+						openPageContextInspector(shape.id)
+					}}
+					title="点击查看或编辑本页继承的角色/道具设定、180°视线轴与分镜剧情"
+				>
+					{inheritedIdx ? `承接 P${inheritedIdx} · ${lockedTagCount}设定` : `Context · ${lockedTagCount}设定`}
+				</button>
 				<span className="badge score" title={reasons.join(' · ')}>
-					{Math.round(shape.props.score * 100)}分
+					JEV {Math.round(shape.props.score * 100)}分
 				</span>
 				<div className="page-mini-actions" onPointerDown={stopEvent}>
 					<button
 						type="button"
-						className="mini-icon-btn"
-						title="切换此页分格版式"
-						onClick={() => {
-							editor.select(shape.id)
-							rerollSelectedPages(editor)
+						className="mini-icon-btn page-more-btn"
+						title="打开整页与流水线分组菜单 (也可在任意分格/页面上直接右键)"
+						onClick={(e) => {
+							stopEvent(e)
+							openCustomContextMenu({ kind: 'page', x: e.clientX, y: e.clientY, pageId: shape.id })
 						}}
 					>
-						<IconRefresh />
-					</button>
-					<button
-						type="button"
-						className="mini-icon-btn"
-						title="导出单页矢量 SVG"
-						onClick={() => exportPageSvgFile(pageRenderModel, `${shape.props.title}.svg`)}
-					>
-						SVG
-					</button>
-					<button
-						type="button"
-						className="mini-icon-btn"
-						title="导出 2400px 印刷级高清 PNG"
-						onClick={async () => {
-							const blob = await exportPagePng2400(pageRenderModel, 2400)
-							downloadBlob(`${shape.props.title}-2400px.png`, blob, 'image/png')
-						}}
-					>
-						<IconDownload /> PNG
+						⋯
 					</button>
 				</div>
 			</header>
@@ -446,6 +456,7 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 							editor.select(shape.id)
 							editor.updateShape({ id: shape.id, type: CONTAINER, props: { selectedPanel: hit } })
 						}
+						if (event.button === 2) return
 						if (activePanel < 0 || !layout.panels[activePanel]) return
 						event.stopPropagation()
 						editor.markEventAsHandled(event)
@@ -496,6 +507,14 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 								}
 							}}
 						>
+							<line
+								x1={divider.kind === 'row' ? divider.x - 160 : divider.x}
+								y1={divider.kind === 'row' ? divider.y : divider.y - 110}
+								x2={divider.kind === 'row' ? divider.x + 160 : divider.x}
+								y2={divider.kind === 'row' ? divider.y : divider.y + 110}
+								stroke="transparent"
+								strokeWidth={22}
+							/>
 							<circle cx={divider.x} cy={divider.y} r={14} fill="rgba(37,99,235,0.12)" />
 							<circle cx={divider.x} cy={divider.y} r={5.5} fill="#2563eb" stroke="#ffffff" strokeWidth={1.8} />
 						</g>
@@ -509,154 +528,42 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 					editor.markEventAsHandled(e)
 				}}
 			>
-				<input
-					ref={fileInputRef}
-					type="file"
-					accept="image/*"
-					style={{ display: 'none' }}
-					onChange={(e) => {
-						const file = e.target.files?.[0]
-						if (!file) return
-						const targetIdx = Math.max(0, selected)
-						const reader = new FileReader()
-						reader.onload = () => {
-							const dataUrl = typeof reader.result === 'string' ? reader.result : ''
-							if (!dataUrl) return
-							const next = metas.slice()
-							if (!next[targetIdx]) return
-							next[targetIdx] = {
-								...next[targetIdx],
-								imageDataUrl: dataUrl,
-								imageOffsetX: 0,
-								imageOffsetY: 0,
-								imageScale: 1,
-								imageRotation: 0,
-							}
-							editor.updateShape({
-								id: shape.id,
-								type: CONTAINER,
-								props: { selectedPanel: targetIdx, panelsJson: JSON.stringify(next) },
-							})
-						}
-						reader.readAsDataURL(file)
-						e.target.value = ''
-					}}
-				/>
 				{(() => {
 					const activeIdx = Math.max(0, selected)
 					const activeMeta = metas[activeIdx]
 					const scaleVal = Number(activeMeta?.imageScale || 1)
-					const presetSamples = [
-						'/assets/interrogation/panel1_establishing.jpg',
-						'/assets/interrogation/panel2_cuff_probe.jpg',
-						'/assets/interrogation/panel3_watch_macro.jpg',
-						'/assets/interrogation/panel4_silent_lighter_spark.jpg',
-						'/assets/interrogation/panel5_climax_accusation.jpg',
-					]
 					return (
-						<div className="page-cell-hud" style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', justifyContent: 'space-between', flexWrap: 'nowrap' }}>
-							<div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+						<div className="page-cell-hud">
+							<div className="page-foot-left">
 								<span className="pill accent" style={{ fontSize: 10, padding: '1px 6px' }}>格#{activeIdx + 1}</span>
-								<button
-									className="mini-btn"
-									title="上传或替换当前单元格底图（也支持直接把图片拖入画格）"
-									onClick={() => fileInputRef.current?.click()}
-								>
-									📷 插图
-								</button>
-								<button
-									className="mini-btn"
-									title="载入预置 AI 原画样图到当前格"
-									onClick={() => {
-										const next = metas.slice()
-										if (!next[activeIdx]) return
-										next[activeIdx] = {
-											...next[activeIdx],
-											imageDataUrl: presetSamples[activeIdx % presetSamples.length],
-											imageOffsetX: 0,
-											imageOffsetY: 0,
-											imageScale: 1,
-											imageRotation: 0,
-										}
-										editor.updateShape({
-											id: shape.id,
-											type: CONTAINER,
-											props: { selectedPanel: activeIdx, panelsJson: JSON.stringify(next) },
-										})
-									}}
-								>
-									🖼️ 样图
-								</button>
+								<span className="page-foot-meta">
+									{activeMeta ? `${activeMeta.shot} · ${activeMeta.focal} · ${Math.round(scaleVal * 100)}%` : `${layout.panels.length} 格`}
+								</span>
 							</div>
-							<div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-								<span style={{ fontSize: 10, color: '#475569' }}>缩放</span>
-								<input
-									type="range"
-									min={0.5}
-									max={2.8}
-									step={0.05}
-									value={scaleVal}
-									style={{ width: 64, accentColor: '#0066cc', cursor: 'pointer' }}
-									onChange={(e) => {
-										const nextScale = Number(e.target.value)
-										const next = metas.slice()
-										if (!next[activeIdx]) return
-										next[activeIdx] = { ...next[activeIdx], imageScale: nextScale }
-										editor.updateShape({ id: shape.id, type: CONTAINER, props: { panelsJson: JSON.stringify(next) } })
-									}}
-								/>
-								<span style={{ fontSize: 10, fontVariantNumeric: 'tabular-nums', minWidth: 30 }}>{Math.round(scaleVal * 100)}%</span>
+							<div className="page-foot-right">
+								<span className="page-foot-hint">右键分格/气泡使用分组菜单</span>
 								<button
+									type="button"
 									className="mini-btn"
-									title="复位当前格图片位置、缩放与旋转"
-									onClick={() => {
-										const next = metas.slice()
-										if (!next[activeIdx]) return
-										next[activeIdx] = {
-											...next[activeIdx],
-											imageOffsetX: 0,
-											imageOffsetY: 0,
-											imageScale: 1,
-											imageRotation: 0,
-										}
-										editor.updateShape({ id: shape.id, type: CONTAINER, props: { panelsJson: JSON.stringify(next) } })
-									}}
+									title="浏览或编辑本页继承 Context"
+									onClick={() => openPageContextInspector(shape.id)}
 								>
-									✥ 复位
-								</button>
-							</div>
-							<div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-								<button
-									className={`mini-btn ${shape.props.showBubblesLayer !== false ? 'active' : ''}`}
-									title="显示/隐藏文字气泡独立图层"
-									onClick={() =>
-										editor.updateShape({
-											id: shape.id,
-											type: CONTAINER,
-											props: { showBubblesLayer: shape.props.showBubblesLayer === false },
-										})
-									}
-								>
-									气泡
+									设定Context
 								</button>
 								<button
-									className={`mini-btn ${shape.props.showProsodyLayer !== false ? 'active' : ''}`}
-									title="显示/隐藏语气助词独立图层"
-									onClick={() =>
-										editor.updateShape({
-											id: shape.id,
-											type: CONTAINER,
-											props: { showProsodyLayer: shape.props.showProsodyLayer === false },
-										})
-									}
+									type="button"
+									className="mini-btn primary-mini"
+									title="以此页 Context 延续生成下一页"
+									onClick={() => triggerExtendNextPage(shape.id)}
 								>
-									语气
+									+ 续写P{(shape.props.pageIndex || 1) + 1}
 								</button>
 							</div>
 						</div>
 					)
 				})()}
 			</footer>
+			</div>
 		</HTMLContainer>
 	)
 }

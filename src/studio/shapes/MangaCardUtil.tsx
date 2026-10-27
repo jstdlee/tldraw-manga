@@ -3,7 +3,8 @@ import { BaseBoxShapeUtil, HTMLContainer, resizeBox, useEditor, type TLResizeInf
 import { askImage, askVision, cardToPanelPrompt, polishCardText, regenerateCardText } from '../ai/client'
 import { getCardDiff, revertCardDiff } from '../editor/pipeline'
 import { characterSheetSvg, referenceCardSvg } from '../render/illustrator'
-import { IconEye, IconFileText, IconImage, IconLock, IconRefresh, IconSend, IconSparkles, IconUpload, IconUser } from '../ui/icons'
+import { IconFileText, IconImage, IconLock, IconUpload, IconUser } from '../ui/icons'
+import { openCustomContextMenu } from '../ui/contextMenu'
 import { cardProps } from './props'
 import { CARD, type MangaCard } from './schema'
 
@@ -105,7 +106,7 @@ function CardView({ shape }: { shape: MangaCard }) {
 		setBusy('')
 	}
 
-	const handleRegenerate = async () => {
+	const _handleRegenerate = async () => {
 		setBusy('重生成…')
 		const nextCount = seedCount + 1
 		setSeedCount(nextCount)
@@ -129,7 +130,7 @@ function CardView({ shape }: { shape: MangaCard }) {
 		setBusy('')
 	}
 
-	const handleToPanelPrompt = async () => {
+	const _handleToPanelPrompt = async () => {
 		setBusy('转提示词…')
 		const result = await cardToPanelPrompt({
 			title,
@@ -208,7 +209,7 @@ function CardView({ shape }: { shape: MangaCard }) {
 		reader.readAsDataURL(file)
 	}
 
-	const handleCustomExecute = async () => {
+	const _handleCustomExecute = async () => {
 		const trimmed = customPrompt.trim()
 		if (isImageCard && (trimmed.includes('识图') || trimmed.includes('反推') || trimmed.includes('分析'))) {
 			await handleVisionAnalyze()
@@ -225,143 +226,109 @@ function CardView({ shape }: { shape: MangaCard }) {
 	const diff = getCardDiff(shape.id)
 	const KindIcon = shape.props.kind === 'character' ? IconUser : isImageCard ? IconImage : IconFileText
 
+	void [_handleRegenerate, _handleToPanelPrompt, _handleCustomExecute]
 	return (
 		<HTMLContainer className={`manga-card kind-${shape.props.kind} ${isImageCard ? 'is-image-card' : 'is-text-card'}`}>
-			<div className="card-head">
-				<span className="card-kind">
-					<KindIcon /> {KIND_LABELS[shape.props.kind] ?? shape.props.kind}
-				</span>
-				{shape.props.tag ? <span className="card-tag">{shape.props.tag}</span> : null}
-				<span className="card-ai-badge">{busy || shape.props.aiStatus || (isImageCard ? 'Vision + Image' : 'Text LLM')}</span>
-				{shape.props.kind === 'character' ? (
+			<div className="card-dom-root" data-card-id={shape.id} style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 6 }}>
+				<div className="card-head">
+					<span className="card-kind">
+						<KindIcon /> {KIND_LABELS[shape.props.kind] ?? shape.props.kind}
+					</span>
+					{shape.props.tag ? <span className="card-tag">{shape.props.tag}</span> : null}
 					<button
 						type="button"
 						className="card-lock"
 						onPointerDown={stopEvent}
 						onClick={() => editor.updateShape({ id: shape.id, type: CARD, props: { locked: !shape.props.locked } })}
+						title="锁定/解锁外观一致性标签"
 					>
-						<IconLock /> {shape.props.locked ? '锁定' : '未锁'}
+						<IconLock /> {shape.props.locked ? '已锁' : '未锁'}
 					</button>
-				) : null}
-			</div>
-
-			<input
-				className="card-title"
-				value={title}
-				placeholder="输入卡片标题…"
-				onChange={(event) => setTitle(event.target.value)}
-				onFocus={() => {
-					focused.current = true
-				}}
-				onBlur={() => {
-					focused.current = false
-					editor.updateShape({ id: shape.id, type: CARD, props: { title } })
-				}}
-				onPointerDown={stopEvent}
-			/>
-
-			{isImageCard ? (
-				<div className="card-visual-box" onPointerDown={stopEvent}>
-					{shape.props.imageDataUrl ? (
-						<img src={shape.props.imageDataUrl} alt={shape.props.title} className="card-uploaded-img" />
-					) : shape.props.kind === 'character' ? (
-						<div className="char-sheet" dangerouslySetInnerHTML={{ __html: characterSheetSvg(shape.props.tag || '@kanta') }} />
-					) : (
-						<div
-							className="char-sheet ref-scene-sheet"
-							dangerouslySetInnerHTML={{
-								__html: referenceCardSvg(shape.props.tag || 'boardwalk', title, shape.props.voice || `ref-${seedCount}`),
-							}}
-						/>
-					)}
-					<input
-						ref={fileInputRef}
-						type="file"
-						accept="image/*"
-						style={{ display: 'none' }}
-						onChange={handleUploadImage}
-					/>
-				</div>
-			) : null}
-
-			<textarea
-				className="card-body"
-				value={body}
-				placeholder={isImageCard ? '图像提示词 / Vision 识图反推描述…' : '输入角色、世界观、剧情或分镜描述…'}
-				onChange={(event) => setBody(event.target.value)}
-				onFocus={() => {
-					focused.current = true
-				}}
-				onBlur={() => {
-					focused.current = false
-					editor.updateShape({ id: shape.id, type: CARD, props: { body } })
-				}}
-				onPointerDown={stopEvent}
-			/>
-
-			{diff ? (
-				<div className="card-diff-bar" onPointerDown={stopEvent}>
-					<span>已应用 {diff.label}</span>
-					<button type="button" onClick={() => revertCardDiff(editor, shape)}>
-						一键回退原版
+					<button
+						type="button"
+						className="mini-icon-btn card-more-btn"
+						onPointerDown={stopEvent}
+						onClick={(e) => {
+							stopEvent(e)
+							openCustomContextMenu({ kind: 'card', x: e.clientX, y: e.clientY, cardId: shape.id })
+						}}
+						title="打开设定卡分组菜单 (或直接右键点击卡片)"
+					>
+						⋯
 					</button>
 				</div>
-			) : null}
 
-			<div className="card-llm-toolbar" onPointerDown={stopEvent}>
-				{isImageCard ? (
-					<>
-						<button type="button" className="card-llm-btn primary" onClick={() => void handleRedrawImage()} title="重新生成参考图像">
-							<IconRefresh /> AI 重绘
-						</button>
-						<button type="button" className="card-llm-btn accent" onClick={() => void handleVisionAnalyze()} title="调用 Vision 视觉模型反推画面人设与构图">
-							<IconEye /> Vision 反推
-						</button>
-						<button type="button" className="card-llm-btn" onClick={() => void handlePolish()} title="调用文本 LLM 美化扩写生图提示词">
-							<IconSparkles /> 美化词
-						</button>
-						<button type="button" className="card-llm-btn" onClick={() => fileInputRef.current?.click()} title="上传本地参考图">
-							<IconUpload /> 换图
-						</button>
-					</>
-				) : (
-					<>
-						<button type="button" className="card-llm-btn primary" onClick={() => void handlePolish()} title="调用文本 LLM 润色美化设定">
-							<IconSparkles /> AI 润色美化
-						</button>
-						<button type="button" className="card-llm-btn" onClick={() => void handleRegenerate()} title="调用文本 LLM 重新生成另一版方案">
-							<IconRefresh /> AI 重生
-						</button>
-						<button type="button" className="card-llm-btn accent" onClick={() => void handleToPanelPrompt()} title="将文字设定转化为结构化分镜词">
-							转分镜词
-						</button>
-					</>
-				)}
-			</div>
-
-			<div className="card-custom-prompt" onPointerDown={stopEvent}>
 				<input
-					type="text"
-					value={customPrompt}
-					placeholder={isImageCard ? '自定义指令：如「加上夕阳逆光」…' : '自定义指令：如「改成赛博雨夜风」…'}
-					onChange={(event) => setCustomPrompt(event.target.value)}
+					className="card-title"
+					value={title}
+					placeholder="输入卡片标题…"
+					onChange={(event) => setTitle(event.target.value)}
 					onFocus={() => {
 						focused.current = true
 					}}
 					onBlur={() => {
 						focused.current = false
-						editor.updateShape({ id: shape.id, type: CARD, props: { customPrompt } })
+						editor.updateShape({ id: shape.id, type: CARD, props: { title } })
 					}}
-					onKeyDown={(event) => {
-						if (event.key === 'Enter') {
-							event.preventDefault()
-							void handleCustomExecute()
-						}
-					}}
+					onPointerDown={stopEvent}
 				/>
-				<button type="button" onClick={() => void handleCustomExecute()}>
-					<IconSend /> 发送
-				</button>
+
+				{isImageCard ? (
+					<div className="card-visual-box" onPointerDown={stopEvent}>
+						{shape.props.imageDataUrl ? (
+							<img src={shape.props.imageDataUrl} alt={shape.props.title} className="card-uploaded-img" />
+						) : shape.props.kind === 'character' ? (
+							<div className="char-sheet" dangerouslySetInnerHTML={{ __html: characterSheetSvg(shape.props.tag || '@kanta') }} />
+						) : (
+							<div
+								className="char-sheet ref-scene-sheet"
+								dangerouslySetInnerHTML={{
+									__html: referenceCardSvg(shape.props.tag || 'boardwalk', title, shape.props.voice || `ref-${seedCount}`),
+								}}
+							/>
+						)}
+						<input
+							ref={fileInputRef}
+							type="file"
+							accept="image/*"
+							style={{ display: 'none' }}
+							onChange={handleUploadImage}
+						/>
+					</div>
+				) : null}
+
+				<textarea
+					className="card-body"
+					value={body}
+					placeholder={isImageCard ? '图像提示词 / Vision 识图反推描述…' : '输入角色、世界观、剧情或分镜描述…'}
+					onChange={(event) => setBody(event.target.value)}
+					onFocus={() => {
+						focused.current = true
+					}}
+					onBlur={() => {
+						focused.current = false
+						editor.updateShape({ id: shape.id, type: CARD, props: { body } })
+					}}
+					onPointerDown={stopEvent}
+				/>
+
+				{diff ? (
+					<div className="card-diff-bar" onPointerDown={stopEvent}>
+						<span>已应用 {diff.label}</span>
+						<button type="button" onClick={() => revertCardDiff(editor, shape)}>
+							一键回退原版
+						</button>
+					</div>
+				) : null}
+
+				<div className="card-clean-foot" onPointerDown={stopEvent}>
+					<span className="card-ai-badge">{busy || shape.props.aiStatus || '右键卡片调出 AI 与 Context 绑定菜单'}</span>
+					{isImageCard ? (
+						<button type="button" className="mini-btn" onClick={() => fileInputRef.current?.click()} title="上传本地参考图">
+							<IconUpload /> 换图
+						</button>
+					) : null}
+				</div>
 			</div>
 		</HTMLContainer>
 	)

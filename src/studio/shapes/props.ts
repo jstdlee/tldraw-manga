@@ -30,6 +30,7 @@ export const containerProps: RecordProps<MangaContainer> = {
 	showBubblesLayer: T.optional(T.boolean),
 	showProsodyLayer: T.optional(T.boolean),
 	showSfxLayer: T.optional(T.boolean),
+	contextJson: T.optional(T.string),
 }
 
 export const cardProps: RecordProps<MangaCard> = {

@@ -20,6 +20,7 @@ import {
 import { metaFromBeat } from '../model'
 import { planBubbles, toLayoutBubbles } from '../editor/placement'
 import { bubbleMarkup, computeProsodyBadgeAnchor } from '../render/bubbles'
+import { formatBeatsToScriptText, parseScriptTextToBeats } from '../editor/pipeline'
 import type { Beat } from '../model'
 import type { Pt, RealizedPanel } from '../layout/engine'
 
@@ -513,5 +514,53 @@ describe("Independent Prosody Layer & Bubble Style Controls", () => {
 			hideProsody: true,
 		});
 		expect(hiddenSvg).not.toContain("prosody-independent-layer");
+	});
+});
+
+
+describe("Stage 8 — Page-as-Production-Unit pipeline & multi-page context inheritance (P1 -> P2 -> P3)", () => {
+	it("round-trips beats through formatBeatsToScriptText and parseScriptTextToBeats while preserving shot, angle, focal, prosody, and inherited asset tags", () => {
+		const book = universalPresetToBook("noir-watchmaker")!;
+		const p1Beats = book.chapters[0].pages[0].beats;
+
+		const scriptText = formatBeatsToScriptText(p1Beats);
+		expect(scriptText).toContain("[WS/eye/18mm]");
+		expect(scriptText).toContain("「");
+
+		const parsed = parseScriptTextToBeats(
+			scriptText,
+			["@lu_chen", "@lin_ye", "#prop_pocket_watch", "#env_interrogation_room"],
+			[20, -4],
+			p1Beats,
+		);
+		expect(parsed.length).toBe(p1Beats.length);
+		expect(parsed[0].shot).toBe("WS");
+		expect(parsed[0].angle).toBe("eye");
+		expect(parsed[0].focal).toBe("18mm");
+		expect(parsed[0].assetRefs).toContain("@lu_chen");
+		expect(parsed[0].assetRefs).toContain("#prop_pocket_watch");
+		expect(parsed[0].eyeline?.[0]).toBeGreaterThan(0);
+	});
+
+	it("compiles continuous multi-page layouts across P1 -> P2 -> P3 with inherited asset tags and 180-degree eyeline continuity", () => {
+		const p2Script = [
+			"1. [CU/high/50mm] 陆沉拇指用力按向停摆怀表的表冠，表壳背面弹开一道极细的暗格缝隙 — 💬「十一点四十七分不是停摆……是暗格的密码锁。」(冷峻审视) ⚡「咔哒！」",
+			"2. [ECU/dutch/85mm] 暗格内露出一枚染有暗红水渍的微型胶卷底片（无声静帧）",
+			"3. [MS/eye/35mm] 林野原本后仰的肩膀骤然绷紧，手铐铁链在审讯桌下绷直 — 💬「你竟然懂老钟表匠的机关……」(瞳孔骤缩) ⚡「哗啦」",
+			"4. [WS/low/28mm] 审讯室铁门外的积水走廊忽然响起急促而沉重的靴声，沈默推门而入带来一身冷雨 — 💬「陆队！证物科刚发现码头那具钟楼停在同一秒！！」(急促低吼)",
+		].join("\n");
+
+		const p2Beats = parseScriptTextToBeats(
+			p2Script,
+			["@lu_chen", "@lin_ye", "@shen_mo", "#prop_pocket_watch", "#env_interrogation_room"],
+			[22, -3],
+		);
+		expect(p2Beats.length).toBe(4);
+		expect(p2Beats[1].silent).toBe(true);
+		expect(p2Beats[0].eyeline?.[0]).toBeGreaterThan(0);
+
+		const p2Compiled = compileTensionCoupledLayout("noir-p2", p2Beats, "reveal", "3x2");
+		expect(p2Compiled.layout.panels.length).toBe(4);
+		expect(p2Compiled.score).toBeGreaterThan(0.75);
 	});
 });

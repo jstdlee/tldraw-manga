@@ -38,6 +38,7 @@ import {
 	type BookDraft,
 	type BubbleStyle,
 	type PageDraft,
+	type PagePipelineContext,
 	type PanelMeta,
 	type ProsodyStyle,
 } from '../model'
@@ -95,7 +96,8 @@ export function revertPageDiff(editor: Editor, page: MangaContainer): void {
 
 export function seedDefaultIfEmpty(editor: Editor): void {
 	if (editor.getCurrentPageShapeIds().size > 0) return
-	spawnBook(editor, defaultBook())
+	const noir = universalPresetToBook("noir-watchmaker")
+	spawnBook(editor, noir ?? defaultBook())
 }
 
 /**
@@ -298,6 +300,7 @@ export function spawnBook(editor: Editor, book: BookDraft): void {
 		})
 	})
 
+	const isNoirBook = book.stylePreset === 'seinen_noir' || book.title.includes('审讯')
 	const refCard1Id = createShapeId('img-card-boardwalk')
 	editor.createShape<MangaCard>({
 		id: refCard1Id,
@@ -308,13 +311,15 @@ export function spawnBook(editor: Editor, book: BookDraft): void {
 			w: 280,
 			h: 276,
 			kind: 'image',
-			title: '第一话参考图：防波堤正午逆光',
-			tag: '@boardwalk',
-			body: '正午硬光下的海岸防波堤，18mm 广角透视，海鸥俯冲速度线与红白薯条盒形成视觉焦点。',
+			title: isNoirBook ? '关键证物：裂纹银壳怀表 (23:17)' : '第一话参考图：防波堤正午逆光',
+			tag: isNoirBook ? '#prop_pocket_watch' : '@boardwalk',
+			body: isNoirBook
+				? '死者遗留的裂纹银壳怀表，蓝钢指针死死卡在 23:17，表盖内侧留有左撇子反手调表的反向刮痕与暗格底片。'
+				: '正午硬光下的海岸防波堤，18mm 广角透视，海鸥俯冲速度线与红白薯条盒形成视觉焦点。',
 			voice: 'ref-boardwalk-1',
 			locked: true,
-			imageDataUrl: '',
-			customPrompt: '强化海面反光网点与俯冲张力',
+			imageDataUrl: isNoirBook ? '/assets/interrogation/asset_prop_pocket_watch.jpg' : '',
+			customPrompt: isNoirBook ? '微距银质裂纹与23:17指针反光' : '强化海面反光网点与俯冲张力',
 			aiStatus: 'Vision + Image 驱动',
 		},
 	})
@@ -329,13 +334,15 @@ export function spawnBook(editor: Editor, book: BookDraft): void {
 			w: 280,
 			h: 276,
 			kind: 'image',
-			title: '第二话参考图：夕照屋顶剪影',
-			tag: '@rooftop',
-			body: '旧商店街屋顶铁丝网与水塔长影，暮色逆光勾勒一人一鸥对峙轮廓，保留右上角对白留白区。',
+			title: isNoirBook ? '场景拓扑：旧港警署三楼审讯室' : '第二话参考图：夕照屋顶剪影',
+			tag: isNoirBook ? '#env_interrogation_room' : '@rooftop',
+			body: isNoirBook
+				? '暴雨冲刷百叶窗、摇晃单盏吊灯、冰冷不锈钢审讯桌与单向玻璃观察窗，严格遵守180°审讯轴线。'
+				: '旧商店街屋顶铁丝网与水塔长影，暮色逆光勾勒一人一鸥对峙轮廓，保留右上角对白留白区。',
 			voice: 'ref-rooftop-1',
 			locked: true,
-			imageDataUrl: '',
-			customPrompt: '增加黄昏渐变网点与胶片颗粒感',
+			imageDataUrl: isNoirBook ? '/assets/interrogation/asset_env_interrogation_room.jpg' : '',
+			customPrompt: isNoirBook ? '百叶窗雨夜条纹投影与伦勃朗侧逆光' : '增加黄昏渐变网点与胶片颗粒感',
 			aiStatus: 'Vision + Image 驱动',
 		},
 	})
@@ -504,6 +511,31 @@ function createPageShape(
 	const beats = fitBeats(draft.beats, layout.panels.length)
 	const metas = layout.panels.map((panel, index) => metaFromBeat(beats[index], panel, layout.seed, index))
 	const pageId = createShapeId(info.id)
+	const initialTags = Array.from(
+		new Set(
+			beats.flatMap((b) => [...(b.who ?? []), ...(b.assetRefs ?? [])]).filter(Boolean),
+		),
+	)
+	const lastBeat = beats[beats.length - 1]
+	const lastMeta = metas[metas.length - 1]
+	const initialCtx: PagePipelineContext = {
+		inheritedFromPageIndex: info.pageIndex > 1 ? info.pageIndex - 1 : undefined,
+		stylePreset: info.stylePreset,
+		environment: info.environment,
+		lighting: info.lighting,
+		worldRules: info.stylePreset === 'seinen_noir'
+			? '浦泽直树式硬派青年漫黑白灰蓝冷调 + 伦勃朗 50% 半脸明暗分割 + 百叶窗雨夜条纹投影 + 180°审讯轴线连贯'
+			: 'G笔主线 + 60L灰网点 + 右上角对白留白安全区',
+		lockedAssetTags: initialTags.length ? initialTags : ['@lu_chen', '@lin_ye', '@shen_mo', '#prop_pocket_watch', '#env_interrogation_room'],
+		prevPageSummary: info.pageIndex === 1
+			? '开篇起始页（P1）：由全局故事母容器与锁定角色/道具资产卡直接注入初始上下文。'
+			: `承接第 ${info.pageIndex - 1} 页分镜叙事与镜头轴线。`,
+		prevExitShot: lastMeta?.shot ?? lastBeat?.shot ?? 'CU',
+		prevExitAngle: lastMeta?.angle ?? lastBeat?.angle ?? 'eye',
+		prevExitEyeline: (lastMeta?.eyeline ?? lastBeat?.eyeline ?? [-22, 2]) as [number, number],
+		prevExitTension: Number((lastBeat?.tension ?? 0.85).toFixed(2)),
+		pageDirective: `${info.title}：围绕 ${draft.scenario} 情绪推进分镜节拍，末格制造翻页悬念钩子。`,
+	}
 	editor.createShape<MangaContainer>({
 		id: pageId,
 		type: CONTAINER,
@@ -515,8 +547,8 @@ function createPageShape(
 			role: 'page',
 			title: info.title,
 			subtitle: `${layout.panels.length} 格 · 评分 ${Math.round(stage3.score * 100)}`,
-			story: '',
-			worldRules: '',
+			story: formatBeatsToScriptText(beats),
+			worldRules: initialCtx.worldRules,
 			stylePreset: info.stylePreset,
 			mood: '',
 			environment: info.environment,
@@ -538,6 +570,7 @@ function createPageShape(
 			showBubblesLayer: true,
 			showProsodyLayer: true,
 			showSfxLayer: true,
+			contextJson: JSON.stringify(initialCtx),
 		},
 	})
 	spawnPageBubbles(editor, pageId, layout, beats, metas)
@@ -1349,4 +1382,1112 @@ export function spawnPromptBlock(editor: Editor, block: BlockId, x?: number, y?:
 		},
 	})
 	return id
+}
+
+/* ==========================================================================
+   PAGE-AS-PRODUCTION-UNIT PIPELINE & CONTEXT INHERITANCE (P1 -> P2 -> P3)
+   ========================================================================== */
+
+export function formatBeatsToScriptText(beats: Beat[]): string {
+	return beats
+		.map((b, idx) => {
+			const header = `${idx + 1}. [${b.shot}/${b.angle}/${b.focal}]`
+			const lineStr = (b.lines ?? [])
+				.map((l) => `${l.type === 'sfx' ? '⚡' : l.type === 'caption' ? '📝' : '💬'}「${l.text}」${l.prosody ? `(${l.prosody})` : ''}`)
+				.join(' ')
+			return `${header} ${b.beat}${lineStr ? ` — ${lineStr}` : ''}`
+		})
+		.join('\n')
+}
+
+export function parseScriptTextToBeats(
+	scriptText: string,
+	inheritedTags: string[],
+	prevExitEyeline: [number, number],
+	fallbackBeats: Beat[] = [],
+): Beat[] {
+	const rawLines = scriptText
+		.split('\n')
+		.map((l) => l.trim())
+		.filter(Boolean)
+	if (!rawLines.length) return fallbackBeats
+
+	const charTags = inheritedTags.filter((t) => t.startsWith('@'))
+	const allTags = inheritedTags.length ? inheritedTags : ['@lu_chen', '@lin_ye', '#prop_pocket_watch']
+
+	return rawLines.map((line, idx) => {
+		const fallback = fallbackBeats[idx]
+		const clean = line.replace(/^\d+\.\s*/, '')
+		const bracketMatch = clean.match(/^\[([A-Z]+)(?:\/([a-z]+))?(?:\/(\d+mm))?\]\s*(.*)$/i)
+		const shot = (bracketMatch?.[1]?.toUpperCase() || fallback?.shot || (idx === 0 ? 'WS' : idx === rawLines.length - 1 ? 'CU' : 'MS')) as Beat['shot']
+		const angle = (bracketMatch?.[2]?.toLowerCase() || fallback?.angle || (idx === rawLines.length - 1 ? 'low' : 'eye')) as Beat['angle']
+		const focal = (bracketMatch?.[3] || fallback?.focal || (shot === 'WS' || shot === 'EWS' ? '18mm' : shot === 'CU' || shot === 'ECU' ? '85mm' : '50mm')) as Beat['focal']
+		const rest = bracketMatch ? bracketMatch[4] : clean
+
+		const [actionPart, dialoguePart] = rest.split(/\s*—\s*/)
+		const quotedMatches = [...(dialoguePart || rest).matchAll(/[「“"]([^」”"]+)[」”"](?:\(([^)]+)\))?/g)]
+		const isSilent = /无声|静帧|silent/i.test(actionPart) && quotedMatches.length === 0
+
+		const parsedLines: Beat['lines'] = isSilent
+			? []
+			: quotedMatches.length > 0
+				? quotedMatches.map((m, mIdx) => {
+						const prefixChar = (dialoguePart || rest).slice(0, m.index ?? 0)
+						const isSfx = prefixChar.endsWith('⚡') || /^(咔|砰|轰|哗|叮|啪)/.test(m[1])
+						const isCaption = prefixChar.endsWith('📝') || (idx === 0 && mIdx === 0 && m[1].includes('：'))
+						return {
+							type: isSfx ? 'sfx' : isCaption ? 'caption' : m[1].endsWith('？！') || m[1].endsWith('！！') ? 'shout' : 'speech',
+							text: m[1],
+							prosody: m[2] || fallback?.lines?.[mIdx]?.prosody,
+							placement: mIdx === 0 ? 'top-right' : 'bottom-left',
+						}
+					})
+				: fallback?.lines ?? []
+
+		const sign = prevExitEyeline[0] >= 0 ? 1 : -1
+		const defaultEyeline: [number, number] =
+			idx === 0
+				? [sign * Math.max(16, Math.abs(prevExitEyeline[0])), prevExitEyeline[1]]
+				: idx % 2 === 1
+					? [sign * 20, 2]
+					: [sign * 18, -2]
+
+		return {
+			shot,
+			angle,
+			focal,
+			focalMm: shot === 'WS' || shot === 'EWS' ? 24 : shot === 'CU' || shot === 'ECU' ? 85 : 50,
+			fStop: shot === 'CU' || shot === 'ECU' ? 1.8 : 2.8,
+			beat: actionPart.trim() || fallback?.beat || `P-0${idx + 1} · 分镜动作节拍`,
+			who: fallback?.who?.length ? fallback.who : charTags.slice(0, 2),
+			assetRefs: Array.from(new Set([...(fallback?.assetRefs ?? []), ...allTags])),
+			imageDataUrl: fallback?.imageDataUrl,
+			mccloudTransition: idx === 0 ? 'scene_to_scene' : isSilent ? 'aspect_to_aspect' : idx === rawLines.length - 1 ? 'action_to_action' : 'subject_to_subject',
+			wordPictureMode: isSilent ? 'picture_specific' : parsedLines.length ? 'interdependent' : 'duo_specific',
+			tension: fallback?.tension ?? Number(Math.min(0.96, 0.48 + idx * 0.12).toFixed(2)),
+			silent: isSilent,
+			eyeline: fallback?.eyeline ?? defaultEyeline,
+			focalPointRel: fallback?.focalPointRel ?? [0.5, 0.45],
+			subsplitInset: fallback?.subsplitInset,
+			lines: parsedLines,
+		}
+	})
+}
+
+export function readPageContext(editor: Editor | null, page: MangaContainer): PagePipelineContext {
+	const parsed = readJson<Partial<PagePipelineContext>>(page.props.contextJson || '{}', {})
+	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
+	const beats = readJson<Beat[]>(page.props.scriptJson, [])
+	const lastMeta = metas[metas.length - 1]
+	const lastBeat = beats[beats.length - 1]
+
+	const canvasLockedTags: string[] = []
+	let bibleWorld = page.props.worldRules || ''
+	if (editor) {
+		for (const shape of editor.getCurrentPageShapes()) {
+			if (shape.type === CARD && shape.props.locked && shape.props.tag) {
+				canvasLockedTags.push(shape.props.tag)
+			}
+			if (shape.type === CONTAINER && shape.props.role === 'bible' && shape.props.worldRules && !bibleWorld) {
+				bibleWorld = shape.props.worldRules
+			}
+		}
+	}
+
+	const panelTags = [
+		...beats.flatMap((b) => [...(b.who ?? []), ...(b.assetRefs ?? [])]),
+		...metas.flatMap((m) => [...(m.who ?? []), ...(m.assetRefs ?? [])]),
+	].filter(Boolean)
+
+	const mergedTags = Array.from(
+		new Set([
+			...(parsed.lockedAssetTags ?? []),
+			...canvasLockedTags,
+			...panelTags,
+		]),
+	)
+
+	return {
+		parentPageId: parsed.parentPageId,
+		parentPageTitle: parsed.parentPageTitle,
+		inheritedFromPageIndex: parsed.inheritedFromPageIndex,
+		stylePreset: parsed.stylePreset || page.props.stylePreset || 'seinen_noir',
+		environment: parsed.environment || page.props.environment || 'interrogation-room',
+		lighting: parsed.lighting || page.props.lighting || 'rim',
+		worldRules:
+			parsed.worldRules ||
+			bibleWorld ||
+			'浦泽直树式硬派青年漫黑白灰蓝冷调 + 伦勃朗 50% 半脸明暗分割 + 180°审讯轴线连贯',
+		lockedAssetTags: mergedTags.length
+			? mergedTags
+			: ['@lu_chen', '@lin_ye', '@shen_mo', '#prop_pocket_watch', '#env_interrogation_room'],
+		prevPageSummary:
+			parsed.prevPageSummary ||
+			(page.props.pageIndex <= 1
+				? '开篇起始页（P1）：由全局故事设定母容器与锁定角色/道具卡直接注入初始上下文。'
+				: `承接 P${page.props.pageIndex - 1} 的镜头轴线、人物锁定与悬念钩子。`),
+		prevExitShot: parsed.prevExitShot || lastMeta?.shot || lastBeat?.shot || 'CU',
+		prevExitAngle: parsed.prevExitAngle || lastMeta?.angle || lastBeat?.angle || 'eye',
+		prevExitEyeline: (parsed.prevExitEyeline || lastMeta?.eyeline || lastBeat?.eyeline || [-24, 2]) as [number, number],
+		prevExitTension: parsed.prevExitTension ?? Number((lastBeat?.tension ?? 0.85).toFixed(2)),
+		pageDirective:
+			parsed.pageDirective ||
+			`${page.props.title}：围绕 ${page.props.scenario || 'tension'} 情绪推进分镜叙事，保持跨页人物外观与 180° 视线轴连贯。`,
+	}
+}
+
+/**
+ * Extract the outgoing PagePipelineContext from a source page (`P(n)`) so it can be
+ * passed down the pipeline into the next page (`P(n+1)`).
+ */
+export function extractPageOutgoingContext(editor: Editor | null, page: MangaContainer): PagePipelineContext {
+	const currentCtx = readPageContext(editor, page)
+	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
+	const beats = readJson<Beat[]>(page.props.scriptJson, [])
+	const lastMeta = metas[metas.length - 1]
+	const lastBeat = beats[beats.length - 1]
+
+	const exitShot = lastMeta?.shot || lastBeat?.shot || currentCtx.prevExitShot || 'CU'
+	const exitAngle = lastMeta?.angle || lastBeat?.angle || currentCtx.prevExitAngle || 'eye'
+	const exitEyeline = (lastMeta?.eyeline || lastBeat?.eyeline || currentCtx.prevExitEyeline || [-26, 2]) as [number, number]
+	const exitTension = Number((lastBeat?.tension ?? currentCtx.prevExitTension ?? 0.88).toFixed(2))
+
+	const firstBeatSummary = (beats[0]?.beat || metas[0]?.beat || '开场镜头建立空间').replace(/^P\d+-\d+\s*·\s*/, '')
+	const lastBeatSummary = (lastBeat?.beat || lastMeta?.beat || '末格抛出悬念钩子').replace(/^P\d+-\d+\s*·\s*/, '')
+	const keySpoken = beats
+		.flatMap((b) => b.lines ?? [])
+		.filter((l) => l.type !== 'sfx')
+		.slice(-2)
+		.map((l) => `「${l.text}」`)
+		.join(' ')
+
+	const summary = `承接 ${page.props.title}（${beats.length || metas.length} 格）：由「${firstBeatSummary.slice(0, 28)}」推进至尾格「${lastBeatSummary.slice(0, 32)}」${keySpoken ? ` ${keySpoken}` : ''}（末格定格 ${exitShot}/${exitAngle} · 张力 ${Math.round(exitTension * 100)}%）。`
+
+	return {
+		parentPageId: page.id,
+		parentPageTitle: page.props.title,
+		inheritedFromPageIndex: page.props.pageIndex || 1,
+		stylePreset: page.props.stylePreset || currentCtx.stylePreset,
+		environment: page.props.environment || currentCtx.environment,
+		lighting: page.props.lighting || currentCtx.lighting,
+		worldRules: page.props.worldRules || currentCtx.worldRules,
+		lockedAssetTags: currentCtx.lockedAssetTags,
+		prevPageSummary: summary,
+		prevExitShot: exitShot,
+		prevExitAngle: exitAngle,
+		prevExitEyeline: exitEyeline,
+		prevExitTension: exitTension,
+		pageDirective: `承接 ${page.props.title} 尾格（${exitShot}/${exitAngle}，张力 ${Math.round(exitTension * 100)}%），延续 180° 视线轴（${exitEyeline[0]}, ${exitEyeline[1]}）与锁定资产展开第 ${(page.props.pageIndex || 1) + 1} 页交锋。`,
+	}
+}
+
+interface ContinuationPageTemplate {
+	titleSuffix: string
+	scenario: Scenario
+	layoutPreset: string
+	environment?: string
+	lighting?: string
+	directive: string
+	beats: Beat[]
+}
+
+function buildContinuationTemplate(
+	sourcePage: MangaContainer,
+	nextPageIndex: number,
+	outgoing: PagePipelineContext,
+): ContinuationPageTemplate {
+	const isNoir =
+		outgoing.stylePreset === 'seinen_noir' ||
+		outgoing.lockedAssetTags.some((t) => t === '@lu_chen' || t === '#prop_pocket_watch') ||
+		sourcePage.props.title.includes('审讯')
+	const isSeagull =
+		outgoing.lockedAssetTags.some((t) => t.includes('gull') || t === '@kanta') ||
+		sourcePage.props.stylePreset === 'shonen_water' ||
+		sourcePage.props.title.includes('海鸥')
+
+	const eyeSign = outgoing.prevExitEyeline[0] >= 0 ? 1 : -1
+
+	if (isNoir) {
+		if (nextPageIndex === 2) {
+			return {
+				titleSuffix: '暗格底片与走廊脚步',
+				scenario: 'reveal',
+				layoutPreset: 'kin',
+				environment: outgoing.environment || 'interrogation-room',
+				lighting: outgoing.lighting || 'rim',
+				directive: '承接 P1 陆沉当庭指认单向玻璃后的沈默副局长，廊灯骤灭，怀表暗格底片揭晓，门外逼近灭口脚步。',
+				beats: [
+					{
+						shot: 'WS',
+						angle: 'dutch',
+						focal: '18mm',
+						focalMm: 24,
+						fStop: 4.0,
+						imageDataUrl: '/assets/interrogation/panel1_establishing.jpg',
+						beat: 'P02-01 · 观察窗后的廊灯骤然熄灭！窗外闪电将审讯室劈成惨白与深黑，林野猛地从椅上撑身弹起。',
+						who: ['@lu_chen', '@lin_ye'],
+						assetRefs: ['#env_interrogation_room', '@lu_chen', '@lin_ye'],
+						mccloudTransition: 'action_to_action',
+						wordPictureMode: 'interdependent',
+						tension: 0.78,
+						eyeline: [eyeSign * 22, 2],
+						focalPointRel: [0.46, 0.42],
+						lines: [
+							{ type: 'caption', text: '23:18，观察窗后的打火机火苗掐灭了。', placement: 'top-right' },
+							{ type: 'speech', text: '他拉断了三楼电闸……要把我们一起灭口！', prosody: '惊骇急促', placement: 'bottom-left' },
+						],
+					},
+					{
+						shot: 'ECU',
+						angle: 'high',
+						focal: '85mm',
+						focalMm: 85,
+						fStop: 2.0,
+						imageDataUrl: '/assets/interrogation/panel3_watch_macro.jpg',
+						beat: 'P02-02 · 陆沉一把按住桌上的裂纹银壳怀表，拇指顺着反向刮痕撬开表盖夹层——露出一卷微缩胶片。',
+						who: ['@lu_chen'],
+						assetRefs: ['#prop_pocket_watch', '@lu_chen'],
+						mccloudTransition: 'subject_to_subject',
+						wordPictureMode: 'duo_specific',
+						tension: 0.84,
+						eyeline: [eyeSign * 18, 6],
+						focalPointRel: [0.5, 0.48],
+						lines: [
+							{ type: 'sfx', text: '咔哒！', placement: 'top-left' },
+							{ type: 'speech', text: '23:17 停摆不是摔坏，是为了锁死这枚暗格齿轮。', prosody: '冷峻洞察', placement: 'top-right' },
+						],
+					},
+					{
+						shot: 'MCU',
+						angle: 'eye',
+						focal: '50mm',
+						focalMm: 50,
+						fStop: 2.8,
+						imageDataUrl: '/assets/interrogation/panel2_cuff_probe.jpg',
+						beat: 'P02-03 · 林野扯开沾着红丹防锈漆的右袖口，声音压得极低，指向单向玻璃后的证物暗道。',
+						who: ['@lin_ye', '@lu_chen'],
+						assetRefs: ['@lin_ye', '#prop_rust_cuff', '#env_interrogation_room'],
+						mccloudTransition: 'subject_to_subject',
+						wordPictureMode: 'word_specific',
+						tension: 0.81,
+						eyeline: [eyeSign * 20, -2],
+						focalPointRel: [0.54, 0.44],
+						lines: [
+							{ type: 'whisper', text: '旧码头三号仓的走私底片就在表芯里……走廊脚步声上来了！', prosody: '压低喘息', placement: 'top-right' },
+						],
+					},
+					{
+						shot: 'CU',
+						angle: 'low',
+						focal: '85mm',
+						focalMm: 85,
+						fStop: 1.4,
+						imageDataUrl: '/assets/interrogation/panel4_silent_lighter_spark.jpg',
+						beat: 'P02-04 · 无声静帧：审讯室金属门把手缓缓下压，门缝积水倒映出左撇子铜打火机的冷光。',
+						who: ['@shen_mo'],
+						assetRefs: ['@shen_mo', '#prop_brass_lighter'],
+						mccloudTransition: 'aspect_to_aspect',
+						wordPictureMode: 'picture_specific',
+						tension: 0.9,
+						silent: true,
+						eyeline: [eyeSign * 14, 0],
+						focalPointRel: [0.52, 0.46],
+						lines: [],
+					},
+					{
+						shot: 'MS',
+						angle: 'low',
+						focal: '35mm',
+						focalMm: 35,
+						fStop: 2.0,
+						imageDataUrl: '/assets/interrogation/panel5_climax_accusation.jpg',
+						beat: 'P02-05 · 陆沉将怀表底片塞进风衣内袋，拔枪横挡在林野身前，目光直刺推门而入的沈默副局长！',
+						who: ['@lu_chen', '@shen_mo'],
+						assetRefs: ['@lu_chen', '@shen_mo', '#prop_pocket_watch', '#env_interrogation_room'],
+						mccloudTransition: 'action_to_action',
+						wordPictureMode: 'duo_specific',
+						tension: 0.96,
+						eyeline: [eyeSign * 26, -3],
+						focalPointRel: [0.44, 0.38],
+						subsplitInset: {
+							enabled: true,
+							targetTag: '@shen_mo',
+							rectRel: [0.62, 0.06, 0.96, 0.42],
+							shot: 'ECU',
+							caption: '门口冷笑的沈默',
+						},
+						lines: [
+							{ type: 'sfx', text: '砰——！！', placement: 'top-left' },
+							{ type: 'shout', text: '沈副局长，深更半夜亲自来取这块怀表吗？！', prosody: '雷霆喝问', placement: 'top-right' },
+						],
+					},
+				],
+			}
+		}
+
+		// P3 and beyond for Noir Interrogation
+		return {
+			titleSuffix: nextPageIndex === 3 ? '旧港天台雨幕对决' : `第 ${nextPageIndex} 幕·雷霆收网`,
+			scenario: 'climax',
+			layoutPreset: 'kin',
+			environment: 'rooftop',
+			lighting: 'rim',
+			directive: `承接 P${nextPageIndex - 1} 正面交锋，陆沉与林野退上旧港警署暴雨天台，在探照灯逆光下用怀表微缩底片完成终极定罪。`,
+			beats: [
+				{
+					shot: 'EWS',
+					angle: 'high',
+					focal: '18mm',
+					focalMm: 24,
+					fStop: 4.0,
+					imageDataUrl: '/assets/interrogation/panel1_establishing.jpg',
+					beat: `P0${nextPageIndex}-01 · 狂风暴雨席卷警署四楼天台，远处旧港三号仓探照灯划破夜幕，陆沉与沈默隔着积水对峙。`,
+					who: ['@lu_chen', '@shen_mo'],
+					assetRefs: ['@lu_chen', '@shen_mo', '#env_interrogation_room'],
+					mccloudTransition: 'scene_to_scene',
+					wordPictureMode: 'additive',
+					tension: 0.82,
+					eyeline: [eyeSign * 24, 4],
+					focalPointRel: [0.5, 0.45],
+					lines: [
+						{ type: 'caption', text: '23:25 · 旧港警署天台，暴雨如注。', placement: 'top-right' },
+					],
+				},
+				{
+					shot: 'MCU',
+					angle: 'eye',
+					focal: '50mm',
+					focalMm: 50,
+					fStop: 2.2,
+					imageDataUrl: '/assets/interrogation/panel4_silent_lighter_spark.jpg',
+					beat: `P0${nextPageIndex}-02 · 沈默在雨中左手反握铜打火机，冷笑着逼近一步，试图索要怀表底片。`,
+					who: ['@shen_mo'],
+					assetRefs: ['@shen_mo', '#prop_brass_lighter'],
+					mccloudTransition: 'subject_to_subject',
+					wordPictureMode: 'interdependent',
+					tension: 0.86,
+					eyeline: [eyeSign * 20, 2],
+					focalPointRel: [0.52, 0.44],
+					lines: [
+						{ type: 'speech', text: '陆沉，把 23:17 的底片交出来，这案子今晚就能结。', prosody: '阴鸷威逼', placement: 'top-right' },
+					],
+				},
+				{
+					shot: 'ECU',
+					angle: 'low',
+					focal: '85mm',
+					focalMm: 85,
+					fStop: 1.8,
+					imageDataUrl: '/assets/interrogation/panel3_watch_macro.jpg',
+					beat: `P0${nextPageIndex}-03 · 无声静帧：雨水顺着裂纹银壳怀表滑落，蓝钢指针与内盖反向刮痕在闪电下清晰无比。`,
+					who: [],
+					assetRefs: ['#prop_pocket_watch'],
+					mccloudTransition: 'aspect_to_aspect',
+					wordPictureMode: 'picture_specific',
+					tension: 0.91,
+					silent: true,
+					eyeline: [eyeSign * 16, 0],
+					focalPointRel: [0.5, 0.5],
+					lines: [],
+				},
+				{
+					shot: 'CU',
+					angle: 'low',
+					focal: '50mm',
+					focalMm: 50,
+					fStop: 1.8,
+					imageDataUrl: '/assets/interrogation/panel5_climax_accusation.jpg',
+					beat: `P0${nextPageIndex}-04 · 陆沉举起胸前开启录音与微距传输的警用终端，天台四周红蓝警灯骤然亮起！`,
+					who: ['@lu_chen', '@lin_ye', '@shen_mo'],
+					assetRefs: ['@lu_chen', '@lin_ye', '@shen_mo', '#prop_pocket_watch'],
+					mccloudTransition: 'action_to_action',
+					wordPictureMode: 'duo_specific',
+					tension: 0.98,
+					eyeline: [eyeSign * 28, -2],
+					focalPointRel: [0.46, 0.38],
+					subsplitInset: {
+						enabled: true,
+						targetTag: '@lin_ye',
+						rectRel: [0.64, 0.56, 0.96, 0.94],
+						shot: 'CU',
+						caption: '证人林野指认',
+					},
+					lines: [
+						{ type: 'sfx', text: '轰隆——！！', placement: 'top-left' },
+						{ type: 'shout', text: '底片和刚才的口供，已经同步发往督察处了！', prosody: '决绝宣判', placement: 'top-right' },
+					],
+				},
+			],
+		}
+	}
+
+	if (isSeagull) {
+		return {
+			titleSuffix: nextPageIndex === 2 ? '防波堤逆风俯冲' : '夕照屋顶的瓶盖赎金',
+			scenario: nextPageIndex === 2 ? 'action' : 'climax',
+			layoutPreset: 'kin',
+			environment: nextPageIndex === 2 ? 'boardwalk' : 'rooftop',
+			lighting: nextPageIndex === 2 ? 'hard-noon' : 'sunset',
+			directive: `承接 P${nextPageIndex - 1} 的海鸥对峙，延续海岸高对比光影与角色锁定展开第 ${nextPageIndex} 页动作交锋。`,
+			beats: [
+				{
+					shot: 'WS',
+					angle: 'low',
+					focal: '18mm',
+					imageDataUrl: '/assets/seagull/env_rocky_pier_cliff.jpg',
+					beat: `P0${nextPageIndex}-01 · 狂风卷起防波堤浪花，两只海鸥围绕薯条筒展开高空盘旋。`,
+					who: ['@gull_philosopher', '@gull_foodie'],
+					assetRefs: ['#env_rocky_pier_cliff', '#prop_pier_fries_cone', '@gull_philosopher', '@gull_foodie'],
+					tension: 0.72,
+					eyeline: [eyeSign * 18, 4],
+					lines: [{ type: 'caption', text: '海风骤紧，第二轮争夺一触即发。', placement: 'top-right' }],
+				},
+				{
+					shot: 'MCU',
+					angle: 'eye',
+					focal: '50mm',
+					imageDataUrl: '/assets/seagull/char_gull_foodie.jpg',
+					beat: `P0${nextPageIndex}-02 · 馋嘴海鸥压低双翼，目光死死锁定金黄薯条。`,
+					who: ['@gull_foodie'],
+					assetRefs: ['@gull_foodie', '#prop_pier_fries_cone'],
+					tension: 0.8,
+					eyeline: [eyeSign * 22, 2],
+					lines: [{ type: 'shout', text: '最后一根归我了！', prosody: '俯冲咆哮', placement: 'top-right' }],
+				},
+				{
+					shot: 'CU',
+					angle: 'high',
+					focal: '85mm',
+					imageDataUrl: '/assets/seagull/prop_pier_fries_cone.jpg',
+					beat: `P0${nextPageIndex}-03 · 无声静帧：红白纸筒在礁石边缘摇摇欲坠。`,
+					who: [],
+					assetRefs: ['#prop_pier_fries_cone'],
+					tension: 0.86,
+					silent: true,
+					eyeline: [eyeSign * 12, 0],
+					lines: [],
+				},
+				{
+					shot: 'MS',
+					angle: 'eye',
+					focal: '35mm',
+					imageDataUrl: '/assets/seagull/char_gull_philosopher.jpg',
+					beat: `P0${nextPageIndex}-04 · 哲学家海鸥轻巧叼住纸筒边缘，在浪花拍岸瞬间稳住平衡。`,
+					who: ['@gull_philosopher', '@gull_foodie'],
+					assetRefs: ['@gull_philosopher', '@gull_foodie', '#prop_pier_fries_cone'],
+					tension: 0.9,
+					eyeline: [eyeSign * 20, -2],
+					lines: [
+						{ type: 'sfx', text: '哗啦——！', placement: 'top-left' },
+						{ type: 'speech', text: '在风暴里守住午餐，才算真正的哲学。', prosody: '从容笃定', placement: 'bottom-left' },
+					],
+				},
+			],
+		}
+	}
+
+	// Generic continuation template for any custom story
+	return {
+		titleSuffix: `第 ${nextPageIndex} 页·剧情延续`,
+		scenario: nextPageIndex % 2 === 0 ? 'tension' : 'climax',
+		layoutPreset: 'kin',
+		environment: outgoing.environment,
+		lighting: outgoing.lighting,
+		directive: outgoing.pageDirective,
+		beats: [
+			{
+				shot: 'WS',
+				angle: 'eye',
+				focal: '35mm',
+				beat: `P0${nextPageIndex}-01 · 承接上页尾格状态（${outgoing.prevExitShot}/${outgoing.prevExitAngle}），场景气氛进一步收紧。`,
+				who: outgoing.lockedAssetTags.filter((t) => t.startsWith('@')).slice(0, 2),
+				assetRefs: outgoing.lockedAssetTags,
+				tension: 0.68,
+				eyeline: [eyeSign * 18, 2],
+				lines: [{ type: 'caption', text: outgoing.prevPageSummary.slice(0, 34), placement: 'top-right' }],
+			},
+			{
+				shot: 'MCU',
+				angle: 'eye',
+				focal: '50mm',
+				beat: `P0${nextPageIndex}-02 · 主角直面核心线索，眼神锋利回应对方质疑。`,
+				who: outgoing.lockedAssetTags.filter((t) => t.startsWith('@')).slice(0, 1),
+				assetRefs: outgoing.lockedAssetTags,
+				tension: 0.78,
+				eyeline: [eyeSign * 22, 0],
+				lines: [{ type: 'speech', text: '线索从一开始就指向上一页留下的破绽。', prosody: '沉稳追问', placement: 'top-right' }],
+			},
+			{
+				shot: 'CU',
+				angle: 'low',
+				focal: '85mm',
+				beat: `P0${nextPageIndex}-03 · 无声静帧：关键证物特写，呼吸声在光影分界线上凝滞。`,
+				who: [],
+				assetRefs: outgoing.lockedAssetTags.filter((t) => t.startsWith('#')),
+				tension: 0.86,
+				silent: true,
+				eyeline: [eyeSign * 15, 0],
+				lines: [],
+			},
+			{
+				shot: 'MS',
+				angle: 'low',
+				focal: '35mm',
+				beat: `P0${nextPageIndex}-04 · 局势骤然翻转，抛出通往下一页的悬念钩子。`,
+				who: outgoing.lockedAssetTags.filter((t) => t.startsWith('@')),
+				assetRefs: outgoing.lockedAssetTags,
+				tension: 0.94,
+				eyeline: [eyeSign * 26, -2],
+				lines: [
+					{ type: 'sfx', text: '砰——！', placement: 'top-left' },
+					{ type: 'shout', text: '真正的幕后之人，现在才刚刚现身！', prosody: '雷霆揭晓', placement: 'top-right' },
+				],
+			},
+		],
+	}
+}
+
+export interface ExtendPageOptions {
+	customStoryText?: string
+	customDirective?: string
+	scenario?: Scenario
+	targetPanels?: number
+	lockedAssetTags?: string[]
+	environment?: string
+	lighting?: string
+	stylePreset?: string
+	worldRules?: string
+}
+
+/**
+ * Core Multi-Page Pipeline Extension:
+ * Given a source page `P(n)` (or the latest page on canvas), extracts its outgoing
+ * `PagePipelineContext` (locked characters/props/environments, style, lighting, 180° exit eyeline,
+ * exit tension, and story summary) and spawns `P(n+1)` to the right with full JEV 5-stage compilation.
+ */
+export function extendNextPageFromPage(
+	editor: Editor,
+	sourcePageId?: TLShapeId,
+	options?: ExtendPageOptions,
+): { pageId: TLShapeId; page: MangaContainer; context: PagePipelineContext; message: string } {
+	const allPages = editor
+		.getCurrentPageShapes()
+		.filter((s): s is MangaContainer => s.type === CONTAINER && s.props.role === 'page')
+		.sort((a, b) => (a.props.pageIndex || 0) - (b.props.pageIndex || 0))
+
+	let sourcePage: MangaContainer | undefined
+	if (sourcePageId) {
+		const candidate = editor.getShape(sourcePageId)
+		if (candidate?.type === CONTAINER && candidate.props.role === 'page') {
+			sourcePage = candidate as MangaContainer
+		}
+	}
+	if (!sourcePage) {
+		const sel = selectedPages(editor)
+		sourcePage = sel.length === 1 ? sel[0] : allPages[allPages.length - 1]
+	}
+
+	if (!sourcePage) {
+		throw new Error('画布上尚未找到可延续的源分镜页')
+	}
+
+	const outgoing = extractPageOutgoingContext(editor, sourcePage)
+	const maxPageIndex = allPages.reduce((max, p) => Math.max(max, p.props.pageIndex || 1), sourcePage.props.pageIndex || 1)
+	const nextPageIndex = Math.max((sourcePage.props.pageIndex || 1) + 1, maxPageIndex + 1)
+	const template = buildContinuationTemplate(sourcePage, nextPageIndex, outgoing)
+
+	const nextContext: PagePipelineContext = {
+		...outgoing,
+		stylePreset: options?.stylePreset || outgoing.stylePreset,
+		environment: options?.environment || template.environment || outgoing.environment,
+		lighting: options?.lighting || template.lighting || outgoing.lighting,
+		worldRules: options?.worldRules || outgoing.worldRules,
+		lockedAssetTags: options?.lockedAssetTags?.length ? options.lockedAssetTags : outgoing.lockedAssetTags,
+		pageDirective: options?.customDirective?.trim() || template.directive,
+	}
+
+	const rawBeats = options?.customStoryText?.trim()
+		? parseScriptTextToBeats(options.customStoryText, nextContext.lockedAssetTags, nextContext.prevExitEyeline, template.beats)
+		: template.beats.map((b) => ({
+				...b,
+				assetRefs: Array.from(new Set([...(b.assetRefs ?? []), ...nextContext.lockedAssetTags])),
+			}))
+
+	const targetPanels = options?.targetPanels ?? rawBeats.length
+	const fittedBeats = fitBeats(rawBeats, targetPanels)
+
+	// Stage 2: 4-Pass Iterative Polling & Cross-Page 180° Axis Continuity
+	const poll = runIterativePolling4Pass(fittedBeats, 'rtl')
+	const repairedBeats = poll.repairedBeats.map((b, idx) => ({
+		...b,
+		imageDataUrl: b.imageDataUrl || fittedBeats[idx]?.imageDataUrl || template.beats[idx % template.beats.length]?.imageDataUrl,
+		assetRefs: Array.from(new Set([...(b.assetRefs ?? []), ...nextContext.lockedAssetTags])),
+	}))
+
+	const scenario = options?.scenario ?? template.scenario
+	const seed = `page-c${sourcePage.props.chapterIndex || 1}-p${nextPageIndex}-${Date.now().toString(36).slice(-4)}`
+
+	// Stage 3: Programmatic Tension-Coupled Layout Genome Solver
+	const stage3 = compileTensionCoupledLayout(seed, repairedBeats, scenario, template.layoutPreset)
+	const layout = stage3.layout
+	const metas = layout.panels.map((panel, index) => {
+		const beat = repairedBeats[index] ?? repairedBeats[repairedBeats.length - 1]
+		const m = metaFromBeat(beat, panel, seed, index)
+		return {
+			...m,
+			environment: nextContext.environment,
+			imageDataUrl: beat?.imageDataUrl || m.imageDataUrl,
+		}
+	})
+
+	// Place cleanly to the right of sourcePage (avoiding overlap with any existing page at the same row)
+	const sameRowPages = allPages.filter((p) => Math.abs(p.y - sourcePage.y) < 320)
+	const rightmostX = sameRowPages.reduce((maxX, p) => Math.max(maxX, p.x + (p.props.w || PAGE_W)), sourcePage.x + (sourcePage.props.w || PAGE_W))
+	const newX = Math.max(sourcePage.x + (sourcePage.props.w || PAGE_W) + 96, rightmostX + 96)
+	const newY = sourcePage.y
+
+	const newPageId = createShapeId(`page-c${sourcePage.props.chapterIndex || 1}-p${nextPageIndex}-${Date.now().toString(36).slice(-3)}`)
+	const finalScore = Number(Math.max(poll.convergedScore, stage3.score).toFixed(3))
+	const chapterIdx = sourcePage.props.chapterIndex || 1
+	const newTitle = `第${chapterIdx}话 · P${nextPageIndex} · ${template.titleSuffix}`
+
+	editor.createShape<MangaContainer>({
+		id: newPageId,
+		type: CONTAINER,
+		x: newX,
+		y: newY,
+		props: {
+			w: PAGE_W,
+			h: PAGE_H,
+			role: 'page',
+			title: newTitle,
+			subtitle: `${layout.panels.length} 格 · 承接 P${sourcePage.props.pageIndex || 1} · JEV ${Math.round(finalScore * 100)} 分`,
+			story: formatBeatsToScriptText(repairedBeats),
+			worldRules: nextContext.worldRules,
+			stylePreset: nextContext.stylePreset,
+			mood: sourcePage.props.mood || '',
+			environment: nextContext.environment,
+			lighting: nextContext.lighting,
+			chapterIndex: chapterIdx,
+			pageIndex: nextPageIndex,
+			scenario,
+			layoutPreset: template.layoutPreset,
+			dialogueDensity: sourcePage.props.dialogueDensity ?? 0.45,
+			targetPanels: layout.panels.length,
+			seed,
+			genomeJson: JSON.stringify(stage3.genome),
+			panelsJson: JSON.stringify(metas),
+			scriptJson: JSON.stringify(repairedBeats),
+			score: finalScore,
+			reasonsJson: JSON.stringify(stage3.reasons),
+			showFlow: sourcePage.props.showFlow ?? false,
+			selectedPanel: 0,
+			showBubblesLayer: true,
+			showProsodyLayer: true,
+			showSfxLayer: true,
+			contextJson: JSON.stringify(nextContext),
+		},
+	})
+
+	spawnPageBubbles(editor, newPageId, layout, repairedBeats, metas)
+	wire(
+		editor,
+		sourcePage.id,
+		newPageId,
+		sourcePage.x + (sourcePage.props.w || PAGE_W),
+		sourcePage.y + PAGE_H * 0.48,
+		newX,
+		newY + PAGE_H * 0.48,
+	)
+
+	editor.select(newPageId)
+	// Frame both sourcePage and the newly extended page so the user sees the pipeline handoff clearly
+	const unionMinX = Math.min(sourcePage.x, newX) - 48
+	const unionMinY = Math.min(sourcePage.y, newY) - 36
+	const unionMaxX = Math.max(sourcePage.x + PAGE_W, newX + PAGE_W) + 64
+	const unionMaxY = Math.max(sourcePage.y + PAGE_H, newY + PAGE_H) + 36
+	try {
+		editor.zoomToBounds(
+			{ x: unionMinX, y: unionMinY, w: unionMaxX - unionMinX, h: unionMaxY - unionMinY },
+			{ animation: { duration: 180 } },
+		)
+	} catch {
+		// Ignore zoom errors in headless/mock environments
+	}
+
+	const created = editor.getShape<MangaContainer>(newPageId)!
+	return {
+		pageId: newPageId,
+		page: created,
+		context: nextContext,
+		message: `已从 P${sourcePage.props.pageIndex || 1} 流水线延续生成「${newTitle}」：继承 ${nextContext.lockedAssetTags.length} 项锁定设定（${nextContext.lockedAssetTags.slice(0, 4).join(' ')}）与 180° 尾格视线轴（${nextContext.prevExitShot}/${nextContext.prevExitAngle}）`,
+	}
+}
+
+/**
+ * Save edited PagePipelineContext & script beats on a page and recompile its layout/bubbles.
+ */
+export function updatePageContextAndRecompile(
+	editor: Editor,
+	page: MangaContainer,
+	patch: Partial<PagePipelineContext> & {
+		story?: string
+		scenario?: string
+		targetPanels?: number
+		recompile?: boolean
+	},
+): string {
+	const currentCtx = readPageContext(editor, page)
+	const nextCtx: PagePipelineContext = {
+		...currentCtx,
+		...patch,
+		lockedAssetTags: patch.lockedAssetTags ?? currentCtx.lockedAssetTags,
+	}
+
+	const rawExistingBeats = readJson<Beat[]>(page.props.scriptJson, [])
+	const prevMetas = readJson<PanelMeta[]>(page.props.panelsJson, [])
+	const storyText = patch.story !== undefined ? patch.story : page.props.story || formatBeatsToScriptText(rawExistingBeats)
+	const parsedBeats = parseScriptTextToBeats(storyText, nextCtx.lockedAssetTags, nextCtx.prevExitEyeline, rawExistingBeats)
+	const targetCount = Math.max(1, patch.targetPanels ?? (parsedBeats.length || page.props.targetPanels || 4))
+	const fitted = fitBeats(parsedBeats, targetCount)
+
+	const scenario = asScenario(patch.scenario ?? page.props.scenario)
+	const poll = runIterativePolling4Pass(fitted, 'rtl')
+	const repaired = poll.repairedBeats.map((b, idx) => ({
+		...b,
+		imageDataUrl: b.imageDataUrl || prevMetas[idx]?.imageDataUrl || rawExistingBeats[idx]?.imageDataUrl,
+		assetRefs: Array.from(new Set([...(b.assetRefs ?? []), ...nextCtx.lockedAssetTags])),
+	}))
+
+	const stage3 = compileTensionCoupledLayout(page.props.seed, repaired, scenario, page.props.layoutPreset)
+	const layout = stage3.layout
+	const metas = layout.panels.map((panel, index) => {
+		const fresh = metaFromBeat(repaired[index] ?? fitted[index], panel, page.props.seed, index)
+		const prev = prevMetas[index]
+		return {
+			...fresh,
+			environment: nextCtx.environment,
+			imageDataUrl: prev?.imageDataUrl || fresh.imageDataUrl,
+			imageOffsetX: prev?.imageOffsetX ?? fresh.imageOffsetX,
+			imageOffsetY: prev?.imageOffsetY ?? fresh.imageOffsetY,
+			imageScale: prev?.imageScale ?? fresh.imageScale,
+			imageRotation: prev?.imageRotation ?? fresh.imageRotation,
+		}
+	})
+
+	const finalScore = Number(Math.max(poll.convergedScore, stage3.score).toFixed(3))
+	editor.updateShape<MangaContainer>({
+		id: page.id,
+		type: CONTAINER,
+		props: {
+			story: formatBeatsToScriptText(repaired),
+			worldRules: nextCtx.worldRules,
+			stylePreset: nextCtx.stylePreset,
+			environment: nextCtx.environment,
+			lighting: nextCtx.lighting,
+			scenario,
+			targetPanels: layout.panels.length,
+			genomeJson: JSON.stringify(stage3.genome),
+			scriptJson: JSON.stringify(repaired),
+			panelsJson: JSON.stringify(metas),
+			score: finalScore,
+			reasonsJson: JSON.stringify(stage3.reasons),
+			contextJson: JSON.stringify(nextCtx),
+			subtitle: `${layout.panels.length} 格 · Context 已同步 · JEV ${Math.round(finalScore * 100)} 分`,
+		},
+	})
+
+	spawnPageBubbles(editor, page.id, layout, repaired, metas)
+	return `已保存 ${page.props.title} 的继承上下文（${nextCtx.lockedAssetTags.length} 项锁定资产）并完成 JEV 重编译（${Math.round(finalScore * 100)} 分）`
+}
+
+export function cloneVariantPage(editor: Editor, sourcePageId?: TLShapeId): string {
+	const page =
+		(sourcePageId ? (editor.getShape(sourcePageId) as MangaContainer | undefined) : undefined) ??
+		selectedPages(editor)[0]
+	if (!page) return '请先选择要克隆变体的分镜页'
+
+	const overrides = readPageParams(page.props.mood, page.props.layoutPreset)
+	const config = configFor(page.props.layoutPreset, page.props.targetPanels, overrides)
+	const currentGenome = sanitize(readJson(page.props.genomeJson, generate(page.props.seed, config).genome))
+	const rand = mulberry32(strHash(`${page.props.seed}-var-${Date.now()}`))
+	const mutatedGenome = mutate(currentGenome, rand, 0.58)
+	const layout = realize(mutatedGenome, config)
+	const judged = layoutScore(layoutFeatures(layout), page.props.targetPanels, asScenario(page.props.scenario))
+	const beats = fitBeats(readJson<Beat[]>(page.props.scriptJson, []), layout.panels.length)
+	const prevMetas = readJson<PanelMeta[]>(page.props.panelsJson, [])
+	const metas = layout.panels.map((panel, idx) => {
+		const fresh = metaFromBeat(beats[idx], panel, `${page.props.seed}-var`, idx)
+		return {
+			...fresh,
+			imageDataUrl: prevMetas[idx]?.imageDataUrl || fresh.imageDataUrl,
+		}
+	})
+
+	const cloneId = createShapeId(`${page.id.replace('shape:', '')}-var-${Date.now().toString(36).slice(-3)}`)
+	const cloneY = page.y + PAGE_H + 56
+	editor.createShape<MangaContainer>({
+		id: cloneId,
+		type: CONTAINER,
+		x: page.x,
+		y: cloneY,
+		props: {
+			...page.props,
+			title: `${page.props.title} · 变体对比`,
+			subtitle: `${layout.panels.length} 格 · 变体评分 ${Math.round(judged.score * 100)}`,
+			seed: `${page.props.seed}-var`,
+			genomeJson: JSON.stringify(layout.genome),
+			panelsJson: JSON.stringify(metas),
+			scriptJson: JSON.stringify(beats),
+			score: judged.score,
+			reasonsJson: JSON.stringify(judged.reasons),
+		},
+	})
+	spawnPageBubbles(editor, cloneId, layout, beats, metas)
+	editor.select(cloneId)
+	return `已克隆生成「${page.props.title} · 变体对比」（评分 ${Math.round(judged.score * 100)} 分）`
+}
+
+export async function regenerateSelectedPanel(
+	editor: Editor,
+	page: MangaContainer,
+	panelIndex?: number,
+): Promise<string> {
+	const idx = panelIndex ?? (page.props.selectedPanel >= 0 ? page.props.selectedPanel : 0)
+	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
+	const target = metas[idx]
+	if (!target) return '未找到目标分镜格'
+
+	const ctx = readPageContext(editor, page)
+	const opt = computeOptics(defaultOpticsForMeta(target))
+	const prompt = buildPanelPrompt({
+		environment: target.environment || page.props.environment,
+		lighting: page.props.lighting,
+		shot: target.shot,
+		angle: target.angle,
+		focal: target.focal,
+		aspect: target.aspect,
+		beat: target.beat,
+		locks: ctx.lockedAssetTags.join(' '),
+		corner: safeCorner('top-right'),
+		silent: target.silent,
+		opticsClause: opt.promptClause,
+	})
+	const remoteUrl = await askImage(prompt, target.aspect)
+	metas[idx] = {
+		...target,
+		imageSeed: `${target.imageSeed}-ai-${Date.now().toString(36).slice(-3)}`,
+		imageDataUrl: remoteUrl || target.imageDataUrl,
+	}
+	editor.updateShape<MangaContainer>({
+		id: page.id,
+		type: CONTAINER,
+		props: { panelsJson: JSON.stringify(metas), selectedPanel: idx },
+	})
+	return `已按本页锁定资产（${ctx.lockedAssetTags.slice(0, 3).join(' ')}）重绘第 ${idx + 1} 格（${target.shot}/${target.focal}）`
+}
+
+export function loadPresetArtIntoPanel(
+	editor: Editor,
+	page: MangaContainer,
+	panelIndex: number,
+	customUrl?: string,
+): string {
+	const noirUrls = [
+		'/assets/interrogation/panel1_establishing.jpg',
+		'/assets/interrogation/panel2_cuff_probe.jpg',
+		'/assets/interrogation/panel3_watch_macro.jpg',
+		'/assets/interrogation/panel4_silent_lighter_spark.jpg',
+		'/assets/interrogation/panel5_climax_accusation.jpg',
+	]
+	const seagullUrls = [
+		'/assets/seagull/env_rocky_pier_cliff.jpg',
+		'/assets/seagull/char_gull_philosopher.jpg',
+		'/assets/seagull/char_gull_foodie.jpg',
+		'/assets/seagull/prop_pier_fries_cone.jpg',
+	]
+	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
+	const target = metas[panelIndex]
+	if (!target) return '未找到目标分镜格'
+	const isSeagull = page.props.stylePreset === 'shonen_water' || page.props.title.includes('海鸥')
+	const pool = isSeagull ? seagullUrls : noirUrls
+	const currentIdx = pool.indexOf(target.imageDataUrl || '')
+	const chosenUrl = customUrl || pool[(currentIdx >= 0 ? currentIdx + 1 : panelIndex) % pool.length]
+
+	metas[panelIndex] = {
+		...target,
+		imageDataUrl: chosenUrl,
+		imageOffsetX: 0,
+		imageOffsetY: 0,
+		imageScale: 1,
+		imageRotation: 0,
+	}
+	editor.updateShape<MangaContainer>({
+		id: page.id,
+		type: CONTAINER,
+		props: { panelsJson: JSON.stringify(metas), selectedPanel: panelIndex },
+	})
+	return `已为第 ${panelIndex + 1} 格载入高清分镜原画`
+}
+
+export function resetPanelTransformOnPage(editor: Editor, page: MangaContainer, panelIndex: number): string {
+	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
+	if (!metas[panelIndex]) return '未找到目标分镜格'
+	metas[panelIndex] = {
+		...metas[panelIndex],
+		imageOffsetX: 0,
+		imageOffsetY: 0,
+		imageScale: 1,
+		imageRotation: 0,
+	}
+	editor.updateShape<MangaContainer>({
+		id: page.id,
+		type: CONTAINER,
+		props: { panelsJson: JSON.stringify(metas), selectedPanel: panelIndex },
+	})
+	return `已复位第 ${panelIndex + 1} 格画面位移、缩放 (100%) 与旋转角 (0°)`
+}
+
+export function rotatePanelImageOnPage(
+	editor: Editor,
+	page: MangaContainer,
+	panelIndex: number,
+	deltaOrReset: number | 'reset',
+): string {
+	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
+	const target = metas[panelIndex]
+	if (!target) return '未找到目标分镜格'
+	const nextRot = deltaOrReset === 'reset' ? 0 : Math.max(-45, Math.min(45, (target.imageRotation ?? 0) + deltaOrReset))
+	metas[panelIndex] = {
+		...target,
+		imageRotation: nextRot,
+	}
+	editor.updateShape<MangaContainer>({
+		id: page.id,
+		type: CONTAINER,
+		props: { panelsJson: JSON.stringify(metas), selectedPanel: panelIndex },
+	})
+	return `第 ${panelIndex + 1} 格画面旋转角度已设为 ${nextRot}°`
+}
+
+export function togglePanelSubsplitOnPage(
+	editor: Editor,
+	page: MangaContainer,
+	panelIndex: number,
+): string {
+	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
+	const beats = readJson<Beat[]>(page.props.scriptJson, [])
+	const target = metas[panelIndex]
+	if (!target) return '未找到目标分镜格'
+
+	const ctx = readPageContext(editor, page)
+	const firstCharTag = ctx.lockedAssetTags.find((t) => t.startsWith('@')) || '@shen_mo'
+	const currentlyEnabled = Boolean(target.subsplitInset?.enabled)
+	const nextInset = currentlyEnabled
+		? undefined
+		: {
+				enabled: true,
+				targetTag: firstCharTag,
+				rectRel: [0.62, 0.08, 0.95, 0.44] as [number, number, number, number],
+				shot: 'ECU' as const,
+				caption: `${firstCharTag} 反应特写`,
+			}
+
+	metas[panelIndex] = {
+		...target,
+		subsplitInset: nextInset,
+	}
+	if (beats[panelIndex]) {
+		beats[panelIndex] = {
+			...beats[panelIndex],
+			subsplitInset: nextInset,
+		}
+	}
+	editor.updateShape<MangaContainer>({
+		id: page.id,
+		type: CONTAINER,
+		props: {
+			panelsJson: JSON.stringify(metas),
+			scriptJson: JSON.stringify(beats),
+			selectedPanel: panelIndex,
+		},
+	})
+	return currentlyEnabled
+		? `已关闭第 ${panelIndex + 1} 格画中画反应子格 (PiP)`
+		: `已在第 ${panelIndex + 1} 格开启画中画反应子格 (PiP · 锁定 ${firstCharTag})`
+}
+
+export function bindCardToPageContext(
+	editor: Editor,
+	card: MangaCard,
+	targetPage?: MangaContainer,
+): string {
+	const page = targetPage ?? selectedPages(editor)[0]
+	if (!page) return '画布上没有可绑定的目标分镜页'
+	const rawTag = card.props.tag?.trim() || (card.props.kind === 'character' ? `@${card.props.title}` : `#${card.props.title}`)
+	const normalizedTag = rawTag.startsWith('@') || rawTag.startsWith('#') ? rawTag : card.props.kind === 'character' ? `@${rawTag}` : `#${rawTag}`
+
+	if (!card.props.locked || card.props.tag !== normalizedTag) {
+		editor.updateShape<MangaCard>({
+			id: card.id,
+			type: CARD,
+			props: { locked: true, tag: normalizedTag },
+		})
+	}
+
+	const ctx = readPageContext(editor, page)
+	const nextTags = Array.from(new Set([...ctx.lockedAssetTags, normalizedTag]))
+	const nextCtx: PagePipelineContext = {
+		...ctx,
+		lockedAssetTags: nextTags,
+	}
+	editor.updateShape<MangaContainer>({
+		id: page.id,
+		type: CONTAINER,
+		props: {
+			contextJson: JSON.stringify(nextCtx),
+		},
+	})
+	return `已将设定卡「${card.props.title} (${normalizedTag})」锁定并注入 ${page.props.title} 的继承上下文`
+}
+
+export function spawnBlankPageAtPoint(editor: Editor, x?: number, y?: number): TLShapeId {
+	const allPages = editor
+		.getCurrentPageShapes()
+		.filter((s): s is MangaContainer => s.type === CONTAINER && s.props.role === 'page')
+	const nextIdx = allPages.reduce((max, p) => Math.max(max, p.props.pageIndex || 1), 0) + 1
+	const center = editor.getViewportPageBounds().center
+	const px = x ?? center.x - PAGE_W / 2
+	const py = y ?? center.y - PAGE_H / 2
+	const draft = universalPresetToBook('noir-watchmaker')?.chapters[0]?.pages[0] ?? defaultBook().chapters[0].pages[0]
+	const pageId = createPageShape(editor, draft, {
+		id: `page-custom-p${nextIdx}-${Date.now().toString(36).slice(-3)}`,
+		x: px,
+		y: py,
+		chapterIndex: 1,
+		pageIndex: nextIdx,
+		title: `第1话 · P${nextIdx}`,
+		environment: 'interrogation-room',
+		lighting: 'rim',
+		stylePreset: 'seinen_noir',
+	})
+	editor.select(pageId)
+	return pageId
+}
+
+export function tidyCanvasLayout(editor: Editor): string {
+	const pages = editor
+		.getCurrentPageShapes()
+		.filter((s): s is MangaContainer => s.type === CONTAINER && s.props.role === 'page')
+		.sort((a, b) => (a.props.pageIndex || 0) - (b.props.pageIndex || 0))
+	pages.forEach((p, idx) => {
+		editor.updateShape<MangaContainer>({
+			id: p.id,
+			type: CONTAINER,
+			x: 1040 + idx * (PAGE_W + 96),
+			y: 60,
+		})
+	})
+	editor.zoomToFit({ animation: { duration: 180 } })
+	return `已按流水线顺序（P1 → P${pages.length}）横向对齐全部 ${pages.length} 页分镜稿`
 }

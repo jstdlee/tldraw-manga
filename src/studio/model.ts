@@ -335,3 +335,20 @@ export function serializePageParams(params: ParametricOverrides): string {
 }
 
 export type { Pt }
+
+export interface PagePipelineContext {
+	parentPageId?: string
+	parentPageTitle?: string
+	inheritedFromPageIndex?: number
+	stylePreset: string
+	environment: string
+	lighting: string
+	worldRules: string
+	lockedAssetTags: string[]
+	prevPageSummary: string
+	prevExitShot: string
+	prevExitAngle: string
+	prevExitEyeline: [number, number]
+	prevExitTension: number
+	pageDirective: string
+}

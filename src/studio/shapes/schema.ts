@@ -41,6 +41,7 @@ export type MangaContainer = TLBaseShape<
 		showBubblesLayer?: boolean
 		showProsodyLayer?: boolean
 		showSfxLayer?: boolean
+		contextJson?: string
 	}
 >
 

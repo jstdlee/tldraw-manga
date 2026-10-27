@@ -1,14 +1,21 @@
 import { useEffect, useState } from 'react'
-import { Tldraw, type Editor } from 'tldraw'
+import { Tldraw, type Editor, type TLShapeId } from 'tldraw'
 import 'tldraw/tldraw.css'
 import { SEAGULL_STORY } from './studio/demo/book'
-import { seedDefaultIfEmpty } from './studio/editor/pipeline'
+import { extendNextPageFromPage, seedDefaultIfEmpty } from './studio/editor/pipeline'
 import { MangaBubbleUtil } from './studio/shapes/MangaBubbleUtil'
 import { MangaCardUtil } from './studio/shapes/MangaCardUtil'
 import { MangaContainerUtil } from './studio/shapes/MangaContainerUtil'
 import { MangaPromptUtil } from './studio/shapes/MangaPromptUtil'
-import type { CompiledBook } from './studio/spec/compile'
+import { CARD, CONTAINER, type MangaCard, type MangaContainer } from './studio/shapes/schema'
+import { compileBook, type CompiledBook } from './studio/spec/compile'
 import { CompareModal, FloatingBar, LeftLibrary, ReaderModal, SettingsModal, TopBar, type SidebarTab } from './studio/ui/chrome'
+import {
+	CanvasContextMenu,
+	detectCanvasContextMenuTarget,
+	PageContextModal,
+	type ContextMenuTarget,
+} from './studio/ui/contextMenu'
 import './studio/studio.css'
 
 const shapeUtils = [MangaContainerUtil, MangaCardUtil, MangaPromptUtil, MangaBubbleUtil]
@@ -16,12 +23,15 @@ const shapeUtils = [MangaContainerUtil, MangaCardUtil, MangaPromptUtil, MangaBub
 export function App() {
 	const [editor, setEditor] = useState<Editor | null>(null)
 	const [story, setStory] = useState(SEAGULL_STORY)
-	const [status, setStatus] = useState('就绪 · 设定卡 → 版式台 → 分镜台词 → 光学镜头 → 完稿导出')
+	const [status, setStatus] = useState('就绪 · 右键画格/气泡/页面调出分组菜单 · 点击页面右侧「+ 续写 P2」流水线继承 Context')
 	const [compareOpen, setCompareOpen] = useState(false)
 	const [readerBook, setReaderBook] = useState<CompiledBook | null>(null)
 	const [settingsOpen, setSettingsOpen] = useState(false)
 	const [activeTab, setActiveTab] = useState<SidebarTab>('cards')
 	const [theme, setTheme] = useState<'light' | 'dark'>('light')
+	const [drawerOpen, setDrawerOpen] = useState(true)
+	const [contextMenuTarget, setContextMenuTarget] = useState<ContextMenuTarget | null>(null)
+	const [contextModalPageId, setContextModalPageId] = useState<TLShapeId | null>(null)
 
 	useEffect(() => {
 		document.documentElement.setAttribute('data-theme', theme)
@@ -29,6 +39,65 @@ export function App() {
 			editor.user.updateUserPreferences({ colorScheme: theme })
 		}
 	}, [editor, theme])
+
+	useEffect(() => {
+		if (!editor) return
+
+		const onOpenCustomMenu = (event: Event) => {
+			const detail = (event as CustomEvent<{
+				kind: 'page' | 'card'
+				shapeId: TLShapeId
+				clientX: number
+				clientY: number
+			}>).detail
+			if (!detail) return
+			if (detail.kind === 'page') {
+				const shape = editor.getShape<MangaContainer>(detail.shapeId)
+				if (shape && shape.type === CONTAINER) {
+					setContextMenuTarget({
+						kind: 'page',
+						x: detail.clientX,
+						y: detail.clientY,
+						pageId: shape.id,
+					})
+				}
+			} else if (detail.kind === 'card') {
+				const shape = editor.getShape<MangaCard>(detail.shapeId)
+				if (shape && shape.type === CARD) {
+					setContextMenuTarget({
+						kind: 'card',
+						x: detail.clientX,
+						y: detail.clientY,
+						cardId: shape.id,
+					})
+				}
+			}
+		}
+
+		const onOpenPageContext = (event: Event) => {
+			const detail = (event as CustomEvent<{ pageId: TLShapeId }>).detail
+			if (detail?.pageId) {
+				setContextModalPageId(detail.pageId)
+			}
+		}
+
+		const onExtendNextPage = (event: Event) => {
+			const detail = (event as CustomEvent<{ pageId: TLShapeId }>).detail
+			if (detail?.pageId) {
+				const res = extendNextPageFromPage(editor, detail.pageId)
+				setStatus(res.message)
+			}
+		}
+
+		window.addEventListener('manga:open-context-menu', onOpenCustomMenu)
+		window.addEventListener('manga:open-page-context', onOpenPageContext)
+		window.addEventListener('manga:extend-next-page', onExtendNextPage)
+		return () => {
+			window.removeEventListener('manga:open-context-menu', onOpenCustomMenu)
+			window.removeEventListener('manga:open-page-context', onOpenPageContext)
+			window.removeEventListener('manga:extend-next-page', onExtendNextPage)
+		}
+	}, [editor])
 
 	const toggleTheme = () => {
 		setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))
@@ -42,25 +111,43 @@ export function App() {
 				status={status}
 				setStatus={setStatus}
 				onOpenCompare={() => setCompareOpen(true)}
-				onOpenReader={(book) => setReaderBook(book)}
+				onOpenReader={() => { if (editor) setReaderBook(compileBook(editor)) }}
 				onOpenSettings={() => setSettingsOpen(true)}
-				onSwitchTab={(tab) => setActiveTab(tab)}
+				onSwitchTab={(tab) => {
+					setActiveTab(tab)
+					setDrawerOpen(true)
+				}}
 				theme={theme}
 				onToggleTheme={toggleTheme}
+				drawerOpen={drawerOpen}
+				onToggleDrawer={() => setDrawerOpen((prev) => !prev)}
 			/>
-			<div className="studio-main">
-				<LeftLibrary
-					editor={editor}
-					story={story}
-					setStory={setStory}
-					setStatus={setStatus}
-					activeTab={activeTab}
-					setActiveTab={setActiveTab}
-					onOpenCompare={() => setCompareOpen(true)}
-				/>
-				<main className="canvas-wrap">
+			<div className={`studio-main ${drawerOpen ? '' : 'drawer-closed'}`}>
+				{drawerOpen ? (
+					<LeftLibrary
+						editor={editor}
+						story={story}
+						setStory={setStory}
+						setStatus={setStatus}
+						activeTab={activeTab}
+						setActiveTab={setActiveTab}
+						onOpenCompare={() => setCompareOpen(true)}
+					/>
+				) : null}
+				<main
+					className="canvas-wrap"
+					onContextMenuCapture={(event) => {
+						if (!editor) return
+						event.preventDefault()
+						event.stopPropagation()
+						const target = detectCanvasContextMenuTarget(editor, event.clientX, event.clientY, event.target)
+						if (target) {
+							setContextMenuTarget(target)
+						}
+					}}
+				>
 					<Tldraw
-						persistenceKey="tldraw-manga-v5"
+						persistenceKey="tldraw-manga-v6"
 						shapeUtils={shapeUtils}
 						components={{
 							InFrontOfTheCanvas: () => <FloatingBar onSwitchTab={(tab) => setActiveTab(tab)} />,
@@ -73,6 +160,29 @@ export function App() {
 					/>
 				</main>
 			</div>
+
+			{editor && contextMenuTarget ? (
+				<CanvasContextMenu
+					editor={editor}
+					target={contextMenuTarget}
+					onClose={() => setContextMenuTarget(null)}
+					onStatus={(msg) => setStatus(msg)}
+					onOpenCompare={() => setCompareOpen(true)}
+					onOpenReader={() => setReaderBook(compileBook(editor))}
+					onOpenPageContext={(pageId) => setContextModalPageId(pageId)}
+				/>
+			) : null}
+
+			{editor && contextModalPageId ? (
+				<PageContextModal
+					editor={editor}
+					pageId={contextModalPageId}
+					onClose={() => setContextModalPageId(null)}
+					onStatus={(msg) => setStatus(msg)}
+					onSelectPage={(nextId) => setContextModalPageId(nextId)}
+				/>
+			) : null}
+
 			{compareOpen ? <CompareModal editor={editor} onClose={() => setCompareOpen(false)} /> : null}
 			{readerBook ? <ReaderModal book={readerBook} onClose={() => setReaderBook(null)} /> : null}
 			{settingsOpen ? <SettingsModal onClose={() => setSettingsOpen(false)} /> : null}
