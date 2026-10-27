@@ -169,7 +169,11 @@ export async function cardToPanelPrompt(input: {
 	return { prompt, modelUsed: modelLabel }
 }
 
-export async function askImage(prompt: string, aspect: string): Promise<string> {
+export async function askImage(
+	prompt: string,
+	aspect: string,
+	referenceImagePaths?: string[],
+): Promise<string> {
 	const settings = loadSettings()
 	if (!settings.useApi) return ''
 	try {
@@ -182,6 +186,7 @@ export async function askImage(prompt: string, aspect: string): Promise<string> 
 				imageModel: settings.imageModel,
 				prompt,
 				aspect,
+				referenceImagePaths: Array.isArray(referenceImagePaths) ? referenceImagePaths.filter(Boolean) : [],
 			}),
 		})
 		if (!response.ok) return ''

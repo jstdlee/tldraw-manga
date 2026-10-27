@@ -895,8 +895,18 @@ export function compileStage4PureArtSpec(input: {
 		lines: beat.lines ?? [],
 	})
 
-	// Resolve + backfill every discrete asset the panel references.
-	const assetTags = (beat.assetRefs ?? meta.assetRefs ?? []).filter(Boolean)
+	// Resolve + backfill every discrete asset the panel references (characters + fixed scene environment + props).
+	const rawTags = [...(beat.assetRefs ?? []), ...(meta.assetRefs ?? []), ...(beat.who ?? []), ...(meta.who ?? [])].filter(Boolean)
+	const hasEnvTag = rawTags.some((tag) => tag.startsWith('#env') || tag.startsWith('@env'))
+	if (!hasEnvTag) {
+		const fallbackEnvAsset = Object.values(registry.assets).find((a) => a.category === 'environment')
+		if (fallbackEnvAsset) {
+			rawTags.push(fallbackEnvAsset.tag)
+		} else if (input.environment) {
+			rawTags.push(`#env_${slugifyTag(input.environment).replace(/-/g, '_')}`)
+		}
+	}
+	const assetTags = Array.from(new Set(rawTags))
 	const resolved = verifyAssetRegistryAndBackfill(assetTags, registry)
 	const optics = computeOptics(defaultOpticsForMeta(meta))
 	const factors = deriveFactors14(beat, optics)
@@ -916,8 +926,14 @@ export function compileStage4PureArtSpec(input: {
 		spaceClause = `reserve ${Math.round(negativeSpaceRatio * 100)}% negative space in the ${negativeSpaceCorner} entry corner for a speech balloon, keep primary subject clear of that corner`
 	}
 
+	const numberedBindingTable = resolved.resolvedAssets
+		.map(
+			(asset, idx) =>
+				`Reference Image #${idx + 1} = ${asset.tag} [${asset.category}: ${asset.name}] (${asset.filePath}) :: ${asset.visualLockTokens}`,
+		)
+		.join('; ')
 	const lockClause = resolved.combinedLockPrompt
-		? `ASSET LOCK → ${resolved.combinedLockPrompt}`
+		? `[MULTI-IMAGE ASSET BINDING (${resolved.referenceImagePaths.length} refs) → ${numberedBindingTable}] | ASSET LOCK → ${resolved.combinedLockPrompt}`
 		: 'no named discrete assets referenced'
 
 	const pureCameraPrompt = [
@@ -1756,11 +1772,11 @@ export const UNIVERSAL_STORY_PRESETS: Record<string, UniversalStoryPreset> = {
 			},
 		],
 		assets: [
-			lockAsset('@ding_yuanying', 'Ding Yuanying', 'character', 'composed strategist in slate coat, contemplative eyes', '/assets/wutai/p2_02_three_realms.jpg'),
-			lockAsset('@master_zhixuan', 'Master Zhixuan', 'character', 'venerable Zen abbot in ochre robes, white eyebrows', '/assets/wutai/p1_03_master_zhixuan.jpg'),
-			lockAsset('#prop_poem_scroll', 'Xuan-Paper Poem Scroll', 'prop', 'vertical rice-paper calligraphy scroll and bamboo wolf-hair brush', '/assets/wutai/p3_02_brush_correction.jpg'),
-			lockAsset('#prop_zen_tea_pond', 'Cliffside Tea Table & Lotus Pond', 'prop', 'steaming celadon teacups on low wooden table and still temple pond', '/assets/wutai/p2_03_stone_ripples.jpg'),
-			lockAsset('#env_wutai_monastery', 'Wutai Mountain Zen Monastery', 'environment', 'mist-shrouded ancient monastery perched among towering crags and pine clouds', '/assets/wutai/p1_01_mountain_mist.jpg'),
+			lockAsset('@ding_yuanying', 'Ding Yuanying', 'character', '42-year-old modern Chinese intellectual with short neat dark hair, thin-rimmed silver rectangular glasses, dark charcoal-black wool overcoat', '/assets/wutai/asset_char_ding_yuanying.jpg'),
+			lockAsset('@master_zhixuan', 'Master Zhixuan', 'character', '78-year-old Chan Buddhist abbot with shaved bald head, long snow-white eyebrows, long full white beard, dark wooden prayer beads, tan and slate-grey robes', '/assets/wutai/asset_char_master_zhixuan.jpg'),
+			lockAsset('#env_wutai_monastery_steps', 'Mount Wutai Monastery Stone Steps', 'environment', 'steep wet stone stairway winding up jagged Wutai cliffside with scholar pines and double-eaved temple roofs in sea of clouds', '/assets/wutai/asset_env_wutai_monastery_steps.jpg'),
+			lockAsset('#env_zen_tea_chamber', 'Cliffside Zen Tea Chamber & Moon Window', 'environment', 'open wooden pavilion with circular geometric lattice moon-window framing sea of clouds and overhanging pine branch, gnarled dark root-wood tea table, celadon bowls, bronze incense burner', '/assets/wutai/asset_env_zen_tea_chamber.jpg'),
+			lockAsset('#prop_poem_brush_inkstone', 'Xuan Scroll, Brush, Inkstone & Stone Lotus Bowl', 'prop', 'unrolled aged xuan-paper scroll, bamboo wolf-hair brush, carved circular stone inkstone, blue-and-white porcelain cinnabar red paste jar, and carved stone lotus water bowl', '/assets/wutai/asset_prop_poem_brush_inkstone.jpg'),
 		],
 		panels: [
 			{
@@ -1772,7 +1788,7 @@ export const UNIVERSAL_STORY_PRESETS: Record<string, UniversalStoryPreset> = {
 				imageDataUrl: '/assets/wutai/p1_01_mountain_mist.jpg',
 				beat: 'P01-01 · Mist locks the ancient pines of Wutai Mountain as Ding Yuanying ascends the stone steps—not to pray for fortune, but to seek a place to examine his conscience before unleashing his ruthless market campaign.',
 				who: ['@ding_yuanying'],
-				assetRefs: ['#env_wutai_monastery', '@ding_yuanying'],
+				assetRefs: ['#env_wutai_monastery_steps', '@ding_yuanying'],
 				mccloudTransition: 'scene_to_scene',
 				wordPictureMode: 'additive',
 				tension: 0.62,
@@ -1799,7 +1815,7 @@ export const UNIVERSAL_STORY_PRESETS: Record<string, UniversalStoryPreset> = {
 				imageDataUrl: '/assets/wutai/p1_02_offering_poem.jpg',
 				beat: 'P01-02 · Inside the incense-veiled hall, Ding Yuanying offers generous alms and presents his self-composed verse on a Xuan-paper scroll as a sharp philosophical probe.',
 				who: ['@ding_yuanying'],
-				assetRefs: ['@ding_yuanying', '#prop_poem_scroll', '#env_wutai_monastery'],
+				assetRefs: ['@ding_yuanying', '#prop_poem_brush_inkstone', '#env_zen_tea_chamber'],
 				mccloudTransition: 'action_to_action',
 				wordPictureMode: 'interdependent',
 				tension: 0.78,
@@ -1828,7 +1844,7 @@ export const UNIVERSAL_STORY_PRESETS: Record<string, UniversalStoryPreset> = {
 				imageDataUrl: '/assets/wutai/p1_03_master_zhixuan.jpg',
 				beat: 'P01-03 · Abbot Master Zhixuan unrolls the scroll; seeing the fierce attachment and blade-like defiance hidden between the ink strokes, he makes a rare exception to receive the guest.',
 				who: ['@master_zhixuan'],
-				assetRefs: ['@master_zhixuan', '#prop_poem_scroll'],
+				assetRefs: ['@master_zhixuan', '#prop_poem_brush_inkstone', '#env_zen_tea_chamber'],
 				mccloudTransition: 'subject_to_subject',
 				wordPictureMode: 'duo_specific',
 				tension: 0.88,

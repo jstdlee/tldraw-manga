@@ -550,7 +550,9 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 							<div className="page-foot-left">
 								<span className="pill accent" style={{ fontSize: 10, padding: '1px 6px' }}>Panel #{activeIdx + 1}</span>
 								<span className="page-foot-meta">
-									{activeMeta ? `${activeMeta.shot} · ${activeMeta.focal} · ${Math.round(scaleVal * 100)}%` : `${layout.panels.length} Panels`}
+									{activeMeta
+										? `${activeMeta.shot} · ${activeMeta.focal} · ${Math.round(scaleVal * 100)}%${activeMeta.assetRefs?.length ? ` · Refs: ${activeMeta.assetRefs.slice(0, 3).join(' ')}` : ''}`
+										: `${layout.panels.length} Panels`}
 								</span>
 							</div>
 							<div className="page-foot-right">

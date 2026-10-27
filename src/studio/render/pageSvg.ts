@@ -148,10 +148,12 @@ export function renderPageSvg(model: PageRenderModel): string {
 			} else if (model.numbers === 'corner' || model.numbers === 'on') {
 				const focalText = panel.meta.focalMm ? `${panel.meta.focalMm}mm` : panel.meta.focal
 				const silentTag = panel.meta.silent ? ' · Silent' : ''
-				const tagText = `${index + 1} · ${panel.meta.shot}/${focalText}${silentTag}`
-				const tagW = Math.max(54, tagText.length * 6.8 + 10)
+				const boundRefs = Array.from(new Set([...(panel.meta.assetRefs ?? []), ...(panel.meta.who ?? [])])).filter(Boolean)
+				const refSummary = boundRefs.length ? ` · [${boundRefs.slice(0, 3).join(' ')}]` : ''
+				const tagText = `${index + 1} · ${panel.meta.shot}/${focalText}${silentTag}${refSummary}`
+				const tagW = Math.min(box.w - 12, Math.max(54, tagText.length * 5.8 + 12))
 				frameLayers.push(
-					`<g transform="translate(${(box.maxX - tagW - 6).toFixed(1)} ${(box.minY + 6).toFixed(1)})"><rect width="${tagW.toFixed(0)}" height="18" rx="3" fill="#ffffff" fill-opacity=".86" stroke="#18222c" stroke-width="0.9"/><text x="${(tagW / 2).toFixed(0)}" y="12.5" text-anchor="middle" font-size="9.5" font-weight="600" fill="#18222c">${escapeXml(tagText)}</text></g>`,
+					`<g transform="translate(${(box.maxX - tagW - 6).toFixed(1)} ${(box.minY + 6).toFixed(1)})"><rect width="${tagW.toFixed(0)}" height="18" rx="3" fill="#ffffff" fill-opacity=".90" stroke="#18222c" stroke-width="0.9"/><text x="${(tagW / 2).toFixed(0)}" y="12.5" text-anchor="middle" font-size="9" font-weight="600" fill="#18222c">${escapeXml(tagText)}</text></g>`,
 				)
 			}
 		}

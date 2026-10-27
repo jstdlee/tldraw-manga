@@ -1,4 +1,4 @@
-import { createReadStream, existsSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
 import { createServer } from 'node:http'
 import path from 'node:path'
 
@@ -194,18 +194,43 @@ async function analyzeVision(body) {
 	return text ? { text } : { text: '', error: data.error?.message || 'The Vision model returned no analysis text' }
 }
 
+function resolveRefImageInlinePart(refPath) {
+	if (!refPath || typeof refPath !== 'string') return null
+	const dataMatch = refPath.match(/^data:([^;]+);base64,(.+)$/)
+	if (dataMatch) return { mimeType: dataMatch[1], data: dataMatch[2] }
+	const cleanRel = refPath.replace(/^\/+/, '')
+	const candidates = [
+		path.resolve(process.cwd(), 'public', cleanRel),
+		path.resolve(process.cwd(), cleanRel),
+	]
+	for (const candidate of candidates) {
+		if (existsSync(candidate) && statSync(candidate).isFile()) {
+			const ext = path.extname(candidate).toLowerCase()
+			const mimeType = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg'
+			return { mimeType, data: readFileSync(candidate).toString('base64') }
+		}
+	}
+	return null
+}
+
 async function drawRemote(body) {
 	const provider = body.provider || 'openai'
 	const key = body.apiKey || keyFor(provider)
 	const prompt = body.prompt || ''
-	if (!key && provider !== 'local') return { dataUrl: '', error: 'No image-generation API key configured; rendered with the built-in screentone hand-drawn engine.' }
+	const referenceImagePaths = Array.isArray(body.referenceImagePaths) ? body.referenceImagePaths.filter(Boolean) : []
+	if (!key && provider !== 'local') return { dataUrl: '', error: 'No image-generation API key configured; rendered with the built-in screentone hand-drawn engine.', referenceImagePaths }
 	if (provider === 'gemini') {
 		const model = body.imageModel || 'gemini-2.5-flash-image'
+		const parts = [{ text: prompt }]
+		for (const refPath of referenceImagePaths) {
+			const inlineData = resolveRefImageInlinePart(refPath)
+			if (inlineData) parts.push({ inlineData })
+		}
 		const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({
-				contents: [{ role: 'user', parts: [{ text: prompt }] }],
+				contents: [{ role: 'user', parts }],
 				generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
 			}),
 			signal: AbortSignal.timeout(60000),
@@ -223,6 +248,7 @@ async function drawRemote(body) {
 			model: body.imageModel || 'gpt-image-1',
 			prompt,
 			size: openAiSize(body.aspect || '1:1', body.imageModel || ''),
+			reference_image_paths: referenceImagePaths,
 		}),
 		signal: AbortSignal.timeout(60000),
 	})

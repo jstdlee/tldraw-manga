@@ -43,7 +43,7 @@ import {
 	type ProsodyStyle,
 } from '../model'
 import { computeOptics, defaultOpticsForMeta } from '../optics/shotLab'
-import { compileTensionCoupledLayout, runIterativePolling4Pass, universalPresetToBook } from '../jev/fiveStageEngine'
+import { compileStage4PureArtSpec, compileTensionCoupledLayout, registryForPreset, runIterativePolling4Pass, UNIVERSAL_STORY_PRESETS, universalPresetToBook } from '../jev/fiveStageEngine'
 import { blockTitle, defaultParams, type BlockId } from '../prompts/library'
 import { BUBBLE, CARD, CONTAINER, PROMPT, type CardKind, type MangaBubble, type MangaCard, type MangaContainer } from '../shapes/schema'
 import { planBubbles } from './placement'
@@ -1505,7 +1505,7 @@ function buildContinuationTemplate(
 						imageDataUrl: '/assets/wutai/p2_01_tea_debate.jpg',
 						beat: 'P02-01 · Across a low wooden tea table before the round lattice window opening onto a sea of clouds, Ding Yuanying distinguishes outward Cultivation from inward Awakening.',
 						who: ['@ding_yuanying', '@master_zhixuan'],
-						assetRefs: ['@ding_yuanying', '@master_zhixuan', '#prop_zen_tea_pond', '#env_wutai_monastery'],
+						assetRefs: ['#env_zen_tea_chamber', '@ding_yuanying', '@master_zhixuan'],
 						mccloudTransition: 'scene_to_scene',
 						wordPictureMode: 'interdependent',
 						tension: 0.78,
@@ -1532,7 +1532,7 @@ function buildContinuationTemplate(
 						imageDataUrl: '/assets/wutai/p2_02_three_realms.jpg',
 						beat: 'P02-02 · Ding Yuanying dissects the Three Realms of Buddhism while three translucent ink rings of cosmic clouds, temple eaves, and mortal smoke rise behind him.',
 						who: ['@ding_yuanying'],
-						assetRefs: ['@ding_yuanying', '#env_wutai_monastery'],
+						assetRefs: ['@ding_yuanying', '#env_zen_tea_chamber'],
 						mccloudTransition: 'subject_to_subject',
 						wordPictureMode: 'duo_specific',
 						tension: 0.85,
@@ -1559,7 +1559,7 @@ function buildContinuationTemplate(
 						imageDataUrl: '/assets/wutai/p2_03_stone_ripples.jpg',
 						beat: 'P02-03 · Metaphor Beat: a dark river pebble drops into a mirror-still lotus pond, sending concentric sumi-e ink ripples outward as it sinks into the depths.',
 						who: ['@master_zhixuan'],
-						assetRefs: ['#prop_zen_tea_pond', '@master_zhixuan'],
+						assetRefs: ['#prop_poem_brush_inkstone', '@master_zhixuan', '#env_zen_tea_chamber'],
 						mccloudTransition: 'aspect_to_aspect',
 						wordPictureMode: 'interdependent',
 						tension: 0.91,
@@ -1597,10 +1597,10 @@ function buildContinuationTemplate(
 					focal: '35mm',
 					focalMm: 35,
 					fStop: 2.8,
-					imageDataUrl: '/assets/wutai/p3_01_salvation_truth.jpg',
+					imageDataUrl: '/assets/wutai/p3_01_salvation_dao.jpg',
 					beat: 'P03-01 · Master Zhixuan speaks with serene authority on the stone terrace as sunlight pierces the mountain clouds, naming the true path of salvation.',
 					who: ['@master_zhixuan', '@ding_yuanying'],
-					assetRefs: ['@master_zhixuan', '@ding_yuanying', '#env_wutai_monastery'],
+					assetRefs: ['#env_zen_tea_chamber', '@master_zhixuan', '@ding_yuanying'],
 					mccloudTransition: 'subject_to_subject',
 					wordPictureMode: 'interdependent',
 					tension: 0.88,
@@ -1627,7 +1627,7 @@ function buildContinuationTemplate(
 					imageDataUrl: '/assets/wutai/p3_02_brush_correction.jpg',
 					beat: 'P03-02 · Extreme close-up: Master Zhixuan dips a bamboo wolf-hair brush in rich ink and alters two characters on the rice-paper scroll—turning defiance into harmony with the Dao.',
 					who: ['@master_zhixuan'],
-					assetRefs: ['@master_zhixuan', '#prop_poem_scroll'],
+					assetRefs: ['#prop_poem_brush_inkstone', '@master_zhixuan', '#env_zen_tea_chamber'],
 					mccloudTransition: 'action_to_action',
 					wordPictureMode: 'duo_specific',
 					tension: 0.96,
@@ -1652,7 +1652,7 @@ function buildContinuationTemplate(
 					focal: '18mm',
 					focalMm: 24,
 					fStop: 5.6,
-					imageDataUrl: '/assets/wutai/p3_03_clouds_awakening.jpg',
+					imageDataUrl: '/assets/wutai/p3_03_bow_farewell.jpg',
 					beat: 'P03-03 · Vast Shan-Shui finale: golden dawn parts the sea of clouds over Wutai Mountain as Ding Yuanying bows in silent clarity on the cliffside stone steps.',
 					who: ['@ding_yuanying', '@master_zhixuan'],
 					assetRefs: ['@ding_yuanying', '@master_zhixuan', '#env_wutai_monastery'],
@@ -2318,6 +2318,21 @@ export function cloneVariantPage(editor: Editor, sourcePageId?: TLShapeId): stri
 	return `Cloned layout variant for "${page.props.title}" (JEV ${Math.round(judged.score * 100)})`
 }
 
+function resolvePresetRegistryForPage(page: MangaContainer, ctx: PagePipelineContext) {
+	const isWutai =
+		ctx.stylePreset === 'shanshui_ink' ||
+		page.props.stylePreset === 'shanshui_ink' ||
+		ctx.lockedAssetTags.some((t) => t === '@ding_yuanying' || t === '@master_zhixuan') ||
+		page.props.title.toLowerCase().includes('wutai')
+	const isSeagull =
+		ctx.stylePreset === 'shonen_water' ||
+		page.props.stylePreset === 'shonen_water' ||
+		ctx.lockedAssetTags.some((t) => t.includes('gull') || t === '@kanta')
+	const presetKey = isWutai ? 'wutai-lundao' : isSeagull ? 'seagull-debate' : 'noir-watchmaker'
+	const preset = UNIVERSAL_STORY_PRESETS[presetKey] ?? UNIVERSAL_STORY_PRESETS['noir-watchmaker']
+	return registryForPreset(preset)
+}
+
 export async function regenerateSelectedPanel(
 	editor: Editor,
 	page: MangaContainer,
@@ -2325,27 +2340,39 @@ export async function regenerateSelectedPanel(
 ): Promise<string> {
 	const idx = panelIndex ?? (page.props.selectedPanel >= 0 ? page.props.selectedPanel : 0)
 	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
+	const beats = readJson<Beat[]>(page.props.scriptJson, [])
 	const target = metas[idx]
 	if (!target) return 'Target panel not found'
 
 	const ctx = readPageContext(editor, page)
-	const opt = computeOptics(defaultOpticsForMeta(target))
-	const prompt = buildPanelPrompt({
-		environment: target.environment || page.props.environment,
-		lighting: page.props.lighting,
+	const registry = resolvePresetRegistryForPage(page, ctx)
+	const beat: Beat = beats[idx] ?? {
 		shot: target.shot,
 		angle: target.angle,
 		focal: target.focal,
-		aspect: target.aspect,
 		beat: target.beat,
-		locks: ctx.lockedAssetTags.join(' '),
-		corner: safeCorner('top-right'),
+		who: target.who,
+		assetRefs: target.assetRefs?.length ? target.assetRefs : ctx.lockedAssetTags.slice(0, 3),
 		silent: target.silent,
-		opticsClause: opt.promptClause,
+	}
+	const stage4 = compileStage4PureArtSpec({
+		panelIndex: idx,
+		beat,
+		meta: target,
+		panelPts: [
+			[0, 0],
+			[320, 0],
+			[320, 220],
+			[0, 220],
+		],
+		registry,
+		environment: target.environment || page.props.environment,
+		lighting: page.props.lighting,
 	})
-	const remoteUrl = await askImage(prompt, target.aspect)
+	const remoteUrl = await askImage(stage4.pureCameraPrompt, target.aspect, stage4.referenceImagePaths)
 	metas[idx] = {
 		...target,
+		assetRefs: stage4.assetTags,
 		imageSeed: `${target.imageSeed}-ai-${Date.now().toString(36).slice(-3)}`,
 		imageDataUrl: remoteUrl || target.imageDataUrl,
 	}
@@ -2354,7 +2381,7 @@ export async function regenerateSelectedPanel(
 		type: CONTAINER,
 		props: { panelsJson: JSON.stringify(metas), selectedPanel: idx },
 	})
-	return `Redrew Panel #${idx + 1} (${target.shot}/${target.focal}) with locked assets (${ctx.lockedAssetTags.slice(0, 3).join(' ')})`
+	return `Redrew Panel #${idx + 1} (${target.shot}/${target.focal}) via Multi-Image I2I [${stage4.assetTags.join(' + ')} → ${stage4.referenceImagePaths.length} ref sheets]`
 }
 
 export function loadPresetArtIntoPanel(
@@ -2383,9 +2410,9 @@ export function loadPresetArtIntoPanel(
 		'/assets/wutai/p2_01_tea_debate.jpg',
 		'/assets/wutai/p2_02_three_realms.jpg',
 		'/assets/wutai/p2_03_stone_ripples.jpg',
-		'/assets/wutai/p3_01_salvation_truth.jpg',
+		'/assets/wutai/p3_01_salvation_dao.jpg',
 		'/assets/wutai/p3_02_brush_correction.jpg',
-		'/assets/wutai/p3_03_clouds_awakening.jpg',
+		'/assets/wutai/p3_03_bow_farewell.jpg',
 	]
 	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
 	const target = metas[panelIndex]

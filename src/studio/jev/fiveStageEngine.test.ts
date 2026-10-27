@@ -213,7 +213,9 @@ describe('Stage 4 — asset-locked pure camera prompt & conditional negative spa
 		expect(spec.negativeSpaceCorner).toBeNull()
 		expect(spec.negativeSpaceRatio).toBe(0)
 		expect(spec.pureCameraPrompt).toContain('0% speech balloon reservation')
-		expect(spec.referenceImagePaths).toHaveLength(beat.assetRefs?.length ?? 0)
+		expect(spec.referenceImagePaths.length).toBeGreaterThanOrEqual(beat.assetRefs?.length ?? 0)
+		expect(spec.assetTags.some((t) => t.startsWith('#env'))).toBe(true)
+		expect(spec.pureCameraPrompt).toContain('Reference Image #1 =')
 	})
 
 	it('reserves 24%-28% balloon space on a dialogue panel and locks assets', () => {
