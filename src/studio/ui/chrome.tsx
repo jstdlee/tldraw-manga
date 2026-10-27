@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { useValue, type Editor } from 'tldraw'
 import { applyProviderPreset, loadSettings, PROVIDER_PRESETS, saveSettings, type ApiSettings, type ProviderId } from '../ai/settings'
 import {
@@ -76,6 +76,7 @@ import { BUBBLE, CARD, CONTAINER, type MangaBubble, type MangaCard, type MangaCo
 import { compileBook, type CompiledBook } from '../spec/compile'
 import { openPageContextInspector } from './contextMenu'
 import {
+	IconBolt,
 	IconBook,
 	IconBubble,
 	IconCamera,
@@ -87,7 +88,6 @@ import {
 	IconFileText,
 	IconGrid,
 	IconImage,
-	IconLayers,
 	IconMoon,
 	IconPlay,
 	IconPlus,
@@ -97,6 +97,7 @@ import {
 	IconSliders,
 	IconSparkles,
 	IconSun,
+	IconTag,
 	IconUser,
 	IconWand,
 } from './icons'
@@ -105,11 +106,11 @@ const PRESETS = ['seizen', 'std', 'action', 'tobira'] as const
 const BUBBLES: BubbleStyle[] = ['speech', 'thought', 'caption', 'whisper', 'shout', 'broadcast', 'sfx']
 const PROSODY_STYLES: ProsodyStyle[] = ['pill', 'seal', 'slant', 'burst', 'minimal', 'off']
 
-// Chinese display labels for the story-agnostic universal 5-stage presets.
+// Display labels for the story-agnostic universal 5-stage presets.
 const UNIVERSAL_PRESET_LABELS: Record<string, string> = {
-	'seagull-fries': '海堤双鸥 · 水彩哲思',
-	'noir-watchmaker': '雨夜审讯室 · 停摆怀表 (硬派青年漫)',
-	'shonen-blade': '风暴神社 · 热血决斗',
+	'seagull-fries': 'Two Gulls on the Pier · Coastal Watercolor',
+	'noir-watchmaker': 'Rainy Interrogation · Stopped Watch (Seinen Noir)',
+	'shonen-blade': 'Storm Shrine · Shonen Duel',
 }
 
 export type SidebarTab = 'cards' | 'layout' | 'story' | 'camera' | 'llm'
@@ -119,7 +120,7 @@ export function TopBar({
 	story: _story,
 	status,
 	setStatus,
-	onOpenCompare: _onOpenCompare,
+	onOpenCompare,
 	onOpenReader,
 	onOpenSettings,
 	onSwitchTab,
@@ -144,9 +145,33 @@ export function TopBar({
 	const settings = loadSettings()
 	const run = async (label: string, fn: (ed: Editor) => Promise<string | void> | string | void) => {
 		if (!editor) return
-		setStatus(`正在执行：${label}…`)
+		setStatus(`Running: ${label}...`)
 		const result = await fn(editor)
-		setStatus(typeof result === 'string' && result ? result : `${label}完成`)
+		setStatus(typeof result === 'string' && result ? result : `${label} done`)
+	}
+
+	const pages = useValue(
+		'pipeline-pages',
+		() => {
+			if (!editor) return [] as MangaContainer[]
+			return editor
+				.getCurrentPageShapes()
+				.filter((s): s is MangaContainer => s.type === CONTAINER && s.props.role === 'page')
+				.sort((a, b) => (a.props.pageIndex || 0) - (b.props.pageIndex || 0))
+		},
+		[editor],
+	)
+	const selectedPageId = useValue(
+		'pipeline-selected-page',
+		() => (editor ? selectedPages(editor)[0]?.id ?? null : null),
+		[editor],
+	)
+
+	const focusPage = (page: MangaContainer) => {
+		if (!editor) return
+		editor.select(page.id)
+		editor.zoomToSelection({ animation: { duration: 300 } })
+		setStatus(`Focused ${page.props.title}`)
 	}
 
 	return (
@@ -157,75 +182,73 @@ export function TopBar({
 						type="button"
 						className={`drawer-toggle-btn ${drawerOpen ? 'active' : ''}`}
 						onClick={onToggleDrawer}
-						title={drawerOpen ? '收起左侧工作台抽屉（全屏画布模式）' : '展开左侧工作台抽屉'}
+						title={drawerOpen ? 'Hide the Inspector drawer (full-canvas mode)' : 'Show the Inspector drawer'}
 					>
-						<IconSliders /> {drawerOpen ? '收起抽屉' : '工作台抽屉'}
+						<IconSliders /> Inspector
 					</button>
 				) : null}
 				<div className="brand">
-					<strong>tldraw-manga</strong>
-					<span>单页流水线漫剧制作台</span>
+					<strong>Manga Studio</strong>
 				</div>
+				<select
+					className="universal-preset-select"
+					aria-label="Story Preset"
+					title="Switch story and asset preset"
+					value=""
+					onChange={(event) => {
+						const presetId = event.target.value
+						if (!presetId) return
+						void run('Switch preset', (ed) => applyUniversalFiveStagePreset(ed, presetId))
+						event.currentTarget.value = ''
+					}}
+				>
+					<option value="" disabled>
+						Story Preset
+					</option>
+					{listUniversalPresets().map((preset) => (
+						<option key={preset.id} value={preset.id}>
+							{UNIVERSAL_PRESET_LABELS[preset.id] ?? preset.title}
+						</option>
+					))}
+				</select>
 			</div>
 
-			<div className="pipeline-steps">
-				<div className="step-group">
-					<select
-						className="universal-preset-select"
-						aria-label="切换故事预设"
-						title="切换内置故事与设定集预设"
-						value=""
-						onChange={(event) => {
-							const presetId = event.target.value
-							if (!presetId) return
-							void run('切换故事预设', (ed) => applyUniversalFiveStagePreset(ed, presetId))
-							event.currentTarget.value = ''
-						}}
-					>
-						<option value="" disabled>
-							故事预设…
-						</option>
-						{listUniversalPresets().map((preset) => (
-							<option key={preset.id} value={preset.id}>
-								{UNIVERSAL_PRESET_LABELS[preset.id] ?? preset.title}
-							</option>
-						))}
-					</select>
-
-					<button
-						type="button"
-						title="对当前页运行 JEV 五阶段分镜编译与视线动线求解"
-						onClick={() => void run('JEV 五阶段编译', (ed) => runJevFiveStageCompile(ed))}
-					>
-						<IconLayers /> 编译本页
-					</button>
-
-					<button
-						type="button"
-						title="浏览或编辑当前页继承的角色、道具、180°视线轴与剧情 Context"
-						onClick={() => {
-							if (!editor) return
-							const page = selectedPages(editor)[0]
-							if (page) openPageContextInspector(page.id)
-						}}
-					>
-						<IconCompass /> 本页 Context 设定
-					</button>
-
-					<button
-						type="button"
-						className="primary"
-						title="以当前页为母本，继承锁定设定与180°镜头轴线延续生成下一页 (P+1)"
-						onClick={() =>
-							void run('流水线延续下一页', (ed) => {
-								const active = selectedPages(ed)[0]
-								return extendNextPageFromPage(ed, active?.id).message
-							})
-						}
-					>
-						<IconPlus /> 续写下一页 (继承 Context)
-					</button>
-				</div>
+			<div className="pipeline-strip" role="group" aria-label="Page pipeline">
+				{pages.map((page, idx) => (
+					<Fragment key={page.id}>
+						{idx > 0 ? (
+							<span className="pipe-arrow" aria-hidden="true">
+								›
+							</span>
+						) : null}
+						<button
+							type="button"
+							className={`pipe-pill ${page.id === selectedPageId ? 'active' : ''}`}
+							onClick={() => focusPage(page)}
+							title={page.props.title}
+						>
+							P{page.props.pageIndex || idx + 1}
+						</button>
+					</Fragment>
+				))}
+				{pages.length ? (
+					<span className="pipe-arrow" aria-hidden="true">
+						›
+					</span>
+				) : null}
+				<button
+					type="button"
+					className="pipe-extend"
+					title="Extend the pipeline with a new page that inherits the current context"
+					onClick={() =>
+						void run('Extend next page', (ed) => {
+							const active = selectedPages(ed)[0] ?? pages[pages.length - 1]
+							return extendNextPageFromPage(ed, active?.id).message
+						})
+					}
+				>
+					<IconPlus /> Extend Page
+				</button>
 			</div>
 
 			<div className="status-pill" title={status}>
@@ -235,13 +258,27 @@ export function TopBar({
 			<div className="topbar-right-actions">
 				<button
 					type="button"
+					title="Inspect inherited characters, props, 180-degree axis and script beats"
+					onClick={() => {
+						if (!editor) return
+						const page = selectedPages(editor)[0] ?? pages[0]
+						if (page) openPageContextInspector(page.id)
+					}}
+				>
+					<IconCompass /> Page Context
+				</button>
+				<button type="button" onClick={onOpenCompare} title="Compare 8 candidate layouts">
+					<IconGrid /> Compare (8)
+				</button>
+				<button
+					type="button"
 					onClick={() => {
 						if (!editor) return
 						onOpenReader(compileBook(editor))
 					}}
-					title="打开整书翻页/条漫阅读器"
+					title="Open the book reader"
 				>
-					<IconBook /> 阅读预览
+					<IconBook /> Reader
 				</button>
 				<button
 					type="button"
@@ -249,11 +286,11 @@ export function TopBar({
 						if (!editor) return
 						const book = compileBook(editor)
 						downloadText(`${book.spec.title}.html`, readerHtml(book), 'text/html;charset=utf-8')
-						setStatus('已导出单文件 HTML 阅读器')
+						setStatus('Exported standalone HTML reader')
 					}}
-					title="导出独立 HTML 漫剧阅读器"
+					title="Export a standalone HTML reader"
 				>
-					<IconDownload /> 导出
+					<IconDownload /> Export
 				</button>
 				<button
 					type="button"
@@ -262,18 +299,14 @@ export function TopBar({
 						onSwitchTab('llm')
 						onOpenSettings()
 					}}
-					title={`当前模型：${settings.model} / ${settings.imageModel}`}
+					title={`Model: ${settings.model} / ${settings.imageModel}`}
 				>
 					<span className="dot" />
 					<span>
-						<IconSettings /> 模型设置
+						<IconSettings /> Models
 					</span>
 				</button>
-				<button
-					type="button"
-					onClick={onToggleTheme}
-					title="切换浅色 / 深色主题"
-				>
+				<button type="button" onClick={onToggleTheme} title="Toggle light / dark theme">
 					{theme === 'light' ? <IconMoon /> : <IconSun />}
 				</button>
 			</div>
@@ -298,7 +331,7 @@ export function LeftLibrary({
 	setActiveTab: (tab: SidebarTab) => void
 	onOpenCompare?: () => void
 }) {
-	const [globalCustomPrompt, setGlobalCustomPrompt] = useState('强化正午硬光对比与动作分镜张力，高潮前留一格静帧')
+	const [globalCustomPrompt, setGlobalCustomPrompt] = useState('Heighten noon contrast and action staging with a pre-climax silent beat')
 	const [cardQuickPrompt, setCardQuickPrompt] = useState('')
 	const [settings, setSettings] = useState<ApiSettings>(() => loadSettings())
 
@@ -319,26 +352,26 @@ export function LeftLibrary({
 	const handleSelectPreset = (provider: ProviderId) => {
 		const next = applyProviderPreset(provider)
 		setSettings(next)
-		setStatus(`已切换模型预设为 ${PROVIDER_PRESETS.find((p) => p.id === provider)?.label ?? provider}`)
+		setStatus(`Switched model preset to  ${PROVIDER_PRESETS.find((p) => p.id === provider)?.label ?? provider}`)
 	}
 
 	return (
 		<aside className="sidebar">
-			<div className="sidebar-tabs" role="tablist" aria-label="制作流程阶段">
+			<div className="sidebar-tabs" role="tablist" aria-label="Studio Inspector">
 				<button type="button" className={activeTab === 'cards' ? 'active' : ''} onClick={() => setActiveTab('cards')}>
-					<IconFileText /> 1.设定卡
+					<IconFileText /> 1.Assets
 				</button>
 				<button type="button" className={activeTab === 'layout' ? 'active' : ''} onClick={() => setActiveTab('layout')}>
-					<IconGrid /> 2.版式台
+					<IconGrid /> 2.Layout
 				</button>
 				<button type="button" className={activeTab === 'story' ? 'active' : ''} onClick={() => setActiveTab('story')}>
-					<IconBubble /> 3.分镜台词
+					<IconBubble /> 3.Script
 				</button>
 				<button type="button" className={activeTab === 'camera' ? 'active' : ''} onClick={() => setActiveTab('camera')}>
-					<IconCamera /> 4.镜头构图
+					<IconCamera /> 4.Optics
 				</button>
 				<button type="button" className={activeTab === 'llm' ? 'active' : ''} onClick={() => setActiveTab('llm')}>
-					<IconSettings /> 5.模型节点
+					<IconSettings /> 5.Nodes
 				</button>
 			</div>
 
@@ -347,10 +380,10 @@ export function LeftLibrary({
 					<>
 						<section className="side-section">
 							<div className="sec-head">
-								<h3>新建设定卡（文字卡 / 视觉参考卡）</h3>
-								<span>多模态组件</span>
+								<h3>New Reference Card (Text / Visual Card)</h3>
+								<span>Reference Cards</span>
 							</div>
-							<p className="side-hint">在无限画布中放置设定卡并连线至章节或分镜页，卡片自带润色、重生、Vision 识图反推与一键回退：</p>
+							<p className="side-hint">Place reference cards on the canvas and connect them to pages; supports AI Polish, Regenerate, Vision Vision Analysis & reversible diff: </p>
 							<div className="card-spawn-grid">
 								<button
 									type="button"
@@ -360,16 +393,16 @@ export function LeftLibrary({
 										createTextCardOnCanvas(
 											editor,
 											'note',
-											'分镜剧情设定卡',
-											'勘太护住最后一盒薯条退到防波堤边缘，海风吹起连帽卫衣，头顶黑影骤然压下。',
+											'Scene Beat Reference Card',
+											'Kanta backs to the breakwater edge guarding the last cone of fries as a giant shadow drops from above.',
 										)
-										setStatus('已在画布创建「文字设定卡」，可直接点击卡上按钮润色或改写')
+										setStatus('Created Text Reference Card on canvas')
 									}}
 								>
 									<strong>
-										<IconPlus /> 文字设定卡
+										<IconPlus /> Text Card
 									</strong>
-									<small>角色/剧情/世界观 · Text LLM 润色与重生</small>
+									<small>Character/Story/World · Text LLM Polish & Regenerate</small>
 								</button>
 
 								<button
@@ -380,25 +413,25 @@ export function LeftLibrary({
 										createImageCardOnCanvas(
 											editor,
 											'image',
-											'场景视觉参考图卡',
+											'Scene Visual Reference Card',
 											'@boardwalk',
-											'正午防波堤仰拍参考图，18mm 广角透视，浓墨线配灰网点，右上角留出对白安全区。',
+											'Low-angle breakwater reference under noon sun, 18mm wide perspective, G-pen ink with grey screentone and top-right safe balloon zone.',
 										)
-										setStatus('已在画布创建「图像参考卡」，支持 Vision 识图反推与 AI 重绘')
+										setStatus('Created Visual Reference Card on canvas with  Vision Vision Analysis &  AI Redraw')
 									}}
 								>
 									<strong>
-										<IconImage /> 图像参考卡
+										<IconImage /> Image Card
 									</strong>
-									<small>参考图/概念图 · Vision 反推与 AI 生图</small>
+									<small>Ref Art/Concept · Vision Analysis &  AI Render</small>
 								</button>
 							</div>
 
 							<div className="char-row">
 								{[
-									{ tag: '@kanta', name: '勘太三视图卡', desc: '凌乱黑发，深蓝连帽卫衣，领口挂旧护目镜，右颊一贴创可贴' },
-									{ tag: '@mei', name: '芽衣三视图卡', desc: '利落短发配发卡，浅色长风衣，斜挎老胶片相机，眼神冷静' },
-									{ tag: '@boss', name: '头目鸥视觉卡', desc: '体型硕大的银背海鸥，左眼一道旧疤，左脚套金属环，翼展极宽' },
+									{ tag: '@kanta', name: 'Kanta Turnaround Sheet', desc: 'Messy black hair, navy hoodie, vintage goggles at collar, bandage on right cheek' },
+									{ tag: '@mei', name: 'Mei Turnaround Sheet', desc: 'Short bob with hairpin, light trench coat, vintage film camera strap, calm gaze' },
+									{ tag: '@boss', name: 'Gull Boss Sheet', desc: 'Massive silver-backed gull, scar across left eye, metal leg ring, wide wingspan' },
 								].map((char) => (
 									<button
 										key={char.tag}
@@ -406,7 +439,7 @@ export function LeftLibrary({
 										onClick={() => {
 											if (!editor) return
 											createImageCardOnCanvas(editor, 'character', char.name, char.tag, char.desc)
-											setStatus(`已在画布放置 ${char.name}`)
+											setStatus(`Placed on canvas:  ${char.name}`)
 										}}
 									>
 										<IconUser /> + {char.name}
@@ -417,8 +450,8 @@ export function LeftLibrary({
 
 						<section className="side-section">
 							<div className="sec-head">
-								<h3>选中卡片 / 分镜 AI 快捷台</h3>
-								<span>A/B 对比可回退</span>
+								<h3>Selected Card / Storyboard AI Quick Actions</h3>
+								<span>A/B Reversible Diff</span>
 							</div>
 							<div className="quick-ai-box">
 								<div className="quick-ai-grid">
@@ -434,7 +467,7 @@ export function LeftLibrary({
 											}
 										}}
 									>
-										<IconSparkles /> AI 润色美化
+										<IconSparkles /> AI AI Polish
 									</button>
 									<button
 										type="button"
@@ -445,11 +478,11 @@ export function LeftLibrary({
 												setStatus(await applySelectedCardAiAction(editor, card, 'regenerate', cardQuickPrompt))
 											} else {
 												rerollSelectedPages(editor)
-												setStatus('已重新生成选中页分镜排布')
+												setStatus('Rerolled page panel topology')
 											}
 										}}
 									>
-										<IconRefresh /> AI 重新生成
+										<IconRefresh /> AI Regenerate
 									</button>
 									<button
 										type="button"
@@ -469,7 +502,7 @@ export function LeftLibrary({
 											}
 										}}
 									>
-										<IconEye /> Vision 识图反推
+										<IconEye /> Vision Vision Analyze
 									</button>
 									<button
 										type="button"
@@ -483,7 +516,7 @@ export function LeftLibrary({
 											}
 										}}
 									>
-										<IconWand /> AI 图像重绘
+										<IconWand /> AI Redraw Art
 									</button>
 								</div>
 								<div className="quick-prompt-row">
@@ -491,7 +524,7 @@ export function LeftLibrary({
 										type="text"
 										value={cardQuickPrompt}
 										onChange={(event) => setCardQuickPrompt(event.target.value)}
-										placeholder="输入自定义指令（如：改成赛博朋克雨夜、强化仰拍压迫感）…"
+										placeholder="Enter custom directive (e.g., cyberpunk rain, heighten low-angle tension)..."
 									/>
 									<button
 										type="button"
@@ -499,13 +532,13 @@ export function LeftLibrary({
 											if (!editor) return
 											const card = editor.getSelectedShapes().find((s): s is MangaCard => s.type === CARD)
 											if (card) {
-												setStatus(await applySelectedCardAiAction(editor, card, 'polish', cardQuickPrompt || '强化漫画镜头张力'))
+												setStatus(await applySelectedCardAiAction(editor, card, 'polish', cardQuickPrompt || 'Heighten cinematic tension'))
 											} else {
-												setStatus(await polishPageWithAi(editor, cardQuickPrompt || '强化镜头与台词张力'))
+												setStatus(await polishPageWithAi(editor, cardQuickPrompt || 'Sharpen camera and dialogue tension'))
 											}
 										}}
 									>
-										<IconSend /> 执行
+										<IconSend /> Run
 									</button>
 								</div>
 							</div>
@@ -546,8 +579,8 @@ export function LeftLibrary({
 					<>
 						<section className="side-section">
 							<div className="sec-head">
-								<h3>画布 AI 提示词算子节点</h3>
-								<span>可拖入画布连线</span>
+								<h3>Canvas AI Pipeline Operator Nodes</h3>
+								<span>Drag onto canvas</span>
 							</div>
 							<div className="block-list">
 								{PROMPT_BLOCKS.map((block) => (
@@ -559,22 +592,22 @@ export function LeftLibrary({
 													type="button"
 													onClick={async () => {
 														if (!editor) return
-														setStatus(`正在运行 ${block.title}…`)
+														setStatus(`Running  ${block.title}...`)
 														const note = await runBlock(editor, block.id)
 														setStatus(note)
 													}}
 												>
-													运行
+													Run
 												</button>
 												<button
 													type="button"
 													onClick={() => {
 														if (!editor) return
 														spawnPromptBlock(editor, block.id)
-														setStatus(`已将「${block.title}」节点放置到画布中央`)
+														setStatus(`Placed "${block.title}" node on canvas`)
 													}}
 												>
-													+ 放画布
+													+ Place
 												</button>
 											</div>
 										</div>
@@ -586,7 +619,7 @@ export function LeftLibrary({
 
 						<section className="side-section llm-config-panel">
 							<div className="sec-head">
-								<h3>内置多模态模型配置中心</h3>
+								<h3>Multimodal Model Settings</h3>
 								<span>Text · Vision · Image</span>
 							</div>
 							<div className="preset-bar">
@@ -608,13 +641,13 @@ export function LeftLibrary({
 									checked={settings.useApi}
 									onChange={(event) => updateSettings({ useApi: event.target.checked })}
 								/>
-								<span>启用在线大模型 API（关闭时使用零配置内置离线引擎）</span>
+								<span>Enable Online LLM APIs API (When off, uses zero-config built-in offline engine)</span>
 							</label>
 
 							<div className="model-group-card">
-								<h4>1. 文本大模型 (Text LLM · 剧本/润色/提示词)</h4>
+								<h4>1. Text LLM (Text LLM · Script/Polish/Prompt)</h4>
 								<label>
-									服务商 (Provider)
+									Provider (Provider)
 									<select value={settings.provider} onChange={(event) => handleSelectPreset(event.target.value as ProviderId)}>
 										{PROVIDER_PRESETS.map((preset) => (
 											<option key={preset.id} value={preset.id}>
@@ -624,7 +657,7 @@ export function LeftLibrary({
 									</select>
 								</label>
 								<label>
-									接口地址 (Base URL)
+									Endpoint (Base URL)
 									<input
 										value={settings.baseUrl}
 										onChange={(event) => updateSettings({ baseUrl: event.target.value })}
@@ -641,7 +674,7 @@ export function LeftLibrary({
 									/>
 								</label>
 								<label>
-									文本模型名称 (Text Model)
+									Text Model (Text Model)
 									<input
 										value={settings.model}
 										onChange={(event) => updateSettings({ model: event.target.value })}
@@ -651,9 +684,9 @@ export function LeftLibrary({
 							</div>
 
 							<div className="model-group-card">
-								<h4>2. 视觉与生图模型 (Vision & Image LLM)</h4>
+								<h4>2. Vision & Image Models (Vision & Image LLM)</h4>
 								<label>
-									视觉模型名称 (Vision Model)
+									Vision Model (Vision Model)
 									<input
 										value={settings.visionModel}
 										onChange={(event) => updateSettings({ visionModel: event.target.value })}
@@ -661,7 +694,7 @@ export function LeftLibrary({
 									/>
 								</label>
 								<label>
-									生图模型名称 (Image Model)
+									Image Model (Image Model)
 									<input
 										value={settings.imageModel}
 										onChange={(event) => updateSettings({ imageModel: event.target.value })}
@@ -692,10 +725,10 @@ function LayoutWorkbenchSection({
 		return (
 			<section className="side-section">
 				<div className="sec-head">
-					<h3>版式生成与主编评分台</h3>
-					<span>请选择分镜页</span>
+					<h3>Layout Topology & JEV Scoring</h3>
+					<span>Select a Page</span>
 				</div>
-				<p className="side-hint">在画布上点击任意分镜页容器，即可调节几何斜切、出血率与 6 轴主编评分。</p>
+				<p className="side-hint">Select any page container on the canvas to adjust diagonal slant, bleed ratio, and  6 -Axis Editorial Score.</p>
 			</section>
 		)
 	}
@@ -713,11 +746,11 @@ function LayoutWorkbenchSection({
 		<>
 			<section className="side-section">
 				<div className="sec-head">
-					<h3>0. JEV 决策模型程式化版式与视角锁定</h3>
-					<span>Stage 2 → 3 确定性收敛</span>
+					<h3>0. JEV JEV 5-Stage Procedural Layout & Camera Lock</h3>
+					<span>Stage 2 → 3 Deterministic</span>
 				</div>
 				<div className="emotion-tip-card" style={{ marginBottom: 8 }}>
-					<strong>张力曲线 τ_t → 14因子机位 + 多边形行高/斜切/列宽程式化合成</strong>
+					<strong>Tension Curve τ_t → 14-Factor Camera + Polygon row heights/diagonal slant/column widths procedural synthesis</strong>
 					<div style={{ fontSize: 11, color: '#334155', lineHeight: 1.5, marginTop: 4, maxHeight: 120, overflowY: 'auto', background: 'rgba(248,250,252,0.9)', padding: '6px 8px', borderRadius: 6, border: '1px solid rgba(148,163,184,0.28)' }}>
 						{progDecision.decisionTrace.map((line, i) => (
 							<div key={i} style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 10.5 }}>
@@ -733,7 +766,7 @@ function LayoutWorkbenchSection({
 								setStatus(runJevFiveStageCompile(editor))
 							}}
 						>
-							<IconSparkles /> 一键执行 JEV 程式化版式 + 14因子视角锁定
+							<IconSparkles /> Run  JEV Procedural Layout + 14-Factor Camera Lock
 						</button>
 						<button
 							type="button"
@@ -741,7 +774,7 @@ function LayoutWorkbenchSection({
 								setStatus(fillRealInterrogationArtworkOnPage(editor, page))
 							}}
 						>
-							<IconImage /> 载入真实AI分镜原画
+							<IconImage /> Load Studio AIPanel Art
 						</button>
 					</div>
 				</div>
@@ -749,11 +782,11 @@ function LayoutWorkbenchSection({
 
 			<section className="side-section">
 				<div className="sec-head">
-					<h3>1. 版式预设与几何参数 · {page.props.title}</h3>
-					<span>{layout.panels.length} 格</span>
+					<h3>1. Layout Presets & Geometry · {page.props.title}</h3>
+					<span>{layout.panels.length} </span>
 				</div>
 
-				<div className="preset-pill-row" role="group" aria-label="四大经典版式预设">
+				<div className="preset-pill-row" role="group" aria-label="4 Classic Layout Presets">
 					{PRESETS.map((preset) => (
 						<button
 							key={preset}
@@ -770,7 +803,7 @@ function LayoutWorkbenchSection({
 									score: best.score,
 									reasons: best.reasons,
 								})
-								setStatus(`已切换版式预设为「${PRESET_LABELS[preset] ?? preset}」`)
+								setStatus(`Switched layout preset to "${PRESET_LABELS[preset] ?? preset}"`)
 							}}
 						>
 							{(PRESET_LABELS[preset] ?? preset).split(' ')[0]}
@@ -780,9 +813,9 @@ function LayoutWorkbenchSection({
 
 				<div className="param-grid-2">
 					<label>
-						画幅比例
+						Aspect Ratio
 						<select
-							aria-label="画幅比例"
+							aria-label="Aspect Ratio"
 							value={String(overrides.ratio)}
 							onChange={(event) => {
 								setStatus(updatePageParametric(editor, page, { ratio: Number(event.target.value) }, true))
@@ -796,9 +829,9 @@ function LayoutWorkbenchSection({
 						</select>
 					</label>
 					<label>
-						段数范围 (Row Range)
+						Row Range (Row Range)
 						<select
-							aria-label="段数范围"
+							aria-label="Row Range"
 							value={overrides.rowRange}
 							onChange={(event) => {
 								setStatus(
@@ -822,11 +855,11 @@ function LayoutWorkbenchSection({
 
 				<div className="slider-stack">
 					<label className="slider-row">
-						<span>斜切度 (Tilt)</span>
+						<span>Diagonal Slant (Tilt)</span>
 						<code>{Math.round((overrides.tilt ?? 0.25) * 100)}%</code>
 						<input
 							type="range"
-							aria-label="斜切度"
+							aria-label="Diagonal Slant"
 							min={0}
 							max={1}
 							step={0.05}
@@ -835,11 +868,11 @@ function LayoutWorkbenchSection({
 						/>
 					</label>
 					<label className="slider-row">
-						<span>出血率 (Bleed)</span>
+						<span>Bleed Ratio (Bleed)</span>
 						<code>{Math.round((overrides.bleed ?? 0.2) * 100)}%</code>
 						<input
 							type="range"
-							aria-label="出血率"
+							aria-label="Bleed Ratio"
 							min={0}
 							max={1}
 							step={0.05}
@@ -848,11 +881,11 @@ function LayoutWorkbenchSection({
 						/>
 					</label>
 					<label className="slider-row">
-						<span>嵌套率 (Nest)</span>
+						<span>Subsplit Rate (Nest)</span>
 						<code>{Math.round((overrides.nest ?? 0.2) * 100)}%</code>
 						<input
 							type="range"
-							aria-label="嵌套率"
+							aria-label="Subsplit Rate"
 							min={0}
 							max={1}
 							step={0.05}
@@ -861,11 +894,11 @@ function LayoutWorkbenchSection({
 						/>
 					</label>
 					<label className="slider-row">
-						<span>大格权重 (Big)</span>
+						<span>Hero Weight (Big)</span>
 						<code>{Math.round((overrides.big ?? 0.2) * 100)}%</code>
 						<input
 							type="range"
-							aria-label="大格权重"
+							aria-label="Hero Weight"
 							min={0}
 							max={1}
 							step={0.05}
@@ -874,11 +907,11 @@ function LayoutWorkbenchSection({
 						/>
 					</label>
 					<label className="slider-row">
-						<span>框线粗细 (LineW)</span>
+						<span>Border Width (LineW)</span>
 						<code>{(overrides.lineW ?? 3.2).toFixed(1)}px</code>
 						<input
 							type="range"
-							aria-label="框线粗细"
+							aria-label="Border Width"
 							min={1.8}
 							max={7.5}
 							step={0.2}
@@ -893,14 +926,14 @@ function LayoutWorkbenchSection({
 						type="button"
 						onClick={() => {
 							mutateSelectedPages(editor, overrides.mutationStrength)
-							setStatus(`已按当前基因派生局部变体（强度 ${Math.round((overrides.mutationStrength ?? 0.45) * 100)}%）`)
+							setStatus(`Derived layout variant (mutation  ${Math.round((overrides.mutationStrength ?? 0.45) * 100)}%)`)
 						}}
 					>
-						<IconSliders /> 以此页派生变体
+						<IconSliders /> Derive Layout Variant
 					</button>
 					{onOpenCompare ? (
 						<button type="button" onClick={onOpenCompare}>
-							<IconGrid /> 打开 8 选 1 候选包
+							<IconGrid /> Open  8 / 1 Candidates
 						</button>
 					) : null}
 				</div>
@@ -908,17 +941,17 @@ function LayoutWorkbenchSection({
 
 			<section className="side-section">
 				<div className="sec-head">
-					<h3>2. 主编 6 轴评分与一键诊断修复</h3>
-					<span>总评 {Math.round(judged.score * 100)} 分</span>
+					<h3>2. 6-Axis Editorial Score and Auto-Remedy</h3>
+					<span>Score {Math.round(judged.score * 100)} </span>
 				</div>
 				<div className="rubric-bars">
 					{[
-						{ key: 'pacing', label: '节奏匹配', val: judged.axes.pacing },
-						{ key: 'hierarchy', label: '主次层级', val: judged.axes.hierarchy },
-						{ key: 'flow', label: '右→左动线', val: judged.axes.flow },
-						{ key: 'tension', label: '斜切张力', val: judged.axes.tension },
-						{ key: 'bleedHook', label: '翻页钩子', val: judged.axes.bleedHook },
-						{ key: 'balance', label: '版面均衡', val: judged.axes.balance },
+						{ key: 'pacing', label: 'Pacing Fit', val: judged.axes.pacing },
+						{ key: 'hierarchy', label: 'Hierarchy', val: judged.axes.hierarchy },
+						{ key: 'flow', label: 'R-to-L Flow', val: judged.axes.flow },
+						{ key: 'tension', label: 'Slant Tension', val: judged.axes.tension },
+						{ key: 'bleedHook', label: 'Page-Turn Hook', val: judged.axes.bleedHook },
+						{ key: 'balance', label: 'Balance', val: judged.axes.balance },
 					].map((item) => (
 						<div key={item.key} className="rubric-row">
 							<span>{item.label}</span>
@@ -932,7 +965,7 @@ function LayoutWorkbenchSection({
 
 				<div className="remedy-box">
 					<div className="remedy-head">
-						<span>诊断缺陷：{judged.deficits[0]}</span>
+						<span>Diagnostics: {judged.deficits[0]}</span>
 					</div>
 					<div className="remedy-list">
 						{judged.remedies.map((rem) => (
@@ -984,10 +1017,10 @@ function StoryAndDialogueSection({
 			{page ? (
 				<section className="side-section">
 					<div className="sec-head">
-						<h3>1. 情绪分镜锦囊 · {page.props.title}</h3>
-						<span>导演技法联动</span>
+						<h3>1. Pacing Strategy Presets · {page.props.title}</h3>
+						<span>Director Staging</span>
 					</div>
-					<div className="preset-pill-row" role="group" aria-label="六大情绪分镜锦囊">
+					<div className="preset-pill-row" role="group" aria-label="6 Pacing Strategy Presets">
 						{SCENARIOS.map((sc) => (
 							<button
 								key={sc}
@@ -1004,8 +1037,8 @@ function StoryAndDialogueSection({
 					</div>
 					<div className="emotion-tip-card">
 						<strong>{tip.label}</strong>
-						<p>版式法则：{tip.layoutRule}</p>
-						<p>镜头节奏：{tip.beatRule}</p>
+						<p>Layout Rule: {tip.layoutRule}</p>
+						<p>Camera Rhythm: {tip.beatRule}</p>
 						<button
 							type="button"
 							className="primary-full"
@@ -1014,7 +1047,7 @@ function StoryAndDialogueSection({
 								setStatus(applyEmotionStrategyOnPage(editor, page, currentScenario))
 							}}
 						>
-							<IconSparkles /> 一键应用「{tip.label}」分镜排布与节拍
+							<IconSparkles /> Apply "{tip.label}" Staging & Beats
 						</button>
 					</div>
 
@@ -1022,9 +1055,9 @@ function StoryAndDialogueSection({
 						<div className="panel-beat-editor">
 							<div className="sec-head" style={{ marginTop: 10 }}>
 								<h3>
-									2. 第 {panelIdx + 1} 格分镜节拍与对白
+									2. # {panelIdx + 1}  Panel Beats & Dialogue
 								</h3>
-								<span>{currentMeta.silent ? '无声静帧' : '有声对白格'}</span>
+								<span>{currentMeta.silent ? 'Silent Ma' : 'Dialogue Beat'}</span>
 							</div>
 							<div className="panel-pill-selector">
 								{metas.map((m, idx) => (
@@ -1037,13 +1070,13 @@ function StoryAndDialogueSection({
 											editor.updateShape<MangaContainer>({ id: page.id, type: CONTAINER, props: { selectedPanel: idx } })
 										}}
 									>
-										第{idx + 1}格{m.silent ? '·静' : ''}
+										#{idx + 1}{m.silent ? '·Silent' : ''}
 									</button>
 								))}
 							</div>
 							<textarea
 								rows={2}
-								aria-label="当前分镜格画面节拍描述"
+								aria-label="Panel staging & action beat"
 								value={currentMeta.beat}
 								onChange={(event) => {
 									if (!editor) return
@@ -1060,27 +1093,27 @@ function StoryAndDialogueSection({
 										setStatus(toggleSilentPanelOnPage(editor, page, panelIdx))
 									}}
 								>
-									{currentMeta.silent ? '✓ 已设无声留白格' : '设为无声留白格'}
+									{currentMeta.silent ? '✓ Silent Ma Active' : 'Set Silent Ma'}
 								</button>
 								<button
 									type="button"
 									onClick={() => {
 										if (!editor) return
-										addBubbleToPage(editor, page, panelIdx, 'speech', '等一下——！', '冷笑审视', 'pill')
-										setStatus(`已在第 ${panelIdx + 1} 格右上安全区添加独立对白气泡图层`)
+										addBubbleToPage(editor, page, panelIdx, 'speech', 'Hold on—!', 'Cold Scrutinizing', 'pill')
+										setStatus(`Inserted in Panel # ${panelIdx + 1}  top-right safe zone: speech bubble layer`)
 									}}
 								>
-									<IconBubble /> + 新增对白气泡
+									<IconBubble /> + Add Speech Bubble
 								</button>
 								<button
 									type="button"
 									onClick={() => {
 										if (!editor) return
-										addStandaloneProsodyToPage(editor, page, panelIdx, '冷笑审视', 'seal', '咔哒！')
-										setStatus(`已在第 ${panelIdx + 1} 格添加独立语气助词/拟声图层`)
+										addStandaloneProsodyToPage(editor, page, panelIdx, 'Cold Scrutinizing', 'seal', 'CLACK!')
+										setStatus(`Inserted in Panel # ${panelIdx + 1}  independent prosody tag/SFX Layer`)
 									}}
 								>
-									<IconSparkles /> + 新增独立语气/拟声层
+									<IconSparkles /> + Add Prosody/SFX
 								</button>
 								<button
 									type="button"
@@ -1089,7 +1122,7 @@ function StoryAndDialogueSection({
 										setStatus(fillRealInterrogationArtworkOnPage(editor, page))
 									}}
 								>
-									<IconImage /> 填入真实AI分镜原画
+									<IconImage /> Fill Studio AIPanel Art
 								</button>
 							</div>
 
@@ -1102,8 +1135,8 @@ function StoryAndDialogueSection({
 								return (
 									<div className="bubble-layer-workbench" style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(148,163,184,0.25)' }}>
 										<div className="sec-head" style={{ marginBottom: 6 }}>
-											<h3>独立图层总控 · 气泡({pageBubbles.length}) & 语气助词</h3>
-											<span>可拖拽位置/改样式</span>
+											<h3>Layer Controls · Bubble({pageBubbles.length}) & Prosody</h3>
+											<span>Draggable/Editable</span>
 										</div>
 										<div className="preset-pill-row" style={{ marginBottom: 8 }}>
 											<button
@@ -1117,7 +1150,7 @@ function StoryAndDialogueSection({
 													})
 												}
 											>
-												💬 气泡层 {page.props.showBubblesLayer !== false ? '开' : '关'}
+												<IconBubble /> Bubbles {page.props.showBubblesLayer !== false ? 'On' : 'Off'}
 											</button>
 											<button
 												type="button"
@@ -1130,7 +1163,7 @@ function StoryAndDialogueSection({
 													})
 												}
 											>
-												🏷️ 语气层 {page.props.showProsodyLayer !== false ? '开' : '关'}
+												<IconTag /> Prosody {page.props.showProsodyLayer !== false ? 'On' : 'Off'}
 											</button>
 											<button
 												type="button"
@@ -1143,7 +1176,7 @@ function StoryAndDialogueSection({
 													})
 												}
 											>
-												⚡ 拟声层 {page.props.showSfxLayer !== false ? '开' : '关'}
+												<IconBolt /> SFX {page.props.showSfxLayer !== false ? 'On' : 'Off'}
 											</button>
 											<button
 												type="button"
@@ -1156,7 +1189,7 @@ function StoryAndDialogueSection({
 													})
 												}
 											>
-												👁️ 动线 {page.props.showFlow ? '开' : '关'}
+												<IconEye /> Flow {page.props.showFlow ? 'On' : 'Off'}
 											</button>
 										</div>
 
@@ -1179,7 +1212,7 @@ function StoryAndDialogueSection({
 															style={{ cursor: 'pointer', color: '#0066cc' }}
 															onClick={() => editor.select(b.id)}
 														>
-															#{bIdx + 1} 格{b.props.panelIndex + 1} · {BUBBLE_LABELS[b.props.bubble] ?? b.props.bubble}
+															#{bIdx + 1} {b.props.panelIndex + 1} · {BUBBLE_LABELS[b.props.bubble] ?? b.props.bubble}
 														</strong>
 														<div style={{ display: 'flex', gap: 4 }}>
 															<button
@@ -1187,7 +1220,7 @@ function StoryAndDialogueSection({
 																className="link-btn"
 																onClick={() => editor.select(b.id)}
 															>
-																定位选中
+																Focus
 															</button>
 															<button
 																type="button"
@@ -1195,7 +1228,7 @@ function StoryAndDialogueSection({
 																style={{ color: '#dc2626' }}
 																onClick={() => editor.deleteShapes([b.id])}
 															>
-																删除
+																Delete
 															</button>
 														</div>
 													</div>
@@ -1203,7 +1236,7 @@ function StoryAndDialogueSection({
 														<input
 															type="text"
 															value={b.props.text}
-															placeholder="气泡台词/拟声词…"
+															placeholder="Dialogue text/SFX..."
 															onChange={(e) =>
 																editor.updateShape<MangaBubble>({
 																	id: b.id,
@@ -1215,7 +1248,7 @@ function StoryAndDialogueSection({
 														<input
 															type="text"
 															value={b.props.prosody}
-															placeholder="独立语气词（如：冷笑审视）"
+															placeholder="Prosody label (e.g., Cold Scrutinizing)"
 															onChange={(e) =>
 																editor.updateShape<MangaBubble>({
 																	id: b.id,
@@ -1227,7 +1260,7 @@ function StoryAndDialogueSection({
 													</div>
 													<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4 }}>
 														<select
-															aria-label={`气泡#${bIdx + 1}框型`}
+															aria-label={`Bubble#${bIdx + 1}Shape`}
 															value={b.props.bubble}
 															onChange={(e) =>
 																editor.updateShape<MangaBubble>({
@@ -1244,7 +1277,7 @@ function StoryAndDialogueSection({
 															))}
 														</select>
 														<select
-															aria-label={`气泡#${bIdx + 1}语气样式`}
+															aria-label={`Bubble#${bIdx + 1}Prosody Style`}
 															value={(b.props.prosodyStyle as ProsodyStyle) || 'pill'}
 															onChange={(e) =>
 																editor.updateShape<MangaBubble>({
@@ -1256,12 +1289,12 @@ function StoryAndDialogueSection({
 														>
 															{PROSODY_STYLES.map((ps) => (
 																<option key={ps} value={ps}>
-																	语气:{PROSODY_STYLE_LABELS[ps]}
+																	Prosody:{PROSODY_STYLE_LABELS[ps]}
 																</option>
 															))}
 														</select>
 														<select
-															aria-label={`气泡#${bIdx + 1}语气颜色`}
+															aria-label={`Bubble#${bIdx + 1}Prosody Color`}
 															value={b.props.prosodyColor || ''}
 															onChange={(e) =>
 																editor.updateShape<MangaBubble>({
@@ -1271,12 +1304,12 @@ function StoryAndDialogueSection({
 																})
 															}
 														>
-															<option value="">默认色</option>
-															<option value="#0066cc">经典蓝</option>
-															<option value="#c93d35">朱印红</option>
-															<option value="#18222c">玄墨黑</option>
-															<option value="#0f766e">青黛绿</option>
-															<option value="#d97706">琥珀金</option>
+															<option value="">Default</option>
+															<option value="#0066cc">Cobalt Blue</option>
+															<option value="#c93d35">Crimson Seal</option>
+															<option value="#18222c">Sumi Ink</option>
+															<option value="#0f766e">Teal Ink</option>
+															<option value="#d97706">Amber Gold</option>
 														</select>
 													</div>
 												</div>
@@ -1287,16 +1320,16 @@ function StoryAndDialogueSection({
 							})()}
 							{pageDiff ? (
 								<div className="card-diff-bar" style={{ marginTop: 6 }}>
-									<span>已应用 AI 导演润色</span>
+									<span>Apply AI Director Polish</span>
 									<button
 										type="button"
 										onClick={() => {
 											if (!editor) return
 											revertPageDiff(editor, page)
-											setStatus('已回退本页分镜至 AI 润色前版本')
+											setStatus('Reverted page to pre- AI  version')
 										}}
 									>
-										一键回退原版
+										Revert
 									</button>
 								</div>
 							) : null}
@@ -1307,30 +1340,30 @@ function StoryAndDialogueSection({
 
 			<section className="side-section">
 				<div className="sec-head">
-					<h3>3. 故事剧本原稿与 LLM 改写</h3>
+					<h3>3. Story Script &  LLM Rewrite</h3>
 					<button
 						type="button"
 						className="link-btn"
 						onClick={() => {
 							const pick = SAMPLE_STORIES[Math.floor(Math.random() * SAMPLE_STORIES.length)]
 							setStory(pick.text)
-							setStatus(`已载入示例剧本《${pick.label}》`)
+							setStatus(`Loaded sample script "${pick.label}"`)
 						}}
 					>
-						换示例剧本
+						Sample Script
 					</button>
 				</div>
 				<textarea
 					rows={5}
 					value={story}
 					onChange={(event) => setStory(event.target.value)}
-					placeholder="输入分集梗概、角色关系或单场戏剧本…"
+					placeholder="Enter episode synopsis, character dynamics, or scene script..."
 				/>
 				<input
 					type="text"
 					value={globalCustomPrompt}
 					onChange={(event) => setGlobalCustomPrompt(event.target.value)}
-					placeholder="输入全局导演改写指令…"
+					placeholder="Enter director rewrite directive..."
 					style={{ marginTop: 6 }}
 				/>
 				<div className="story-actions" style={{ marginTop: 6 }}>
@@ -1338,13 +1371,13 @@ function StoryAndDialogueSection({
 						type="button"
 						className="primary-full"
 						onClick={async () => {
-							setStatus('正在调用 Text LLM 按自定义指令改写剧本…')
+							setStatus('Calling  Text LLM Rewriting script with directive...')
 							const rewritten = await rewriteStoryWithLlm(story, globalCustomPrompt)
 							setStory(rewritten)
-							setStatus('Text LLM 已完成剧本改写')
+							setStatus('Text LLM Script rewrite complete')
 						}}
 					>
-						<IconSparkles /> 调用 Text LLM 改写剧本
+						<IconSparkles /> Run  Text LLM Rewrite Script
 					</button>
 					<button
 						type="button"
@@ -1352,10 +1385,10 @@ function StoryAndDialogueSection({
 						onClick={() => {
 							if (!editor) return
 							spawnBook(editor, bookFromText(story))
-							setStatus('已按当前剧本重新生成整套设定卡、章节与多边形分镜页')
+							setStatus('Rebuilt reference cards and polygon storyboard pages from script')
 						}}
 					>
-						<IconPlay /> 按剧本重建画布漫剧
+						<IconPlay /> Rebuild Pages from Script
 					</button>
 				</div>
 			</section>
@@ -1376,10 +1409,10 @@ function CameraAndCompositionSection({
 		return (
 			<section className="side-section">
 				<div className="sec-head">
-					<h3>光学镜头与构图取景台</h3>
-					<span>请选择分镜格</span>
+					<h3>Camera Optics & Panel Framing</h3>
+					<span>Select a Panel Cell</span>
 				</div>
-				<p className="side-hint">点击任意分镜页中的分镜格，即可联动调节焦距、光圈景深、画框内推拉摇移与四边出血。</p>
+				<p className="side-hint">Select any panel cell on a page to adjust focal length, aperture DOF, pan/zoom framing, and edge bleed.</p>
 			</section>
 		)
 	}
@@ -1407,9 +1440,9 @@ function CameraAndCompositionSection({
 			<section className="side-section">
 				<div className="sec-head">
 					<h3>
-						1. 光学镜头实验室 · {page.props.title} 第 {panelIdx + 1} 格
+						1. Optical Lens Lab · {page.props.title} # {panelIdx + 1} 
 					</h3>
-					<span>实时画面联动</span>
+					<span>Live Panel Sync</span>
 				</div>
 
 				<div className="panel-pill-selector" style={{ marginBottom: 8 }}>
@@ -1420,35 +1453,35 @@ function CameraAndCompositionSection({
 							className={idx === panelIdx ? 'preset-pill active' : 'preset-pill'}
 							onClick={() => editor.updateShape<MangaContainer>({ id: page.id, type: CONTAINER, props: { selectedPanel: idx } })}
 						>
-							第{idx + 1}格
+							#{idx + 1}
 						</button>
 					))}
 				</div>
 
 				<div className="optics-readout-card">
 					<div className="optics-stat">
-						<small>等效焦距</small>
+						<small>Eq. Focal</small>
 						<strong>{computed.eqFocalMm}mm</strong>
 					</div>
 					<div className="optics-stat">
-						<small>视场角 FOV</small>
+						<small>FOV FOV</small>
 						<strong>{computed.hFovDeg}°</strong>
 					</div>
 					<div className="optics-stat">
-						<small>推导景别</small>
+						<small>Derived Shot</small>
 						<strong>{computed.shotLabelZh}</strong>
 					</div>
 					<div className="optics-stat">
-						<small>背景虚化</small>
+						<small>Bokeh DOF</small>
 						<strong>{computed.dofLabelZh}</strong>
 					</div>
 				</div>
 
 				<div className="param-grid-2" style={{ marginTop: 8 }}>
 					<label>
-						画幅传感器
+						Sensor Format
 						<select
-							aria-label="画幅传感器"
+							aria-label="Sensor Format"
 							value={optParams.sensor}
 							onChange={(event) => {
 								setStatus(applyOpticsToPanel(editor, page, panelIdx, { sensor: event.target.value as SensorId }))
@@ -1462,9 +1495,9 @@ function CameraAndCompositionSection({
 						</select>
 					</label>
 					<label>
-						机位俯仰角
+						Camera Angle
 						<select
-							aria-label="机位俯仰角"
+							aria-label="Camera Angle"
 							value={meta.angle}
 							onChange={(event) => {
 								setStatus(applyOpticsToPanel(editor, page, panelIdx, { angle: event.target.value as PanelMeta['angle'] }))
@@ -1481,11 +1514,11 @@ function CameraAndCompositionSection({
 
 				<div className="slider-stack" style={{ marginTop: 8 }}>
 					<label className="slider-row">
-						<span>物理焦距 (Focal)</span>
+						<span>Focal Length (Focal)</span>
 						<code>{optParams.focalMm}mm</code>
 						<input
 							type="range"
-							aria-label="物理焦距"
+							aria-label="Focal Length"
 							min={12}
 							max={200}
 							step={1}
@@ -1496,11 +1529,11 @@ function CameraAndCompositionSection({
 						/>
 					</label>
 					<label className="slider-row">
-						<span>光圈景深 (f-Stop)</span>
+						<span>Aperture (f-Stop)</span>
 						<code>f/{optParams.fStop.toFixed(1)}</code>
 						<input
 							type="range"
-							aria-label="光圈景深"
+							aria-label="Aperture"
 							min={1.4}
 							max={22}
 							step={0.2}
@@ -1511,11 +1544,11 @@ function CameraAndCompositionSection({
 						/>
 					</label>
 					<label className="slider-row">
-						<span>主体物距 (Dist)</span>
+						<span>Subject Dist (Dist)</span>
 						<code>{optParams.subjectDistM.toFixed(1)}m</code>
 						<input
 							type="range"
-							aria-label="主体物距"
+							aria-label="Subject Dist"
 							min={0.5}
 							max={20}
 							step={0.5}
@@ -1530,17 +1563,17 @@ function CameraAndCompositionSection({
 
 			<section className="side-section">
 				<div className="sec-head">
-					<h3>2. 格内构图取景 · 四边独立出血 · 辅助线</h3>
-					<span>第 {panelIdx + 1} 格</span>
+					<h3>2. Panel Framing & Pan/Zoom · Per-Edge Bleed · Guides</h3>
+					<span># {panelIdx + 1} </span>
 				</div>
 
 				<div className="slider-stack">
 					<label className="slider-row">
-						<span>格内推拉缩放</span>
+						<span>Panel Zoom</span>
 						<code>{(meta.imageScale || 1).toFixed(2)}×</code>
 						<input
 							type="range"
-							aria-label="格内推拉缩放"
+							aria-label="Panel Zoom"
 							min={0.5}
 							max={2.8}
 							step={0.05}
@@ -1549,11 +1582,11 @@ function CameraAndCompositionSection({
 						/>
 					</label>
 					<label className="slider-row">
-						<span>水平平移 X</span>
+						<span>Pan X X</span>
 						<code>{Math.round(meta.imageOffsetX || 0)}px</code>
 						<input
 							type="range"
-							aria-label="格内水平平移"
+							aria-label="Horizontal Pan"
 							min={-180}
 							max={180}
 							step={2}
@@ -1562,11 +1595,11 @@ function CameraAndCompositionSection({
 						/>
 					</label>
 					<label className="slider-row">
-						<span>垂直平移 Y</span>
+						<span>Pan Y Y</span>
 						<code>{Math.round(meta.imageOffsetY || 0)}px</code>
 						<input
 							type="range"
-							aria-label="格内垂直平移"
+							aria-label="Vertical Pan"
 							min={-180}
 							max={180}
 							step={2}
@@ -1575,11 +1608,11 @@ function CameraAndCompositionSection({
 						/>
 					</label>
 					<label className="slider-row">
-						<span>格内画面倾角</span>
+						<span>Artwork Rotation</span>
 						<code>{Math.round(meta.imageRotation || 0)}°</code>
 						<input
 							type="range"
-							aria-label="格内画面倾角"
+							aria-label="Artwork Rotation"
 							min={-25}
 							max={25}
 							step={1}
@@ -1590,7 +1623,7 @@ function CameraAndCompositionSection({
 				</div>
 				<div className="quick-ai-grid" style={{ marginTop: 6 }}>
 					<label className="remedy-btn" style={{ cursor: 'pointer', justifyContent: 'center', margin: 0 }}>
-						<IconImage /> 上传本地图到此格
+						<IconImage /> Upload Artwork to Panel
 						<input
 							type="file"
 							accept="image/*"
@@ -1603,7 +1636,7 @@ function CameraAndCompositionSection({
 									const dataUrl = typeof reader.result === 'string' ? reader.result : ''
 									if (dataUrl) {
 										updateMeta({ imageDataUrl: dataUrl, imageOffsetX: 0, imageOffsetY: 0, imageScale: 1, imageRotation: 0 })
-										setStatus(`已将图片「${file.name}」插入第 ${panelIdx + 1} 格，可直接拖拽与滚轮缩放`)
+										setStatus(`Loaded image "${file.name}" into Panel # ${panelIdx + 1}  (drag to pan, scroll to zoom)`)
 									}
 								}
 								reader.readAsDataURL(file)
@@ -1617,14 +1650,14 @@ function CameraAndCompositionSection({
 							setStatus(fillRealInterrogationArtworkOnPage(editor, page))
 						}}
 					>
-						<IconSparkles /> 填入整页AI原画
+						<IconSparkles /> Fill Page AIArt
 					</button>
 				</div>
 
 				<div className="bleed-grid-row" style={{ marginTop: 8 }}>
 					{(['bT', 'bB', 'bL', 'bR'] as const).map((edge) => {
 						const active = Boolean(geneHit?.gene[edge])
-						const label = { bT: '上出血', bB: '下出血', bL: '左出血', bR: '右出血' }[edge]
+						const label = { bT: 'Top Bleed', bB: 'Bottom Bleed', bL: 'Left Bleed', bR: 'Right Bleed' }[edge]
 						return (
 							<button
 								key={edge}
@@ -1641,14 +1674,14 @@ function CameraAndCompositionSection({
 						className={geneHit?.gene.nest ? 'preset-pill active' : 'preset-pill'}
 						onClick={() => setStatus(togglePanelNestOnPage(editor, page, panelIdx))}
 					>
-						纵切子格
+						Subsplit
 					</button>
 					<button
 						type="button"
 						className="preset-pill"
 						onClick={() => updateMeta({ imageOffsetX: 0, imageOffsetY: 0, imageScale: 1, imageRotation: 0 })}
 					>
-						取景复位
+						Reset View
 					</button>
 				</div>
 
@@ -1661,7 +1694,7 @@ function CameraAndCompositionSection({
 								setStatus(updatePageParametric(editor, page, { showInnerFrame: event.target.checked }, false))
 							}
 						/>
-						<span>显示 B4 版心安全内框与裁切角线</span>
+						<span>Show  B4  safe trim margin and crop marks</span>
 					</label>
 					<label className="check-row">
 						<input
@@ -1671,7 +1704,7 @@ function CameraAndCompositionSection({
 								setStatus(updatePageParametric(editor, page, { showRuleOfThirds: event.target.checked }, false))
 							}
 						/>
-						<span>显示格内九宫格三分构图线</span>
+						<span>Show rule-of-thirds composition grid</span>
 					</label>
 					<label className="check-row">
 						<input
@@ -1681,7 +1714,7 @@ function CameraAndCompositionSection({
 								setStatus(updatePageParametric(editor, page, { showAxis180: event.target.checked }, false))
 							}
 						/>
-						<span>开启 180° 摄像机轴线与视线越轴检查 ({axisAudit.summary})</span>
+						<span>Enable  180°  camera axis and 180° crossing check ({axisAudit.summary})</span>
 					</label>
 				</div>
 			</section>
@@ -1696,9 +1729,9 @@ export function FloatingBar(_props: { onSwitchTab?: (tab: SidebarTab) => void })
 		<div className="canvas-context-hint-pill" onPointerDown={(e) => e.stopPropagation()}>
 			<span className="hint-dot" />
 			<span>
-				在画格、气泡、页面或空白处 <b>右键点击</b> 使用分组菜单 · 点击页面右侧 <b>+ 续写 P2</b> 流水线继承 Context
+				Right-click any panel, bubble, page, or canvas <b>Right-click</b> for grouped actions · Click right edge <b>+ Extend  P2</b> to inherit context Context
 			</span>
-			<button type="button" onClick={() => setDismissed(true)} title="隐藏操作提示">
+			<button type="button" onClick={() => setDismissed(true)} title="Dismiss Hint">
 				×
 			</button>
 		</div>
@@ -1730,19 +1763,19 @@ export function CompareModal({ editor, onClose }: { editor: Editor | null; onClo
 				<header>
 					<div className="modal-title-row">
 						<h3>
-							<IconGrid /> 36 种子 6 轴主编评分 8 选 1 · {page.props.title}（{SCENARIO_LABELS[page.props.scenario] ?? page.props.scenario} · {ms}ms）
+							<IconGrid /> 36 Seed 6 -Axis Editorial Score 8 / 1 · {page.props.title} ({SCENARIO_LABELS[page.props.scenario] ?? page.props.scenario} · {ms}ms)
 						</h3>
 						<div className="tabs">
 							<button type="button" className={mode === 'roll' ? 'on' : ''} onClick={() => setMode('roll')}>
-								随机抽样 8 套
+								Sample  8 
 							</button>
 							<button type="button" className={mode === 'mutate' ? 'on' : ''} onClick={() => setMode('mutate')}>
-								以此页基因派生 8 套
+								Derive Variants 8 
 							</button>
 						</div>
 						{mode === 'mutate' ? (
 							<label className="inline-slider">
-								变异强度 {Math.round(strength * 100)}%
+								Mutation {Math.round(strength * 100)}%
 								<input
 									type="range"
 									min={0.15}
@@ -1755,7 +1788,7 @@ export function CompareModal({ editor, onClose }: { editor: Editor | null; onClo
 						) : null}
 					</div>
 					<button type="button" onClick={onClose}>
-						<IconClose /> 关闭
+						<IconClose /> Close
 					</button>
 				</header>
 				<div className="compare-grid eight-grid">
@@ -1812,10 +1845,10 @@ export function CompareModal({ editor, onClose }: { editor: Editor | null; onClo
 								<div className="cand-svg" dangerouslySetInnerHTML={{ __html: svg }} />
 								<div className="cand-foot">
 									<strong>
-										#{rank + 1} · 综合 {Math.round(candidate.score * 100)} 分 · {candidate.layout.panels.length} 格
+										#{rank + 1} · Total  {Math.round(candidate.score * 100)}  · {candidate.layout.panels.length} 
 									</strong>
 									<span>{candidate.reasons.slice(0, 2).join(' · ')}</span>
-									<small>优化：{candidate.mutations[0]}</small>
+									<small>Optimize: {candidate.mutations[0]}</small>
 								</div>
 							</div>
 						)
@@ -1852,20 +1885,20 @@ export function ReaderModal({ book, onClose }: { book: CompiledBook; onClose: ()
 			<div className="modal-box reader" onClick={(event) => event.stopPropagation()}>
 				<header>
 					<h3>
-						<IconBook /> {book.spec.title} · 整书四模式预览与完稿导出
+						<IconBook /> {book.spec.title} · Book Reader Preview & Print Export
 					</h3>
 					<div className="tabs">
 						<button type="button" className={mode === 'spread' ? 'on' : ''} onClick={() => setMode('spread')}>
-							日漫右翻双页
+							Right-to-Left Two-Page Spread
 						</button>
 						<button type="button" className={mode === 'webtoon' ? 'on' : ''} onClick={() => setMode('webtoon')}>
-							条漫纵向滚动
+							Vertical Webtoon Scroll
 						</button>
 						<button type="button" className={mode === 'panel' ? 'on' : ''} onClick={() => setMode('panel')}>
-							分镜格逐格推镜
+							Guided Panel-by-Panel View
 						</button>
 						<button type="button" className={mode === 'bible' ? 'on' : ''} onClick={() => setMode('bible')}>
-							角色与世界设定集
+							Character & World Appendix
 						</button>
 					</div>
 					<div className="tabs">
@@ -1875,7 +1908,7 @@ export function ReaderModal({ book, onClose }: { book: CompiledBook; onClose: ()
 									type="button"
 									onClick={() => exportPageSvgFile(firstPageModel, `${book.spec.title}-P1.svg`)}
 								>
-									<IconDownload /> 导出单页 SVG
+									<IconDownload /> Export Page SVG
 								</button>
 								<button
 									type="button"
@@ -1884,12 +1917,12 @@ export function ReaderModal({ book, onClose }: { book: CompiledBook; onClose: ()
 										downloadBlob(`${book.spec.title}-P1-2400px.png`, blob, 'image/png')
 									}}
 								>
-									<IconDownload /> 导出 2400px PNG
+									<IconDownload /> Export  2400px PNG
 								</button>
 							</>
 						) : null}
 						<button type="button" onClick={onClose}>
-							<IconClose /> 关闭
+							<IconClose /> Close
 						</button>
 					</div>
 				</header>
@@ -1902,13 +1935,13 @@ export function ReaderModal({ book, onClose }: { book: CompiledBook; onClose: ()
 						</div>
 						<div className="pager">
 							<button type="button" onClick={() => setSpreadIdx(Math.min(spreads.length - 1, spreadIdx + 1))}>
-								← 下一页（向左翻）
+								← Next Page (Left)
 							</button>
 							<span>
-								第 {spreadIdx + 1} / {spreads.length} 跨页
+								# {spreadIdx + 1} / {spreads.length} Spread
 							</span>
 							<button type="button" onClick={() => setSpreadIdx(Math.max(0, spreadIdx - 1))}>
-								上一页（向右翻） →
+								Prev Page (Right) →
 							</button>
 						</div>
 					</div>
@@ -1933,14 +1966,14 @@ export function ReaderModal({ book, onClose }: { book: CompiledBook; onClose: ()
 						/>
 						<div className="pager">
 							<button type="button" onClick={() => setPanelStep(Math.max(0, panelStep - 1))}>
-								上一格
+								Prev Panel
 							</button>
 							<span>
-								{activePanel.pageTitle} · 第 {activePanel.panel.n} 格（{SHOT_LABELS[activePanel.panel.shot] ?? activePanel.panel.shot} /{' '}
-								{ANGLE_LABELS[activePanel.panel.angle] ?? activePanel.panel.angle} / {activePanel.panel.focal}）
+								{activePanel.pageTitle} · # {activePanel.panel.n}  ({SHOT_LABELS[activePanel.panel.shot] ?? activePanel.panel.shot} /{' '}
+								{ANGLE_LABELS[activePanel.panel.angle] ?? activePanel.panel.angle} / {activePanel.panel.focal})
 							</span>
 							<button type="button" onClick={() => setPanelStep(Math.min(flatPanels.length - 1, panelStep + 1))}>
-								下一格
+								Next Panel
 							</button>
 						</div>
 					</div>
@@ -1969,7 +2002,7 @@ export function ReaderModal({ book, onClose }: { book: CompiledBook; onClose: ()
 
 export function SettingsModal({ onClose }: { onClose: () => void }) {
 	const [form, setForm] = useState<ApiSettings>(() => loadSettings())
-	const [health, setHealth] = useState<string>('正在检测本地代理与离线引擎状态…')
+	const [health, setHealth] = useState<string>('Checking local proxy and offline engine status...')
 	useEffect(() => {
 		fetch('/api/health')
 			.then((res) => res.json())
@@ -1979,11 +2012,11 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
 					.map(([key]) => key)
 				setHealth(
 					data.ok
-						? `多模态代理就绪（支持 ${data.capabilities?.join(' / ') || 'text / vision / image'}${envKeys.length ? `；环境变量已检测到 ${envKeys.join(', ')}` : '；未填 Key 时自动启用内置中文离线引擎'}）`
-						: '仅离线引擎',
+						? `Multimodal proxy ready (supports  ${data.capabilities?.join(' / ') || 'text / vision / image'}${envKeys.length ? `; detected env keys  ${envKeys.join(', ')}` : '; missing key Key  falls back to built-in offline engine'})`
+						: 'Offline Engine Only',
 				)
 			})
-			.catch(() => setHealth('内置离线中文模型与手绘网点引擎已就绪'))
+			.catch(() => setHealth('Built-in offline model and screentone engine ready'))
 	}, [])
 
 	const selectPreset = (provider: ProviderId) => {
@@ -1996,10 +2029,10 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
 			<div className="modal-box settings-modal" onClick={(event) => event.stopPropagation()}>
 				<header>
 					<h3>
-						<IconSettings /> 内置多模态模型配置中心（Text · Vision · Image）
+						<IconSettings /> Multimodal Model Settings (Text · Vision · Image)
 					</h3>
 					<button type="button" onClick={onClose}>
-						<IconClose /> 关闭
+						<IconClose /> Close
 					</button>
 				</header>
 				<div className="settings-form">
@@ -2022,11 +2055,11 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
 							checked={form.useApi}
 							onChange={(event) => setForm({ ...form, useApi: event.target.checked })}
 						/>
-						启用在线大模型 API（关闭时默认使用零配置内置中文引擎与网点生图器）
+						Enable Online LLM APIs API (When off, uses zero-config built-in offline engine and screentone renderer)
 					</label>
 					<div className="settings-grid-2">
 						<label>
-							文本服务商 (Text Provider)
+							Text Provider (Text Provider)
 							<select value={form.provider} onChange={(event) => selectPreset(event.target.value as ProviderId)}>
 								{PROVIDER_PRESETS.map((preset) => (
 									<option key={preset.id} value={preset.id}>
@@ -2036,7 +2069,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
 							</select>
 						</label>
 						<label>
-							接口 Base URL
+							Endpoint Base URL
 							<input
 								value={form.baseUrl}
 								onChange={(event) => setForm({ ...form, baseUrl: event.target.value })}
@@ -2053,7 +2086,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
 							/>
 						</label>
 						<label>
-							文本模型 (Text Model)
+							Text Model (Text Model)
 							<input
 								value={form.model}
 								onChange={(event) => setForm({ ...form, model: event.target.value })}
@@ -2061,7 +2094,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
 							/>
 						</label>
 						<label>
-							视觉模型 (Vision Model)
+							Vision Model (Vision Model)
 							<input
 								value={form.visionModel}
 								onChange={(event) => setForm({ ...form, visionModel: event.target.value })}
@@ -2069,7 +2102,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
 							/>
 						</label>
 						<label>
-							图像生成模型 (Image Model)
+							Image Model (Image Model)
 							<input
 								value={form.imageModel}
 								onChange={(event) => setForm({ ...form, imageModel: event.target.value })}
@@ -2086,7 +2119,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
 								onClose()
 							}}
 						>
-							保存多模态配置
+							Save AI Settings
 						</button>
 					</div>
 				</div>

@@ -16,8 +16,8 @@ export interface SensorSpec {
 export const SENSOR_MAP: Record<SensorId, SensorSpec> = {
 	ff: {
 		id: 'ff',
-		name: '全画幅 Full Frame (36×24mm)',
-		label: '全画幅 Full Frame (36×24mm)',
+		name: 'Full Frame (36×24mm)',
+		label: 'Full Frame (36×24mm)',
 		shortLabel: 'FF 36×24',
 		widthMm: 36,
 		heightMm: 24,
@@ -26,8 +26,8 @@ export const SENSOR_MAP: Record<SensorId, SensorSpec> = {
 	},
 	s35: {
 		id: 's35',
-		name: '电影超35 Super 35 (24.9×14mm)',
-		label: '电影超35 Super 35 (24.9×14mm)',
+		name: 'Super 35 (24.9×14mm)',
+		label: 'Super 35 (24.9×14mm)',
 		shortLabel: 'S35 24.9×14',
 		widthMm: 24.9,
 		heightMm: 14,
@@ -36,8 +36,8 @@ export const SENSOR_MAP: Record<SensorId, SensorSpec> = {
 	},
 	m43: {
 		id: 'm43',
-		name: 'M4/3 画幅 (17.3×13mm)',
-		label: 'M4/3 画幅 (17.3×13mm)',
+		name: 'Micro Four Thirds (17.3×13mm)',
+		label: 'Micro Four Thirds (17.3×13mm)',
 		shortLabel: 'M4/3 17.3×13',
 		widthMm: 17.3,
 		heightMm: 13,
@@ -87,12 +87,12 @@ export interface OpticalReadout {
 }
 
 const SHOT_ZH: Record<Shot, string> = {
-	EWS: '大远景 EWS',
-	WS: '远景 WS',
-	MS: '中景 MS',
-	MCU: '中近景 MCU',
-	CU: '特写 CU',
-	ECU: '大特写 ECU',
+	EWS: 'Extreme Wide (EWS)',
+	WS: 'Wide (WS)',
+	MS: 'Medium (MS)',
+	MCU: 'Medium Close (MCU)',
+	CU: 'Close-up (CU)',
+	ECU: 'Extreme Close-up (ECU)',
 }
 
 export function defaultOpticsForMeta(meta?: Partial<PanelMeta>): OpticalInput {
@@ -177,22 +177,22 @@ export function computeOptics(input: OpticalInput): OpticalReadout {
 
 	const perspectiveNote =
 		equivFocalMm <= 24
-			? '超广角夸张透视，前景张力拉满，适合速度线与冲击格'
+			? 'Ultra-wide exaggerated perspective with maximum foreground tension, ideal for speed lines and impact panels'
 			: equivFocalMm <= 42
-				? '人文广角叙事，兼顾人物动作与环境空间关系'
+				? 'Humanist wide-angle narrative, balancing action against environmental space'
 				: equivFocalMm <= 65
-					? '标准焦段自然透视，适合稳定对白与视线交锋'
-					: '长焦空间压缩，剥离背景杂讯，聚焦角色微表情压迫感'
+					? 'Standard focal length with natural perspective, ideal for steady dialogue and eye-line duels'
+					: 'Telephoto spatial compression that strips away background noise and homes in on micro-expression pressure'
 
 	const dofNote =
 		dofTotalM < 0.5
-			? `极浅景深 (${dofTotalM}m)，背景虚化 ${blurPercent}%`
+			? `Ultra-shallow depth of field (${dofTotalM}m), background blur ${blurPercent}%`
 			: dofTotalM < 2.5
-				? `适度浅景深 (${dofTotalM}m)，主次分离清晰`
-				: '深景深全清晰，环境网点细节完整保留'
+				? `Moderately shallow depth of field (${dofTotalM}m), clean subject-background separation`
+				: 'Deep focus, fully sharp, all environmental detail retained'
 
-	const dofLabelZh = dofTotalM < 0.5 ? `极浅 ${blurPercent}%` : dofTotalM < 2.5 ? `浅景深 ${blurPercent}%` : '全景深清晰'
-	const directorNote = `${perspectiveNote}；${dofNote}。`
+	const dofLabelZh = dofTotalM < 0.5 ? `Ultra-shallow ${blurPercent}%` : dofTotalM < 2.5 ? `Shallow ${blurPercent}%` : 'Deep focus, all sharp'
+	const directorNote = `${perspectiveNote}; ${dofNote}.`
 	const promptFragment = `${sensor.shortLabel} sensor, ${focalMm}mm (equiv ${equivFocalMm}mm) f/${fStop}, HFOV ${hfovDeg}deg, subject at ${subjectDistM}m, DOF ${dofNearM}m-${dofFarM >= 900 ? 'inf' : `${dofFarM}m`}, background blur ${blurPercent}%, ${derivedShot} framing`
 
 	return {
@@ -246,12 +246,12 @@ export function auditCameraAxis(metas: PanelMeta[]): { crossings: AxisAuditItem[
 				fromPanel: idx,
 				toPanel: idx + 1,
 				crossed: true,
-				note: `第 ${idx}→${idx + 1} 格视线方向突变 (${prevDx > 0 ? '右向' : '左向'} → ${currDx > 0 ? '右向' : '左向'})，疑似越过 180° 轴线`,
+				note: `Eyeline direction flips between panels ${idx}→${idx + 1} (${prevDx > 0 ? 'rightward' : 'leftward'} → ${currDx > 0 ? 'rightward' : 'leftward'}), likely crossing the 180° axis`,
 			})
 		}
 	}
 	const pass = crossings.length === 0
-	const summary = pass ? '轴线连贯无越轴' : `发现 ${crossings.length} 处疑似越轴`
+	const summary = pass ? 'Axis consistent, no crossings' : `Found ${crossings.length} likely 180° axis crossing(s)`
 	return {
 		crossings,
 		pass,

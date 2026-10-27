@@ -29,7 +29,7 @@ describe('exports', () => {
 	})
 
 	it('writes a standalone reader with three modes and the bible', () => {
-		const book = bookFromText('海鸥抢薯条')
+		const book = bookFromText('seagull steals the fries')
 		const page = book.chapters[0].pages[0]
 		const layout = generate(page.seed, configFor(page.layoutPreset, page.targetPanels))
 		const svg = renderPageSvg({
@@ -50,7 +50,7 @@ describe('exports', () => {
 					shot: 'WS',
 					angle: 'eye',
 					focal: '35mm',
-					beat: '风',
+					beat: 'Wind',
 					who: ['kanta'],
 					fries: 'kanta',
 					eyeline: [8, -4],
@@ -76,13 +76,13 @@ describe('exports', () => {
 					stylePreset: book.stylePreset,
 					characters: book.characters.map((character) => ({ ...character, reference: '3-view' })),
 				},
-				style: { preset: book.stylePreset, ink: '墨', tone: '网点' },
+				style: { preset: book.stylePreset, ink: 'Ink', tone: 'Screentone' },
 				chapters: [
 					{
 						id: 'c',
 						title: book.chapters[0].title,
 						index: 1,
-						overrides: { mood: '盐风', environment: 'boardwalk', lighting: 'hard-noon' },
+						overrides: { mood: 'Salt Wind', environment: 'boardwalk', lighting: 'hard-noon' },
 						context: [],
 						pages: [
 							{
@@ -105,10 +105,10 @@ describe('exports', () => {
 			sheets: [],
 		} satisfies CompiledBook
 		const html = readerHtml(compiled)
-		expect(html).toContain('日漫右翻双页')
-		expect(html).toContain('条漫纵向滚动')
-		expect(html).toContain('分镜格逐格推镜')
-		expect(html).toContain('特典设定集')
+		expect(html).toContain('Right-to-Left Spread')
+		expect(html).toContain('Webtoon Scroll')
+		expect(html).toContain('Guided Panel Zoom')
+		expect(html).toContain('Character & World Bible')
 		expect(html).toContain('@kanta')
 		expect(html).toContain('<svg')
 	})

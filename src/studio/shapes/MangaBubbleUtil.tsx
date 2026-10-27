@@ -176,7 +176,7 @@ function BubbleView({ shape }: { shape: MangaBubble }) {
 							drag.current = null
 						}}
 					>
-						<title>拖拽蓝色圆点：调节气泡尾巴指向</title>
+						<title>Drag blue handle to aim speech tail</title>
 					</circle>
 				) : null}
 				{prosodyAnchor.visible ? (
@@ -227,7 +227,7 @@ function BubbleView({ shape }: { shape: MangaBubble }) {
 							stroke="#ffffff"
 							strokeWidth={1.8}
 						/>
-						<title>拖拽橙色菱形手柄：独立移动语气助词图层位置（双击可改语气词）</title>
+						<title>Drag amber handle to reposition prosody badge (double-click to edit)</title>
 					</g>
 				) : null}
 			</svg>
@@ -255,7 +255,7 @@ function BubbleView({ shape }: { shape: MangaBubble }) {
 					type="text"
 					className="bubble-prosody-inline-input"
 					autoFocus
-					placeholder="输入自定义语气助词（如：冷笑审视）"
+					placeholder="Enter custom prosody tag (e.g. Cold Scrutinizing)"
 					value={prosodyText}
 					style={{
 						position: 'absolute',

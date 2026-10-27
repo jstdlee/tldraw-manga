@@ -23,13 +23,15 @@ const shapeUtils = [MangaContainerUtil, MangaCardUtil, MangaPromptUtil, MangaBub
 export function App() {
 	const [editor, setEditor] = useState<Editor | null>(null)
 	const [story, setStory] = useState(SEAGULL_STORY)
-	const [status, setStatus] = useState('就绪 · 右键画格/气泡/页面调出分组菜单 · 点击页面右侧「+ 续写 P2」流水线继承 Context')
+	const [status, setStatus] = useState('Ready · right-click any panel, bubble, page or the canvas for the context menu · use the pipeline strip or Extend Page to grow the pipeline with inherited context')
 	const [compareOpen, setCompareOpen] = useState(false)
 	const [readerBook, setReaderBook] = useState<CompiledBook | null>(null)
 	const [settingsOpen, setSettingsOpen] = useState(false)
 	const [activeTab, setActiveTab] = useState<SidebarTab>('cards')
 	const [theme, setTheme] = useState<'light' | 'dark'>('light')
-	const [drawerOpen, setDrawerOpen] = useState(true)
+	// Page-first workspace: start with the Inspector drawer collapsed so the canvas
+	// opens wide and uncluttered. The user expands it from the TopBar Inspector toggle.
+	const [drawerOpen, setDrawerOpen] = useState(false)
 	const [contextMenuTarget, setContextMenuTarget] = useState<ContextMenuTarget | null>(null)
 	const [contextModalPageId, setContextModalPageId] = useState<TLShapeId | null>(null)
 

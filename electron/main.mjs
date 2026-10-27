@@ -13,7 +13,7 @@ if (!gotLock) {
 } else {
 	app.whenReady().then(() => {
 		void createWindow().catch((error) => {
-			dialog.showErrorBox('tldraw-manga', error instanceof Error ? error.message : '无法打开窗口')
+			dialog.showErrorBox('tldraw-manga', error instanceof Error ? error.message : 'Unable to open the window')
 			app.quit()
 		})
 	})
@@ -36,7 +36,7 @@ async function loadTarget() {
 	if (devUrl) return { url: devUrl, origin: new URL(devUrl).origin }
 	const staticRoot = path.join(app.getAppPath(), 'dist')
 	if (!existsSync(path.join(staticRoot, 'index.html'))) {
-		dialog.showErrorBox('tldraw-manga', '找不到 dist/index.html。先运行 npm run build。')
+		dialog.showErrorBox('tldraw-manga', 'Cannot find dist/index.html. Run npm run build first.')
 		app.quit()
 		throw new Error('missing dist')
 	}
@@ -64,7 +64,7 @@ async function createWindow() {
 		height: 900,
 		minWidth: 1024,
 		minHeight: 700,
-		title: 'tldraw-manga — 漫画分镜工作台',
+		title: 'tldraw-manga — Manga Storyboard Studio',
 		backgroundColor: '#101216',
 		autoHideMenuBar: true,
 		show: false,

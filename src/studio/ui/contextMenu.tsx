@@ -1,16 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createShapeId, type Editor, type TLShapeId } from 'tldraw'
 import { askText } from '../ai/client'
-import {
-	ANGLE_LABELS,
-	BUBBLE_LABELS,
-	ENV_IDS,
-	ENV_LABELS,
-	LIGHT_IDS,
-	LIGHT_LABELS,
-	SCENARIO_LABELS,
-	SHOT_LABELS,
-} from '../demo/book'
+import { ANGLE_LABELS, ENV_IDS, ENV_LABELS, LIGHT_IDS, LIGHT_LABELS, SCENARIO_LABELS } from '../demo/book'
 import {
 	addBubbleToPage,
 	addStandaloneProsodyToPage,
@@ -43,22 +34,7 @@ import { downloadBlob, exportOpenRaster, exportPagePng2400, exportPageSvgFile } 
 import { compileBook } from '../spec/compile'
 import { configFor, generate, pointInPoly, realize, sanitize } from '../layout/engine'
 import { type Scenario } from '../layout/score'
-import {
-	PROSODY_STYLE_LABELS,
-	type Beat,
-	type BubbleStyle,
-	type PanelMeta,
-	type ProsodyStyle,
-} from '../model'
-
-const PROSODY_STYLES: ProsodyStyle[] = ['pill', 'seal', 'slant', 'burst', 'minimal', 'off']
-const PROSODY_Preset_COLORS: Array<{ color: string; label: string }> = [
-	{ color: '#e11d48', label: '朱印红' },
-	{ color: '#2563eb', label: '群青蓝' },
-	{ color: '#d97706', label: '琥珀金' },
-	{ color: '#0f172a', label: '玄墨黑' },
-	{ color: '#7c3aed', label: '紫电' },
-]
+import { type Beat, type BubbleStyle, type PanelMeta, type ProsodyStyle } from '../model'
 import { BUBBLE, CARD, CONTAINER, type MangaBubble, type MangaCard, type MangaContainer } from '../shapes/schema'
 
 export type ContextMenuTarget =
@@ -108,30 +84,99 @@ export function triggerExtendNextPage(pageId?: TLShapeId): void {
 	window.dispatchEvent(new CustomEvent<{ pageId?: TLShapeId }>('manga:extend-next-page', { detail: { pageId } }))
 }
 
-const BUBBLE_FILL_PRESETS = [
-	{ color: '#fffefb', label: '纸白' },
-	{ color: '#fef9c3', label: '暖米' },
-	{ color: '#f1f5f9', label: '冷灰' },
-	{ color: '#ffe4e6', label: '绯红' },
-	{ color: '#0f172a', label: '黑底' },
+// Menu dimensions (true macOS / Figma proportions).
+const MENU_W = 248
+const SUBMENU_W = 216
+
+const SHOT_OPTIONS: Array<{ id: PanelMeta['shot']; label: string }> = [
+	{ id: 'EWS', label: 'EWS · Extreme Wide' },
+	{ id: 'WS', label: 'WS · Wide Shot' },
+	{ id: 'MS', label: 'MS · Medium Shot' },
+	{ id: 'MCU', label: 'MCU · Medium Close-Up' },
+	{ id: 'CU', label: 'CU · Close-Up' },
+	{ id: 'ECU', label: 'ECU · Extreme Close-Up' },
 ]
 
-const SHOTS: Array<PanelMeta['shot']> = ['EWS', 'WS', 'MS', 'MCU', 'CU', 'ECU']
-const ANGLES: Array<PanelMeta['angle']> = ['eye', 'low', 'high', 'dutch', 'bird']
-const FOCALS: Array<{ focal: PanelMeta['focal']; mm: number }> = [
-	{ focal: '18mm', mm: 18 },
-	{ focal: '35mm', mm: 35 },
-	{ focal: '50mm', mm: 50 },
-	{ focal: '85mm', mm: 85 },
+const ANGLE_OPTIONS: Array<{ id: PanelMeta['angle']; label: string }> = [
+	{ id: 'eye', label: 'Eye Level' },
+	{ id: 'low', label: 'Low Angle' },
+	{ id: 'high', label: 'High Angle' },
+	{ id: 'dutch', label: 'Dutch Tilt' },
+	{ id: 'bird', label: "Bird's-Eye" },
 ]
+
+const FOCAL_OPTIONS: Array<{ mm: number; focal?: PanelMeta['focal']; label: string }> = [
+	{ mm: 18, focal: '18mm', label: '18mm Ultra-Wide' },
+	{ mm: 28, label: '28mm Wide' },
+	{ mm: 35, focal: '35mm', label: '35mm Street' },
+	{ mm: 50, focal: '50mm', label: '50mm Standard' },
+	{ mm: 85, focal: '85mm', label: '85mm Portrait' },
+]
+
+const BLEED_OPTIONS: Array<{ edge: 'bT' | 'bB' | 'bL' | 'bR'; label: string }> = [
+	{ edge: 'bT', label: 'Top Bleed' },
+	{ edge: 'bB', label: 'Bottom Bleed' },
+	{ edge: 'bL', label: 'Left Bleed' },
+	{ edge: 'bR', label: 'Right Bleed' },
+]
+
+const BALLOON_SHAPE_OPTIONS: Array<{ id: BubbleStyle; label: string }> = [
+	{ id: 'speech', label: 'Speech Oval' },
+	{ id: 'shout', label: 'Burst Shout' },
+	{ id: 'whisper', label: 'Whisper Dashed' },
+	{ id: 'thought', label: 'Thought Cloud' },
+	{ id: 'caption', label: 'Narrative Box' },
+	{ id: 'broadcast', label: 'Broadcast Jagged' },
+	{ id: 'sfx', label: 'Graphic SFX' },
+]
+
+const PROSODY_STYLE_OPTIONS: Array<{ id: ProsodyStyle; label: string }> = [
+	{ id: 'pill', label: 'Pill Tag' },
+	{ id: 'seal', label: 'Crimson Seal' },
+	{ id: 'slant', label: 'Slanted Cut' },
+	{ id: 'burst', label: 'Starburst' },
+	{ id: 'minimal', label: 'Minimal' },
+	{ id: 'off', label: 'Hidden' },
+]
+
+const PROSODY_ACCENT_COLORS: Array<{ color: string; label: string }> = [
+	{ color: '#e11d48', label: 'Crimson Seal' },
+	{ color: '#2563eb', label: 'Ultramarine' },
+	{ color: '#d97706', label: 'Amber Gold' },
+	{ color: '#0f172a', label: 'Sumi Ink' },
+	{ color: '#7c3aed', label: 'Electric Violet' },
+]
+
+const BUBBLE_FILL_PRESETS: Array<{ color: string; label: string }> = [
+	{ color: '#fffefb', label: 'Paper White' },
+	{ color: '#fef9c3', label: 'Warm Cream' },
+	{ color: '#f1f5f9', label: 'Cool Mist' },
+	{ color: '#ffe4e6', label: 'Rose Tint' },
+	{ color: '#0f172a', label: 'Inverted Noir' },
+]
+
+// The 5 interrogation + 4 seagull studio artwork plates surfaced by the
+// "Apply Studio Artwork" flyout.
+const STUDIO_ART_PRESETS: Array<{ url: string; label: string }> = [
+	{ url: '/assets/interrogation/panel1_establishing.jpg', label: 'Interrogation · Establishing' },
+	{ url: '/assets/interrogation/panel2_cuff_probe.jpg', label: 'Interrogation · Cuff Probe' },
+	{ url: '/assets/interrogation/panel3_watch_macro.jpg', label: 'Interrogation · Watch Macro' },
+	{ url: '/assets/interrogation/panel4_silent_lighter_spark.jpg', label: 'Interrogation · Lighter Spark' },
+	{ url: '/assets/interrogation/panel5_climax_accusation.jpg', label: 'Interrogation · Accusation' },
+	{ url: '/assets/seagull/env_rocky_pier_cliff.jpg', label: 'Seagull · Rocky Pier Cliff' },
+	{ url: '/assets/seagull/char_gull_philosopher.jpg', label: 'Seagull · Gull Philosopher' },
+	{ url: '/assets/seagull/char_gull_foodie.jpg', label: 'Seagull · Gull Foodie' },
+	{ url: '/assets/seagull/prop_pier_fries_cone.jpg', label: 'Seagull · Pier Fries Cone' },
+]
+
 const SCENARIOS: Scenario[] = ['establishing', 'tension', 'intimacy', 'action', 'reveal', 'climax']
 
-function clampMenuCoords(x: number, y: number, menuW = 336, menuH = 510): { left: number; top: number } {
+function clampMenuCoords(x: number, y: number, menuH = 540): { left: number; top: number } {
 	const vw = typeof window !== 'undefined' ? window.innerWidth : 1440
 	const vh = typeof window !== 'undefined' ? window.innerHeight : 900
 	return {
-		left: Math.max(12, Math.min(x, vw - menuW - 14)),
-		top: Math.max(48, Math.min(y, vh - menuH - 14)),
+		left: Math.max(10, Math.min(x, vw - MENU_W - 12)),
+		top: Math.max(48, Math.min(y, vh - menuH - 12)),
 	}
 }
 
@@ -262,48 +307,146 @@ function readJsonSafe<T>(raw: string, fallback: T): T {
 	}
 }
 
+function MenuHeader({ children }: { children: ReactNode }) {
+	return <div className="mctx-header">{children}</div>
+}
+
+function MenuDivider() {
+	return <div className="mctx-divider" role="separator" />
+}
+
+function MenuRow({
+	label,
+	shortcut,
+	checked,
+	destructive,
+	disabled,
+	onSelect,
+}: {
+	label: string
+	shortcut?: string
+	checked?: boolean
+	destructive?: boolean
+	disabled?: boolean
+	onSelect: () => void
+}) {
+	return (
+		<button
+			type="button"
+			className={`mctx-row${destructive ? ' destructive' : ''}${checked ? ' checked' : ''}`}
+			disabled={disabled}
+			onClick={(event) => {
+				event.stopPropagation()
+				onSelect()
+			}}
+		>
+			<span className="mctx-check">{checked ? '✓' : ''}</span>
+			<span className="mctx-label">{label}</span>
+			{shortcut ? <span className="mctx-shortcut">{shortcut}</span> : null}
+		</button>
+	)
+}
+
+function MenuColorRow({
+	label,
+	color,
+	checked,
+	onSelect,
+}: {
+	label: string
+	color: string
+	checked?: boolean
+	onSelect: () => void
+}) {
+	return (
+		<button
+			type="button"
+			className={`mctx-row${checked ? ' checked' : ''}`}
+			onClick={(event) => {
+				event.stopPropagation()
+				onSelect()
+			}}
+		>
+			<span className="mctx-check">{checked ? '✓' : ''}</span>
+			<span className="mctx-dot" style={{ background: color }} />
+			<span className="mctx-label">{label}</span>
+		</button>
+	)
+}
+
+function MenuSub({
+	id,
+	label,
+	checked,
+	openLeft,
+	children,
+}: {
+	id: string
+	label: string
+	checked?: boolean
+	openLeft: boolean
+	children: ReactNode
+}) {
+	const [open, setOpen] = useState(false)
+	return (
+		<div className="mctx-sub" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+			<button
+				type="button"
+				className={`mctx-row has-sub${checked ? ' checked' : ''}${open ? ' open' : ''}`}
+				onClick={(event) => {
+					event.stopPropagation()
+					setOpen(true)
+				}}
+			>
+				<span className="mctx-check">{checked ? '✓' : ''}</span>
+				<span className="mctx-label">{label}</span>
+				<span className="mctx-caret">▸</span>
+			</button>
+			{open ? (
+				<div className={`mctx-flyout${openLeft ? ' left' : ''}`} data-submenu-id={id} style={{ width: SUBMENU_W }}>
+					{children}
+				</div>
+			) : null}
+		</div>
+	)
+}
+
 export function CanvasContextMenu({
 	editor,
 	target,
 	onClose,
 	onStatus,
-	onOpenCompare,
-	onOpenReader,
 	onOpenPageContext,
 }: {
 	editor: Editor | null
 	target: ContextMenuTarget | null
 	onClose: () => void
 	onStatus: (msg: string) => void
-	onOpenCompare: () => void
-	onOpenReader: () => void
+	onOpenCompare?: () => void
+	onOpenReader?: () => void
 	onOpenPageContext: (pageId: TLShapeId) => void
 }) {
 	const menuRef = useRef<HTMLDivElement | null>(null)
 	const fileInputRef = useRef<HTMLInputElement | null>(null)
 	const [prosodyDraft, setProsodyDraft] = useState('')
-	const [activeTab, setActiveTab] = useState<'cell' | 'page'>('cell')
+	const [editingProsody, setEditingProsody] = useState(false)
 
 	useEffect(() => {
 		if (!target) return
-		if (target.kind === 'cell') {
-			setActiveTab(target.tab ?? 'cell')
-		} else if (target.kind === 'page') {
-			setActiveTab('page')
-		}
+		setEditingProsody(false)
 		if (target.kind === 'bubble' && editor) {
 			const b = editor.getShape(target.bubbleId)
-			if (b?.type === BUBBLE) setProsodyDraft(b.props.prosody || '')
+			if (b?.type === BUBBLE) setProsodyDraft((b as MangaBubble).props.prosody || '')
 		}
 	}, [target, editor])
 
 	useEffect(() => {
 		if (!target) return
-		const onKeyDown = (e: KeyboardEvent) => {
-			if (e.key === 'Escape') onClose()
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key === 'Escape') onClose()
 		}
-		const onPointerDown = (e: MouseEvent) => {
-			if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+		const onPointerDown = (event: MouseEvent) => {
+			if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
 				onClose()
 			}
 		}
@@ -317,7 +460,41 @@ export function CanvasContextMenu({
 
 	if (!editor || !target) return null
 
-	const pos = clampMenuCoords(target.x, target.y)
+	// Estimated rendered heights so the menu is clamped fully on-screen. The menu
+	// itself does not scroll (so flyout submenus are never clipped); each flyout
+	// scrolls internally when its list is long.
+	const menuHeight =
+		target.kind === 'cell' ? 700 : target.kind === 'bubble' ? 420 : target.kind === 'page' ? 340 : 300
+	const pos = clampMenuCoords(target.x, target.y, menuHeight)
+	const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1440
+	const openLeft = pos.left + MENU_W + SUBMENU_W > viewportWidth
+
+	const exportPagePng = async (page: MangaContainer) => {
+		const book = compileBook(editor)
+		const model = book.pages.find((p) => p.model.uid === page.id)?.model ?? book.pages[0]?.model
+		if (model) {
+			const bytes = await exportPagePng2400(model, 2400)
+			downloadBlob(`manga-p${page.props.pageIndex}.png`, bytes, 'image/png')
+		}
+		onStatus(`Exported ${page.props.title} as 2400px print PNG`)
+	}
+
+	const exportPageSvg = (page: MangaContainer) => {
+		const book = compileBook(editor)
+		const model = book.pages.find((p) => p.model.uid === page.id)?.model ?? book.pages[0]?.model
+		if (model) exportPageSvgFile(model, `manga-p${page.props.pageIndex}.svg`)
+		onStatus(`Exported ${page.props.title} as vector SVG`)
+	}
+
+	const exportPageOra = async (page: MangaContainer) => {
+		const book = compileBook(editor)
+		const model = book.pages.find((p) => p.model.uid === page.id)?.model ?? book.pages[0]?.model
+		if (model) {
+			const bytes = await exportOpenRaster(model)
+			downloadBlob(`manga-p${page.props.pageIndex}.ora`, bytes, 'image/openraster')
+		}
+		onStatus(`Exported ${page.props.title} as layered OpenRaster (.ora)`)
+	}
 
 	const handleCellImageUpload = (page: MangaContainer, panelIndex: number, file: File | undefined) => {
 		if (!file) return
@@ -340,1114 +517,739 @@ export function CanvasContextMenu({
 				type: CONTAINER,
 				props: { panelsJson: JSON.stringify(metas), selectedPanel: panelIndex },
 			})
-			onStatus(`已上传并替换 ${page.props.title} 第 ${panelIndex + 1} 格底图`)
+			onStatus(`Replaced ${page.props.title} panel ${panelIndex + 1} artwork`)
 			onClose()
 		}
 		reader.readAsDataURL(file)
 	}
 
-	if (target.kind === 'cell' || target.kind === 'page') {
+	// ---- Panel cell ---------------------------------------------------------
+	if (target.kind === 'cell') {
 		const page = editor.getShape(target.pageId) as MangaContainer | undefined
 		if (!page || page.type !== CONTAINER) return null
 		const metas = readJsonSafe<PanelMeta[]>(page.props.panelsJson, [])
-		const panelIndex =
-			target.kind === 'cell'
-				? Math.max(0, Math.min(target.panelIndex, Math.max(0, metas.length - 1)))
-				: Math.max(0, page.props.selectedPanel || 0)
+		const panelIndex = Math.max(0, Math.min(target.panelIndex, Math.max(0, metas.length - 1)))
 		const meta = metas[panelIndex]
-		const ctx = readPageContext(editor, page)
-		const showCellView = target.kind === 'cell' && activeTab === 'cell' && Boolean(meta)
-
-		const moodFlags = page.props.mood || ''
-		const hasThirds = moodFlags.includes('thirds=1')
-		const hasAxis = moodFlags.includes('axis=1')
+		if (!meta) return null
+		const activeFocalMm = meta.focalMm
 
 		return (
-			<div
-				ref={menuRef}
-				className="apple-context-menu"
-				style={{ left: pos.left, top: pos.top }}
-				onContextMenu={(e) => e.preventDefault()}
-			>
-				<div className="ctx-header">
-					<div className="ctx-header-title">
-						<strong>{page.props.title}</strong>
-						<span>
-							{showCellView && meta
-								? `分镜格 #${panelIndex + 1} · ${meta.shot} · ${meta.focal}`
-								: `整页容器 · ${metas.length} 格 · JEV ${Math.round(page.props.score * 100)}分`}
-						</span>
-					</div>
-					<div className="ctx-mode-switch">
-						<button type="button" className={showCellView ? 'on' : ''} onClick={() => setActiveTab('cell')}>
-							分镜格 #{panelIndex + 1}
-						</button>
-						<button type="button" className={!showCellView ? 'on' : ''} onClick={() => setActiveTab('page')}>
-							整页与流水线
-						</button>
-					</div>
-				</div>
+			<div ref={menuRef} className="mctx-menu" style={{ left: pos.left, top: pos.top, width: MENU_W }} onContextMenu={(e) => e.preventDefault()}>
+				<MenuHeader>{`Panel #${panelIndex + 1} · ${meta.shot} · ${meta.focal || '50mm'}`}</MenuHeader>
+				<input
+					ref={fileInputRef}
+					type="file"
+					accept="image/*"
+					style={{ display: 'none' }}
+					onChange={(e) => handleCellImageUpload(page, panelIndex, e.target.files?.[0])}
+				/>
 
-				{showCellView && meta ? (
-					<>
-						<div className="ctx-group">
-							<div className="ctx-group-label">格内画面与插图 (Artwork & Crop)</div>
-							<input
-								ref={fileInputRef}
-								type="file"
-								accept="image/*"
-								style={{ display: 'none' }}
-								onChange={(e) => handleCellImageUpload(page, panelIndex, e.target.files?.[0])}
-							/>
-							<div className="ctx-action-grid-2">
-								<button type="button" className="ctx-item" onClick={() => fileInputRef.current?.click()}>
-									<span>上传/替换本格底图…</span>
-									<kbd>⌘U</kbd>
-								</button>
-								<button
-									type="button"
-									className="ctx-item"
-									onClick={() => {
-										onStatus(loadPresetArtIntoPanel(editor, page, panelIndex))
-										onClose()
-									}}
-								>
-									<span>切换预置分镜原画</span>
-									<kbd>⌘I</kbd>
-								</button>
-							</div>
-							<button
-								type="button"
-								className="ctx-item primary-item"
-								onClick={async () => {
-									onStatus(`正在按本页锁定资产重绘第 ${panelIndex + 1} 格…`)
-									onClose()
-									const msg = await regenerateSelectedPanel(editor, page, panelIndex)
-									onStatus(msg)
-								}}
-							>
-								<span>AI 仅重绘此格画面（继承本页锁定设定）</span>
-								<kbd>⌘R</kbd>
-							</button>
-							<div className="ctx-inline-row">
-								<span className="ctx-sub-label">画面变换</span>
-								<div className="ctx-pills">
-									<button
-										type="button"
-										onClick={() => {
-											onStatus(resetPanelTransformOnPage(editor, page, panelIndex))
-											onClose()
-										}}
-									>
-										居中复位 100%
-									</button>
-									<button type="button" onClick={() => onStatus(rotatePanelImageOnPage(editor, page, panelIndex, -5))}>
-										↺ -5°
-									</button>
-									<button type="button" onClick={() => onStatus(rotatePanelImageOnPage(editor, page, panelIndex, 5))}>
-										↻ +5°
-									</button>
-									<button type="button" onClick={() => onStatus(rotatePanelImageOnPage(editor, page, panelIndex, 'reset'))}>
-										0°
-									</button>
-								</div>
-							</div>
-						</div>
+				<MenuRow label="Replace Panel Artwork..." onSelect={() => fileInputRef.current?.click()} />
+				<MenuSub id="studio-artwork" label="Apply Studio Artwork" openLeft={openLeft}>
+					{STUDIO_ART_PRESETS.map((preset) => (
+						<MenuRow
+							key={preset.url}
+							label={preset.label}
+							checked={meta.imageDataUrl === preset.url}
+							onSelect={() => onStatus(loadPresetArtIntoPanel(editor, page, panelIndex, preset.url))}
+						/>
+					))}
+				</MenuSub>
+				<MenuRow
+					label="Regenerate Panel with AI"
+					shortcut="⌘R"
+					onSelect={async () => {
+						onStatus(`Regenerating panel ${panelIndex + 1}...`)
+						onClose()
+						onStatus(await regenerateSelectedPanel(editor, page, panelIndex))
+					}}
+				/>
+				<MenuRow
+					label="Reset Pan & Zoom 100%"
+					shortcut="⌘0"
+					onSelect={() => onStatus(resetPanelTransformOnPage(editor, page, panelIndex))}
+				/>
+				<MenuSub id="rotate-artwork" label="Rotate Artwork" openLeft={openLeft}>
+					<MenuRow label="Rotate -5°" onSelect={() => onStatus(rotatePanelImageOnPage(editor, page, panelIndex, -5))} />
+					<MenuRow label="Rotate +5°" onSelect={() => onStatus(rotatePanelImageOnPage(editor, page, panelIndex, 5))} />
+					<MenuRow label="Reset 0°" onSelect={() => onStatus(rotatePanelImageOnPage(editor, page, panelIndex, 'reset'))} />
+				</MenuSub>
 
-						<div className="ctx-group">
-							<div className="ctx-group-label">镜头景别与光学 (Camera & Optics)</div>
-							<div className="ctx-inline-row">
-								<span className="ctx-sub-label">景别</span>
-								<div className="ctx-pills">
-									{SHOTS.map((shot) => (
-										<button
-											key={shot}
-											type="button"
-											className={meta.shot === shot ? 'active' : ''}
-											title={SHOT_LABELS[shot]}
-											onClick={() => {
-												const next = metas.map((m, idx) => (idx === panelIndex ? { ...m, shot } : m))
-												editor.updateShape<MangaContainer>({
-													id: page.id,
-													type: CONTAINER,
-													props: { panelsJson: JSON.stringify(next) },
-												})
-												onStatus(`第 ${panelIndex + 1} 格景别已切换为 ${SHOT_LABELS[shot]}`)
-											}}
-										>
-											{shot}
-										</button>
-									))}
-								</div>
-							</div>
-							<div className="ctx-inline-row">
-								<span className="ctx-sub-label">机位</span>
-								<div className="ctx-pills">
-									{ANGLES.map((angle) => (
-										<button
-											key={angle}
-											type="button"
-											className={meta.angle === angle ? 'active' : ''}
-											onClick={() => {
-												onStatus(applyOpticsToPanel(editor, page, panelIndex, { angle }))
-											}}
-										>
-											{ANGLE_LABELS[angle] ?? angle}
-										</button>
-									))}
-								</div>
-							</div>
-							<div className="ctx-inline-row">
-								<span className="ctx-sub-label">焦段</span>
-								<div className="ctx-pills">
-									{FOCALS.map((item) => (
-										<button
-											key={item.focal}
-											type="button"
-											className={meta.focal === item.focal ? 'active' : ''}
-											onClick={() => {
-												onStatus(applyOpticsToPanel(editor, page, panelIndex, { focalMm: item.mm }))
-											}}
-										>
-											{item.focal}
-										</button>
-									))}
-									<button
-										type="button"
-										className={meta.silent ? 'active' : ''}
-										onClick={() => {
-											onStatus(toggleSilentPanelOnPage(editor, page, panelIndex))
-										}}
-									>
-										{meta.silent ? '✓ 无声静帧' : '设为静帧'}
-									</button>
-								</div>
-							</div>
-						</div>
+				<MenuDivider />
+				<MenuSub id="shot-scale" label="Shot Scale" openLeft={openLeft}>
+					{SHOT_OPTIONS.map((shot) => (
+						<MenuRow
+							key={shot.id}
+							label={shot.label}
+							checked={meta.shot === shot.id}
+							onSelect={() => {
+								const next = metas.map((m, idx) => (idx === panelIndex ? { ...m, shot: shot.id } : m))
+								editor.updateShape<MangaContainer>({
+									id: page.id,
+									type: CONTAINER,
+									props: { panelsJson: JSON.stringify(next) },
+								})
+								onStatus(`Panel ${panelIndex + 1} shot scale set to ${shot.label}`)
+							}}
+						/>
+					))}
+				</MenuSub>
+				<MenuSub id="camera-angle" label="Camera Angle" openLeft={openLeft}>
+					{ANGLE_OPTIONS.map((angle) => (
+						<MenuRow
+							key={angle.id}
+							label={angle.label}
+							checked={meta.angle === angle.id}
+							onSelect={() => onStatus(applyOpticsToPanel(editor, page, panelIndex, { angle: angle.id }))}
+						/>
+					))}
+				</MenuSub>
+				<MenuSub id="focal-length" label="Focal Length" openLeft={openLeft}>
+					{FOCAL_OPTIONS.map((focal) => (
+						<MenuRow
+							key={focal.mm}
+							label={focal.label}
+							checked={activeFocalMm != null ? activeFocalMm === focal.mm : focal.focal ? meta.focal === focal.focal : false}
+							onSelect={() => onStatus(applyOpticsToPanel(editor, page, panelIndex, { focalMm: focal.mm }))}
+						/>
+					))}
+				</MenuSub>
+				<MenuRow
+					label="Silent Beat (No Dialogue)"
+					checked={Boolean(meta.silent)}
+					onSelect={() => onStatus(toggleSilentPanelOnPage(editor, page, panelIndex))}
+				/>
 
-						<div className="ctx-group">
-							<div className="ctx-group-label">分格构图与破框 (Composition & Bleed)</div>
-							<div className="ctx-action-grid-2">
-								<button
-									type="button"
-									className={`ctx-item ${meta.subsplitInset?.enabled ? 'active-item' : ''}`}
-									onClick={() => {
-										onStatus(togglePanelSubsplitOnPage(editor, page, panelIndex))
-									}}
-								>
-									<span>{meta.subsplitInset?.enabled ? '✓ 画中画反应子格 (PiP)' : '开启画中画子格 (PiP)'}</span>
-								</button>
-								<button
-									type="button"
-									className="ctx-item"
-									onClick={() => {
-										onStatus(togglePanelNestOnPage(editor, page, panelIndex))
-										onClose()
-									}}
-								>
-									<span>纵切/合并子分格</span>
-								</button>
-							</div>
-							<div className="ctx-inline-row">
-								<span className="ctx-sub-label">四边出血</span>
-								<div className="ctx-pills">
-									{(['bT', 'bB', 'bL', 'bR'] as const).map((edge) => (
-										<button
-											key={edge}
-											type="button"
-											onClick={() => {
-												onStatus(togglePanelBleedOnPage(editor, page, panelIndex, edge))
-											}}
-										>
-											{{ bT: '上破框', bB: '下破框', bL: '左破框', bR: '右破框' }[edge]}
-										</button>
-									))}
-								</div>
-							</div>
-						</div>
+				<MenuDivider />
+				<MenuRow label="Split Row (+1 Panel)" onSelect={() => onStatus(togglePanelNestOnPage(editor, page, panelIndex))} />
+				<MenuRow label="Merge Row (-1 Panel)" onSelect={() => onStatus(togglePanelNestOnPage(editor, page, panelIndex))} />
+				<MenuRow
+					label="Picture-in-Picture Inset"
+					checked={Boolean(meta.subsplitInset?.enabled)}
+					onSelect={() => onStatus(togglePanelSubsplitOnPage(editor, page, panelIndex))}
+				/>
+				<MenuSub id="full-bleed" label="Full-Bleed Edge" openLeft={openLeft}>
+					{BLEED_OPTIONS.map((bleed) => (
+						<MenuRow
+							key={bleed.edge}
+							label={bleed.label}
+							onSelect={() => onStatus(togglePanelBleedOnPage(editor, page, panelIndex, bleed.edge))}
+						/>
+					))}
+				</MenuSub>
 
-						<div className="ctx-group">
-							<div className="ctx-group-label">在此格插入独立图层 (Insert Layer)</div>
-							<div className="ctx-pills">
-								<button
-									type="button"
-									onClick={() => {
-										addBubbleToPage(editor, page, panelIndex, 'speech', '新台词对白', '沉稳', 'pill')
-										onStatus(`已在第 ${panelIndex + 1} 格插入对白气泡`)
-										onClose()
-									}}
-								>
-									+ 对白气泡
-								</button>
-								<button
-									type="button"
-									onClick={() => {
-										addStandaloneProsodyToPage(editor, page, panelIndex, '冷笑审视', 'seal', '咔哒！')
-										onStatus(`已在第 ${panelIndex + 1} 格插入独立语气助词与拟声标签`)
-										onClose()
-									}}
-								>
-									+ 语气助词印章
-								</button>
-								<button
-									type="button"
-									onClick={() => {
-										addBubbleToPage(editor, page, panelIndex, 'sfx', '轰——！！', '爆发', 'burst')
-										onStatus(`已在第 ${panelIndex + 1} 格插入拟声词 (SFX)`)
-										onClose()
-									}}
-								>
-									+ 拟声词 SFX
-								</button>
-								<button
-									type="button"
-									onClick={() => {
-										addBubbleToPage(editor, page, panelIndex, 'caption', '23:17 · 雨夜审讯室。', '', 'minimal')
-										onStatus(`已在第 ${panelIndex + 1} 格插入旁白方框`)
-										onClose()
-									}}
-								>
-									+ 旁白方框
-								</button>
-							</div>
-						</div>
+				<MenuDivider />
+				<MenuRow
+					label="Add Speech Balloon"
+					onSelect={() => {
+						addBubbleToPage(editor, page, panelIndex, 'speech', 'New dialogue line', 'Calm', 'pill')
+						onStatus(`Added speech balloon to panel ${panelIndex + 1}`)
+						onClose()
+					}}
+				/>
+				<MenuRow
+					label="Add Thought Balloon"
+					onSelect={() => {
+						addBubbleToPage(editor, page, panelIndex, 'thought', 'Inner thought...', '', 'pill')
+						onStatus(`Added thought balloon to panel ${panelIndex + 1}`)
+						onClose()
+					}}
+				/>
+				<MenuRow
+					label="Add Narrative Caption"
+					onSelect={() => {
+						addBubbleToPage(editor, page, panelIndex, 'caption', '23:17 · Rain lashes the room.', '', 'minimal')
+						onStatus(`Added narrative caption to panel ${panelIndex + 1}`)
+						onClose()
+					}}
+				/>
+				<MenuRow
+					label="Add Prosody Badge"
+					onSelect={() => {
+						addStandaloneProsodyToPage(editor, page, panelIndex, 'Cold Scrutinizing', 'seal', 'CLACK!')
+						onStatus(`Added prosody badge to panel ${panelIndex + 1}`)
+						onClose()
+					}}
+				/>
+				<MenuRow
+					label="Add Sound Effect (SFX)"
+					onSelect={() => {
+						addBubbleToPage(editor, page, panelIndex, 'sfx', 'BOOM', 'Burst', 'burst')
+						onStatus(`Added sound effect to panel ${panelIndex + 1}`)
+						onClose()
+					}}
+				/>
 
-						<div className="ctx-group ctx-group-footer">
-							<button
-								type="button"
-								className="ctx-item pipeline-cta"
-								onClick={() => {
-									const res = extendNextPageFromPage(editor, page.id)
-									onStatus(res.message)
-									onClose()
-								}}
-							>
-								<span>延续生成下一页 (P{(page.props.pageIndex || 1) + 1} · 继承本页 Context)</span>
-								<kbd>→</kbd>
-							</button>
-							<button
-								type="button"
-								className="ctx-item"
-								onClick={() => {
-									onOpenPageContext(page.id)
-									onClose()
-								}}
-							>
-								<span>浏览 / 编辑本页继承设定与剧情 Context ({ctx.lockedAssetTags.length} 资产)…</span>
-								<kbd>⌘E</kbd>
-							</button>
-						</div>
-					</>
-				) : (
-					<>
-						<div className="ctx-group">
-							<div className="ctx-group-label">页面流水线与上下文继承 (Page Pipeline & Context)</div>
-							<button
-								type="button"
-								className="ctx-item pipeline-cta"
-								onClick={() => {
-									const res = extendNextPageFromPage(editor, page.id)
-									onStatus(res.message)
-									onClose()
-								}}
-							>
-								<span>延续生成下一页 (P{(page.props.pageIndex || 1) + 1} · 继承本页 Context)</span>
-								<kbd>⌘↵</kbd>
-							</button>
-							<button
-								type="button"
-								className="ctx-item primary-item"
-								onClick={() => {
-									onOpenPageContext(page.id)
-									onClose()
-								}}
-							>
-								<span>浏览 / 编辑本页继承设定与剧情 Context ({ctx.lockedAssetTags.length} 项锁定)…</span>
-								<kbd>⌘E</kbd>
-							</button>
-							<button
-								type="button"
-								className="ctx-item"
-								onClick={() => {
-									onStatus(cloneVariantPage(editor, page.id))
-									onClose()
-								}}
-							>
-								<span>克隆本页为对比变体 (Clone Variant)</span>
-								<kbd>⌘D</kbd>
-							</button>
-						</div>
-
-						<div className="ctx-group">
-							<div className="ctx-group-label">JEV 决策与版式引擎 (JEV Layout Solver)</div>
-							<div className="ctx-action-grid-2">
-								<button
-									type="button"
-									className="ctx-item"
-									onClick={() => {
-										editor.select(page.id)
-										onStatus(runJevFiveStageCompile(editor))
-										onClose()
-									}}
-								>
-									<span>JEV 五阶段重编译</span>
-								</button>
-								<button
-									type="button"
-									className="ctx-item"
-									onClick={() => {
-										editor.select(page.id)
-										rerollSelectedPages(editor)
-										onStatus(`已智能重排 ${page.props.title} 分格版式`)
-										onClose()
-									}}
-								>
-									<span>重排分格版式</span>
-								</button>
-							</div>
-							<button
-								type="button"
-								className="ctx-item"
-								onClick={() => {
-									editor.select(page.id)
-									onOpenCompare()
-									onClose()
-								}}
-							>
-								<span>打开 8 选 1 候选版式对比工作台…</span>
-								<kbd>⌘K</kbd>
-							</button>
-							<div className="ctx-inline-row">
-								<span className="ctx-sub-label">情绪策略</span>
-								<div className="ctx-pills">
-									{SCENARIOS.map((sc) => (
-										<button
-											key={sc}
-											type="button"
-											className={page.props.scenario === sc ? 'active' : ''}
-											onClick={() => {
-												onStatus(applyEmotionStrategyOnPage(editor, page, sc))
-											}}
-										>
-											{SCENARIO_LABELS[sc]}
-										</button>
-									))}
-								</div>
-							</div>
-						</div>
-
-						<div className="ctx-group">
-							<div className="ctx-group-label">独立图层显示开关 (Layer Visibility)</div>
-							<div className="ctx-pills">
-								<button
-									type="button"
-									className={page.props.showBubblesLayer !== false ? 'active' : ''}
-									onClick={() => {
-										const next = page.props.showBubblesLayer === false
-										editor.updateShape<MangaContainer>({
-											id: page.id,
-											type: CONTAINER,
-											props: { showBubblesLayer: next },
-										})
-										onStatus(`${next ? '已显示' : '已隐藏'}文字气泡层`)
-									}}
-								>
-									{page.props.showBubblesLayer !== false ? '✓ 气泡层' : '气泡层'}
-								</button>
-								<button
-									type="button"
-									className={page.props.showProsodyLayer !== false ? 'active' : ''}
-									onClick={() => {
-										const next = page.props.showProsodyLayer === false
-										editor.updateShape<MangaContainer>({
-											id: page.id,
-											type: CONTAINER,
-											props: { showProsodyLayer: next },
-										})
-										onStatus(`${next ? '已显示' : '已隐藏'}独立语气助词层`)
-									}}
-								>
-									{page.props.showProsodyLayer !== false ? '✓ 语气助词层' : '语气助词层'}
-								</button>
-								<button
-									type="button"
-									className={page.props.showSfxLayer !== false ? 'active' : ''}
-									onClick={() => {
-										const next = page.props.showSfxLayer === false
-										editor.updateShape<MangaContainer>({
-											id: page.id,
-											type: CONTAINER,
-											props: { showSfxLayer: next },
-										})
-										onStatus(`${next ? '已显示' : '已隐藏'}拟声词 SFX 层`)
-									}}
-								>
-									{page.props.showSfxLayer !== false ? '✓ 拟声词层' : '拟声词层'}
-								</button>
-								<button
-									type="button"
-									className={page.props.showFlow ? 'active' : ''}
-									onClick={() => {
-										const next = !page.props.showFlow
-										editor.updateShape<MangaContainer>({
-											id: page.id,
-											type: CONTAINER,
-											props: { showFlow: next },
-										})
-										onStatus(`${next ? '已开启' : '已关闭'}视线动线与焦点轨迹`)
-									}}
-								>
-									{page.props.showFlow ? '✓ 视线动线' : '视线动线'}
-								</button>
-								<button
-									type="button"
-									className={hasThirds || hasAxis ? 'active' : ''}
-									onClick={() => {
-										const nextVal = !(hasThirds || hasAxis)
-										onStatus(updatePageParametric(editor, page, { showRuleOfThirds: nextVal, showAxis180: nextVal }, false))
-									}}
-								>
-									{hasThirds || hasAxis ? '✓ 九宫格与180°轴' : '九宫格与180°轴'}
-								</button>
-							</div>
-						</div>
-
-						<div className="ctx-group">
-							<div className="ctx-group-label">单页完稿导出 (Export Manuscript)</div>
-							<div className="ctx-pills">
-								<button
-									type="button"
-									onClick={async () => {
-										onClose()
-										const book = compileBook(editor)
-										const model = book.pages.find((p) => p.model.uid === page.id)?.model ?? book.pages[0]?.model
-										if (model) {
-											const bytes = await exportPagePng2400(model, 2400)
-											downloadBlob(`manga-p${page.props.pageIndex}.png`, bytes, 'image/png')
-										}
-										onStatus(`已导出 ${page.props.title} 2400px 印刷级 PNG`)
-									}}
-								>
-									导出 PNG (2400px)
-								</button>
-								<button
-									type="button"
-									onClick={() => {
-										const book = compileBook(editor)
-										const model = book.pages.find((p) => p.model.uid === page.id)?.model ?? book.pages[0]?.model
-										if (model) {
-											exportPageSvgFile(model, `manga-p${page.props.pageIndex}.svg`)
-										}
-										onStatus(`已导出 ${page.props.title} 矢量 SVG 原稿`)
-										onClose()
-									}}
-								>
-									导出矢量 SVG
-								</button>
-								<button
-									type="button"
-									onClick={async () => {
-										onClose()
-										const book = compileBook(editor)
-										const model = book.pages.find((p) => p.model.uid === page.id)?.model ?? book.pages[0]?.model
-										if (model) {
-											const bytes = await exportOpenRaster(model)
-											downloadBlob(`manga-p${page.props.pageIndex}.ora`, bytes, 'image/openraster')
-										}
-										onStatus(`已导出 ${page.props.title} 分层 OpenRaster (.ora)`)
-									}}
-								>
-									导出分层 .ORA
-								</button>
-							</div>
-						</div>
-					</>
-				)}
+				<MenuDivider />
+				<MenuRow
+					label="Inspect Page Context & Continuity..."
+					shortcut="⌘I"
+					onSelect={() => {
+						onOpenPageContext(page.id)
+						onClose()
+					}}
+				/>
+				<MenuRow
+					label="Extend Next Page in Pipeline"
+					shortcut="⌘↵"
+					onSelect={() => {
+						onStatus(extendNextPageFromPage(editor, page.id).message)
+						onClose()
+					}}
+				/>
+				<MenuSub id="page-actions" label="Page Actions & Export" openLeft={openLeft}>
+					<MenuRow
+						label="Recompile Page (JEV 5-Stage)"
+						onSelect={() => {
+							editor.select(page.id)
+							onStatus(runJevFiveStageCompile(editor))
+							onClose()
+						}}
+					/>
+					<MenuRow
+						label="Reroll Layout Topology"
+						onSelect={() => {
+							editor.select(page.id)
+							rerollSelectedPages(editor)
+							onStatus(`Rerolled ${page.props.title} layout topology`)
+							onClose()
+						}}
+					/>
+					<MenuDivider />
+					{SCENARIOS.map((scenario) => (
+						<MenuRow
+							key={scenario}
+							label={`Pacing · ${SCENARIO_LABELS[scenario]}`}
+							checked={page.props.scenario === scenario}
+							onSelect={() => onStatus(applyEmotionStrategyOnPage(editor, page, scenario))}
+						/>
+					))}
+					<MenuDivider />
+					<MenuRow
+						label="Export Print PNG 2400px"
+						onSelect={() => {
+							onClose()
+							void exportPagePng(page)
+						}}
+					/>
+					<MenuRow
+						label="Export Vector SVG"
+						onSelect={() => {
+							exportPageSvg(page)
+							onClose()
+						}}
+					/>
+					<MenuRow
+						label="Export Layered ORA"
+						onSelect={() => {
+							onClose()
+							void exportPageOra(page)
+						}}
+					/>
+				</MenuSub>
 			</div>
 		)
 	}
 
+	// ---- Speech balloon / prosody ------------------------------------------
 	if (target.kind === 'bubble') {
 		const bubble = editor.getShape(target.bubbleId) as MangaBubble | undefined
 		if (!bubble || bubble.type !== BUBBLE) return null
 		const curProsodyStyle = (bubble.props.prosodyStyle || 'pill') as ProsodyStyle
 
 		return (
-			<div
-				ref={menuRef}
-				className="apple-context-menu"
-				style={{ left: pos.left, top: pos.top }}
-				onContextMenu={(e) => e.preventDefault()}
-			>
-				<div className="ctx-header">
-					<div className="ctx-header-title">
-						<strong>气泡与独立语气图层</strong>
-						<span>格 #{bubble.props.panelIndex + 1} · 双击改台词 · 橙色手柄拖语气</span>
-					</div>
-				</div>
+			<div ref={menuRef} className="mctx-menu" style={{ left: pos.left, top: pos.top, width: MENU_W }} onContextMenu={(e) => e.preventDefault()}>
+				<MenuHeader>Balloon & Prosody Layer</MenuHeader>
 
-				<div className="ctx-group">
-					<div className="ctx-group-label">气泡框型 (Balloon Style)</div>
-					<div className="ctx-pills">
-						{(Object.keys(BUBBLE_LABELS) as BubbleStyle[]).map((style) => (
-							<button
-								key={style}
-								type="button"
-								className={bubble.props.bubble === style ? 'active' : ''}
-								onClick={() => {
-									editor.updateShape<MangaBubble>({
-										id: bubble.id,
-										type: BUBBLE,
-										props: { bubble: style },
-									})
-									onStatus(`已将气泡框型切换为「${BUBBLE_LABELS[style]}」`)
-								}}
-							>
-								{BUBBLE_LABELS[style]}
-							</button>
-						))}
-					</div>
-				</div>
-
-				<div className="ctx-group">
-					<div className="ctx-group-label">独立语气助词图层 (Prosody Badge Layer)</div>
-					<div className="ctx-inline-input">
-						<input
-							type="text"
-							value={prosodyDraft}
-							placeholder="输入语气助词（如：冷笑审视、怒吼、低语）"
-							onChange={(e) => {
-								const val = e.target.value
-								setProsodyDraft(val)
-								editor.updateShape<MangaBubble>({
-									id: bubble.id,
-									type: BUBBLE,
-									props: { prosody: val },
-								})
+				<MenuSub id="balloon-shape" label="Balloon Shape" openLeft={openLeft}>
+					{BALLOON_SHAPE_OPTIONS.map((style) => (
+						<MenuRow
+							key={style.id}
+							label={style.label}
+							checked={bubble.props.bubble === style.id}
+							onSelect={() => {
+								editor.updateShape<MangaBubble>({ id: bubble.id, type: BUBBLE, props: { bubble: style.id } })
+								onStatus(`Balloon shape set to ${style.label}`)
 							}}
 						/>
-						<button
-							type="button"
-							onClick={() => {
-								setProsodyDraft('')
+					))}
+				</MenuSub>
+				<MenuRow
+					label="AI Polish Subtext"
+					onSelect={async () => {
+						onClose()
+						const line = await askText(
+							'Rewrite this manga dialogue line with sharper subtext in under 20 words; output only the dialogue line.',
+							bubble.props.text,
+							() => `${bubble.props.text.replace(/[.!]+$/, '')}... Do you really think that watch stopped on its own?`,
+						)
+						editor.updateShape<MangaBubble>({ id: bubble.id, type: BUBBLE, props: { text: line } })
+						onStatus(`AI polished dialogue: "${line}"`)
+					}}
+				/>
+
+				<MenuDivider />
+				<MenuSub id="prosody-style" label="Prosody Badge Style" openLeft={openLeft}>
+					{PROSODY_STYLE_OPTIONS.map((style) => (
+						<MenuRow
+							key={style.id}
+							label={style.label}
+							checked={curProsodyStyle === style.id}
+							onSelect={() => {
 								editor.updateShape<MangaBubble>({
 									id: bubble.id,
 									type: BUBBLE,
-									props: { prosody: '' },
+									props: {
+										prosodyStyle: style.id,
+										prosody: style.id !== 'off' && !bubble.props.prosody ? 'Cold' : bubble.props.prosody,
+									},
 								})
+								onStatus(`Prosody badge style set to ${style.label}`)
 							}}
-						>
-							清空
-						</button>
+						/>
+					))}
+				</MenuSub>
+				<MenuSub id="prosody-color" label="Prosody Accent Color" openLeft={openLeft}>
+					{PROSODY_ACCENT_COLORS.map((item) => (
+						<MenuColorRow
+							key={item.color}
+							label={item.label}
+							color={item.color}
+							checked={bubble.props.prosodyColor === item.color}
+							onSelect={() => {
+								editor.updateShape<MangaBubble>({ id: bubble.id, type: BUBBLE, props: { prosodyColor: item.color } })
+								onStatus(`Prosody accent color set to ${item.label}`)
+							}}
+						/>
+					))}
+				</MenuSub>
+				{editingProsody ? (
+					<div className="mctx-inline-input">
+						<input
+							type="text"
+							autoFocus
+							value={prosodyDraft}
+							placeholder="Prosody label (e.g. Cold Scrutinizing)"
+							onChange={(e) => {
+								setProsodyDraft(e.target.value)
+								editor.updateShape<MangaBubble>({ id: bubble.id, type: BUBBLE, props: { prosody: e.target.value } })
+							}}
+							onKeyDown={(e) => {
+								if (e.key === 'Enter' || e.key === 'Escape') setEditingProsody(false)
+							}}
+							onClick={(e) => e.stopPropagation()}
+						/>
 					</div>
-					<div className="ctx-inline-row">
-						<span className="ctx-sub-label">样式</span>
-						<div className="ctx-pills">
-							{PROSODY_STYLES.map((st) => (
-								<button
-									key={st}
-									type="button"
-									className={curProsodyStyle === st ? 'active' : ''}
-									onClick={() => {
-										editor.updateShape<MangaBubble>({
-											id: bubble.id,
-											type: BUBBLE,
-											props: {
-												prosodyStyle: st,
-												prosody: st !== 'off' && !bubble.props.prosody ? '冷峻' : bubble.props.prosody,
-											},
-										})
-										onStatus(`语气助词样式已切换为「${PROSODY_STYLE_LABELS[st]}」`)
-									}}
-								>
-									{PROSODY_STYLE_LABELS[st]}
-								</button>
-							))}
-						</div>
-					</div>
-					<div className="ctx-inline-row">
-						<span className="ctx-sub-label">配色</span>
-						<div className="ctx-swatches">
-							{PROSODY_Preset_COLORS.map((item) => (
-								<button
-									key={item.color}
-									type="button"
-									className={`ctx-swatch ${bubble.props.prosodyColor === item.color ? 'active' : ''}`}
-									style={{ background: item.color }}
-									title={item.label}
-									onClick={() => {
-										editor.updateShape<MangaBubble>({
-											id: bubble.id,
-											type: BUBBLE,
-											props: { prosodyColor: item.color },
-										})
-										onStatus(`语气配色已设为「${item.label}」`)
-									}}
-								/>
-							))}
-							<button
-								type="button"
-								className="ctx-mini-btn"
-								onClick={() => {
-									editor.updateShape<MangaBubble>({
-										id: bubble.id,
-										type: BUBBLE,
-										props: { prosodyOffsetX: 0, prosodyOffsetY: 0, prosodyScale: 1 },
-									})
-									onStatus('已复位语气助词印章锚点偏移')
-								}}
-							>
-								复位偏移
-							</button>
-						</div>
-					</div>
-				</div>
+				) : (
+					<MenuRow label="Edit Prosody Label..." onSelect={() => setEditingProsody(true)} />
+				)}
+				<MenuRow
+					label="Reset Prosody Offset"
+					onSelect={() => {
+						editor.updateShape<MangaBubble>({
+							id: bubble.id,
+							type: BUBBLE,
+							props: { prosodyOffsetX: 0, prosodyOffsetY: 0, prosodyScale: 1 },
+						})
+						onStatus('Reset prosody badge offset')
+					}}
+				/>
 
-				<div className="ctx-group">
-					<div className="ctx-group-label">气泡底色与排版 (Appearance & Spin)</div>
-					<div className="ctx-inline-row">
-						<span className="ctx-sub-label">底色</span>
-						<div className="ctx-swatches">
-							{BUBBLE_FILL_PRESETS.map((item) => (
-								<button
-									key={item.color}
-									type="button"
-									className={`ctx-swatch ${bubble.props.fillColor === item.color ? 'active' : ''}`}
-									style={{ background: item.color }}
-									title={item.label}
-									onClick={() => {
-										editor.updateShape<MangaBubble>({
-											id: bubble.id,
-											type: BUBBLE,
-											props: { fillColor: item.color },
-										})
-									}}
-								/>
-							))}
-						</div>
-					</div>
-					<div className="ctx-inline-row">
-						<span className="ctx-sub-label">字号与倾角</span>
-						<div className="ctx-pills">
-							<button
-								type="button"
-								onClick={() => {
-									editor.updateShape<MangaBubble>({
-										id: bubble.id,
-										type: BUBBLE,
-										props: {
-											emphasis: Math.min(2, Number((bubble.props.emphasis + 0.18).toFixed(2))),
-											w: Math.round(bubble.props.w * 1.08),
-											h: Math.round(bubble.props.h * 1.08),
-										},
-									})
-								}}
-							>
-								A+ 放大
-							</button>
-							<button
-								type="button"
-								onClick={() => {
-									editor.updateShape<MangaBubble>({
-										id: bubble.id,
-										type: BUBBLE,
-										props: {
-											emphasis: Math.max(0.6, Number((bubble.props.emphasis - 0.18).toFixed(2))),
-											w: Math.max(64, Math.round(bubble.props.w * 0.92)),
-											h: Math.max(44, Math.round(bubble.props.h * 0.92)),
-										},
-									})
-								}}
-							>
-								A- 缩小
-							</button>
-							<button
-								type="button"
-								onClick={() =>
-									editor.updateShape<MangaBubble>({
-										id: bubble.id,
-										type: BUBBLE,
-										props: { spin: Math.max(-35, (bubble.props.spin || 0) - 8) },
-									})
-								}
-							>
-								左倾 -8°
-							</button>
-							<button
-								type="button"
-								onClick={() =>
-									editor.updateShape<MangaBubble>({
-										id: bubble.id,
-										type: BUBBLE,
-										props: { spin: 0 },
-									})
-								}
-							>
-								0°
-							</button>
-							<button
-								type="button"
-								onClick={() =>
-									editor.updateShape<MangaBubble>({
-										id: bubble.id,
-										type: BUBBLE,
-										props: { spin: Math.min(35, (bubble.props.spin || 0) + 8) },
-									})
-								}
-							>
-								右倾 +8°
-							</button>
-						</div>
-					</div>
-				</div>
-
-				<div className="ctx-group">
-					<div className="ctx-group-label">智能台词与图层操作 (AI & Layer)</div>
-					<button
-						type="button"
-						className="ctx-item primary-item"
-						onClick={async () => {
-							onClose()
-							const line = await askText(
-								'把这句漫画台词改写得更有潜台词张力，不超过 20 个汉字，只输出台词本身。',
-								bubble.props.text,
-								() => `${bubble.props.text.replace(/[。！!]+$/, '')}……你真以为那只表是自己停的？`,
-							)
+				<MenuDivider />
+				<MenuSub id="balloon-fill" label="Balloon Fill" openLeft={openLeft}>
+					{BUBBLE_FILL_PRESETS.map((item) => (
+						<MenuColorRow
+							key={item.color}
+							label={item.label}
+							color={item.color}
+							checked={bubble.props.fillColor === item.color}
+							onSelect={() => {
+								editor.updateShape<MangaBubble>({ id: bubble.id, type: BUBBLE, props: { fillColor: item.color } })
+								onStatus(`Balloon fill set to ${item.label}`)
+							}}
+						/>
+					))}
+				</MenuSub>
+				<MenuSub id="typography-size" label="Typography Size" openLeft={openLeft}>
+					<MenuRow
+						label="Larger (+2px)"
+						onSelect={() =>
 							editor.updateShape<MangaBubble>({
 								id: bubble.id,
 								type: BUBBLE,
-								props: { text: line },
+								props: {
+									emphasis: Math.min(2, Number((bubble.props.emphasis + 0.18).toFixed(2))),
+									w: Math.round(bubble.props.w * 1.08),
+									h: Math.round(bubble.props.h * 1.08),
+								},
 							})
-							onStatus(`已 AI 润色台词：「${line}」`)
-						}}
-					>
-						<span>AI 润色此句潜台词与语气</span>
-						<kbd>⌘P</kbd>
-					</button>
-					<div className="ctx-action-grid-2">
-						<button
-							type="button"
-							className="ctx-item"
-							onClick={() => {
-								const dupId = createShapeId(`bubble-dup-${Date.now()}`)
-								editor.createShape<MangaBubble>({
-									id: dupId,
-									type: BUBBLE,
-									parentId: bubble.parentId,
-									x: bubble.x + 22,
-									y: bubble.y + 18,
-									props: { ...bubble.props },
-								})
-								editor.select(dupId)
-								onStatus('已复制当前气泡')
-								onClose()
-							}}
-						>
-							<span>复制气泡</span>
-						</button>
-						<button
-							type="button"
-							className="ctx-item danger-item"
-							onClick={() => {
-								editor.deleteShapes([bubble.id])
-								onStatus('已删除气泡')
-								onClose()
-							}}
-						>
-							<span>删除此气泡</span>
-							<kbd>⌫</kbd>
-						</button>
-					</div>
-				</div>
+						}
+					/>
+					<MenuRow
+						label="Smaller (-2px)"
+						onSelect={() =>
+							editor.updateShape<MangaBubble>({
+								id: bubble.id,
+								type: BUBBLE,
+								props: {
+									emphasis: Math.max(0.6, Number((bubble.props.emphasis - 0.18).toFixed(2))),
+									w: Math.max(64, Math.round(bubble.props.w * 0.92)),
+									h: Math.max(44, Math.round(bubble.props.h * 0.92)),
+								},
+							})
+						}
+					/>
+					<MenuRow
+						label="Reset (15px)"
+						onSelect={() => editor.updateShape<MangaBubble>({ id: bubble.id, type: BUBBLE, props: { emphasis: 1 } })}
+					/>
+				</MenuSub>
+				<MenuSub id="tilt-angle" label="Tilt Angle" openLeft={openLeft}>
+					<MenuRow
+						label="Tilt Left -8°"
+						onSelect={() =>
+							editor.updateShape<MangaBubble>({ id: bubble.id, type: BUBBLE, props: { spin: Math.max(-35, (bubble.props.spin || 0) - 8) } })
+						}
+					/>
+					<MenuRow
+						label="Level 0°"
+						onSelect={() => editor.updateShape<MangaBubble>({ id: bubble.id, type: BUBBLE, props: { spin: 0 } })}
+					/>
+					<MenuRow
+						label="Tilt Right +8°"
+						onSelect={() =>
+							editor.updateShape<MangaBubble>({ id: bubble.id, type: BUBBLE, props: { spin: Math.min(35, (bubble.props.spin || 0) + 8) } })
+						}
+					/>
+				</MenuSub>
+
+				<MenuDivider />
+				<MenuRow
+					label="Duplicate Balloon"
+					shortcut="⌘D"
+					onSelect={() => {
+						const dupId = createShapeId(`bubble-dup-${bubble.id.replace('shape:', '')}-${bubble.props.panelIndex}`)
+						editor.createShape<MangaBubble>({
+							id: dupId,
+							type: BUBBLE,
+							parentId: bubble.parentId,
+							x: bubble.x + 22,
+							y: bubble.y + 18,
+							props: { ...bubble.props },
+						})
+						editor.select(dupId)
+						onStatus('Duplicated balloon')
+						onClose()
+					}}
+				/>
+				<MenuRow
+					label="Delete Balloon"
+					shortcut="⌫"
+					destructive
+					onSelect={() => {
+						editor.deleteShapes([bubble.id])
+						onStatus('Deleted balloon')
+						onClose()
+					}}
+				/>
 			</div>
 		)
 	}
 
+	// ---- Reference card -----------------------------------------------------
 	if (target.kind === 'card') {
 		const card = editor.getShape(target.cardId) as MangaCard | undefined
 		if (!card || card.type !== CARD) return null
+		const supportsVision = card.props.kind === 'character' || card.props.kind === 'image' || card.props.kind === 'environment'
 
 		return (
-			<div
-				ref={menuRef}
-				className="apple-context-menu"
-				style={{ left: pos.left, top: pos.top }}
-				onContextMenu={(e) => e.preventDefault()}
-			>
-				<div className="ctx-header">
-					<div className="ctx-header-title">
-						<strong>{card.props.title}</strong>
-						<span>设定资产卡 · {card.props.tag || card.props.kind}</span>
-					</div>
-				</div>
+			<div ref={menuRef} className="mctx-menu" style={{ left: pos.left, top: pos.top, width: MENU_W }} onContextMenu={(e) => e.preventDefault()}>
+				<MenuHeader>{`Reference Asset · ${card.props.kind.toUpperCase()}`}</MenuHeader>
 
-				<div className="ctx-group">
-					<div className="ctx-group-label">外观一致性锁定与页面 Context 注入</div>
-					<button
-						type="button"
-						className="ctx-item pipeline-cta"
-						onClick={() => {
-							onStatus(bindCardToPageContext(editor, card))
-							onClose()
-						}}
-					>
-						<span>绑定并注入到当前分镜页 Context</span>
-						<kbd>⌘L</kbd>
-					</button>
-					<button
-						type="button"
-						className="ctx-item"
-						onClick={() => {
-							const nextLocked = !card.props.locked
-							editor.updateShape<MangaCard>({
-								id: card.id,
-								type: CARD,
-								props: { locked: nextLocked },
-							})
-							onStatus(`${nextLocked ? '已锁定' : '已解锁'}设定卡「${card.props.title}」外观一致性`)
-							onClose()
-						}}
-					>
-						<span>
-							{card.props.locked
-								? `✓ 已锁定外观标签 (${card.props.tag || '点击解锁'})`
-								: `锁定外观一致性标签 (${card.props.tag || '无'})`}
-						</span>
-					</button>
-				</div>
+				<MenuRow
+					label={card.props.locked ? 'Unlock Consistency Tag' : 'Lock Consistency Tag'}
+					checked={card.props.locked}
+					onSelect={() => {
+						const nextLocked = !card.props.locked
+						editor.updateShape<MangaCard>({ id: card.id, type: CARD, props: { locked: nextLocked } })
+						onStatus(`${nextLocked ? 'Locked' : 'Unlocked'} "${card.props.title}" consistency tag`)
+						onClose()
+					}}
+				/>
+				<MenuRow
+					label="Inject into Active Page Context"
+					shortcut="⌘L"
+					onSelect={() => {
+						onStatus(bindCardToPageContext(editor, card))
+						onClose()
+					}}
+				/>
 
-				<div className="ctx-group">
-					<div className="ctx-group-label">多模态 AI 设定与立绘工坊</div>
-					<div className="ctx-action-grid-2">
-						<button
-							type="button"
-							className="ctx-item"
-							onClick={async () => {
+				<MenuDivider />
+				<MenuRow
+					label="AI Polish"
+					onSelect={async () => {
+						onClose()
+						onStatus(await applySelectedCardAiAction(editor, card, 'polish'))
+					}}
+				/>
+				<MenuRow
+					label="AI Regenerate"
+					onSelect={async () => {
+						onClose()
+						onStatus(await applySelectedCardAiAction(editor, card, 'regenerate'))
+					}}
+				/>
+				{supportsVision ? (
+					<>
+						<MenuRow
+							label="Vision Reverse-Prompt"
+							onSelect={async () => {
 								onClose()
-								onStatus(await applySelectedCardAiAction(editor, card, 'polish'))
+								onStatus(await applySelectedCardAiAction(editor, card, 'vision'))
 							}}
-						>
-							<span>AI 润色设定文本</span>
-						</button>
-						<button
-							type="button"
-							className="ctx-item"
-							onClick={async () => {
+						/>
+						<MenuRow
+							label="AI Redraw"
+							onSelect={async () => {
 								onClose()
-								onStatus(await applySelectedCardAiAction(editor, card, 'regenerate'))
+								onStatus(await applySelectedCardAiAction(editor, card, 'redraw'))
 							}}
-						>
-							<span>AI 重新生成方案</span>
-						</button>
-					</div>
-					{(card.props.kind === 'character' || card.props.kind === 'image' || card.props.kind === 'environment') && (
-						<div className="ctx-action-grid-2">
-							<button
-								type="button"
-								className="ctx-item"
-								onClick={async () => {
-									onClose()
-									onStatus(await applySelectedCardAiAction(editor, card, 'vision'))
-								}}
-							>
-								<span>Vision 识图反推人设</span>
-							</button>
-							<button
-								type="button"
-								className="ctx-item"
-								onClick={async () => {
-									onClose()
-									onStatus(await applySelectedCardAiAction(editor, card, 'redraw'))
-								}}
-							>
-								<span>AI 重绘参考立绘</span>
-							</button>
-						</div>
-					)}
-				</div>
+						/>
+					</>
+				) : null}
 
-				<div className="ctx-group">
-					<div className="ctx-group-label">卡片操作</div>
-					<div className="ctx-action-grid-2">
-						<button
-							type="button"
-							className="ctx-item"
-							onClick={() => {
-								const dupId = createShapeId(`card-dup-${Date.now()}`)
-								editor.createShape<MangaCard>({
-									id: dupId,
-									type: CARD,
-									x: card.x + 28,
-									y: card.y + 28,
-									props: { ...card.props, title: `${card.props.title} · 副本` },
-								})
-								editor.select(dupId)
-								onStatus(`已复制设定卡「${card.props.title}」`)
-								onClose()
-							}}
-						>
-							<span>复制设定卡</span>
-						</button>
-						<button
-							type="button"
-							className="ctx-item danger-item"
-							onClick={() => {
-								editor.deleteShapes([card.id])
-								onStatus(`已删除设定卡「${card.props.title}」`)
-								onClose()
-							}}
-						>
-							<span>删除设定卡</span>
-							<kbd>⌫</kbd>
-						</button>
-					</div>
-				</div>
+				<MenuDivider />
+				<MenuRow
+					label="Delete Card"
+					shortcut="⌫"
+					destructive
+					onSelect={() => {
+						editor.deleteShapes([card.id])
+						onStatus(`Deleted card "${card.props.title}"`)
+						onClose()
+					}}
+				/>
 			</div>
 		)
 	}
 
+	// ---- Page frame ---------------------------------------------------------
+	if (target.kind === 'page') {
+		const page = editor.getShape(target.pageId) as MangaContainer | undefined
+		if (!page || page.type !== CONTAINER) return null
+		const moodFlags = page.props.mood || ''
+		const hasThirds = moodFlags.includes('thirds=1')
+		const hasAxis = moodFlags.includes('axis=1')
+
+		return (
+			<div ref={menuRef} className="mctx-menu" style={{ left: pos.left, top: pos.top, width: MENU_W }} onContextMenu={(e) => e.preventDefault()}>
+				<MenuHeader>{`${page.props.title} · JEV ${Math.round(page.props.score * 100)}`}</MenuHeader>
+
+				<MenuRow
+					label="Extend Next Page (Inherit Context)"
+					shortcut="⌘↵"
+					onSelect={() => {
+						onStatus(extendNextPageFromPage(editor, page.id).message)
+						onClose()
+					}}
+				/>
+				<MenuRow
+					label="Inspect & Edit Page Context..."
+					shortcut="⌘I"
+					onSelect={() => {
+						onOpenPageContext(page.id)
+						onClose()
+					}}
+				/>
+				<MenuRow
+					label="Duplicate as Layout Variant"
+					onSelect={() => {
+						onStatus(cloneVariantPage(editor, page.id))
+						onClose()
+					}}
+				/>
+
+				<MenuDivider />
+				<MenuRow
+					label="Recompile Page (JEV 5-Stage)"
+					onSelect={() => {
+						editor.select(page.id)
+						onStatus(runJevFiveStageCompile(editor))
+						onClose()
+					}}
+				/>
+				<MenuRow
+					label="Reroll Panel Topology"
+					onSelect={() => {
+						editor.select(page.id)
+						rerollSelectedPages(editor)
+						onStatus(`Rerolled ${page.props.title} panel topology`)
+						onClose()
+					}}
+				/>
+				<MenuSub id="pacing-strategy" label="Pacing Strategy" openLeft={openLeft}>
+					{SCENARIOS.map((scenario) => (
+						<MenuRow
+							key={scenario}
+							label={SCENARIO_LABELS[scenario]}
+							checked={page.props.scenario === scenario}
+							onSelect={() => onStatus(applyEmotionStrategyOnPage(editor, page, scenario))}
+						/>
+					))}
+				</MenuSub>
+
+				<MenuDivider />
+				<MenuSub id="layer-visibility" label="Layer Visibility" openLeft={openLeft}>
+					<MenuRow
+						label="Speech Balloons"
+						checked={page.props.showBubblesLayer !== false}
+						onSelect={() => {
+							const next = page.props.showBubblesLayer === false
+							editor.updateShape<MangaContainer>({ id: page.id, type: CONTAINER, props: { showBubblesLayer: next } })
+							onStatus(`${next ? 'Shown' : 'Hidden'}: speech balloons`)
+						}}
+					/>
+					<MenuRow
+						label="Prosody Badges"
+						checked={page.props.showProsodyLayer !== false}
+						onSelect={() => {
+							const next = page.props.showProsodyLayer === false
+							editor.updateShape<MangaContainer>({ id: page.id, type: CONTAINER, props: { showProsodyLayer: next } })
+							onStatus(`${next ? 'Shown' : 'Hidden'}: prosody badges`)
+						}}
+					/>
+					<MenuRow
+						label="Sound Effects (SFX)"
+						checked={page.props.showSfxLayer !== false}
+						onSelect={() => {
+							const next = page.props.showSfxLayer === false
+							editor.updateShape<MangaContainer>({ id: page.id, type: CONTAINER, props: { showSfxLayer: next } })
+							onStatus(`${next ? 'Shown' : 'Hidden'}: sound effects`)
+						}}
+					/>
+					<MenuRow
+						label="Gaze & Focal Trajectory"
+						checked={Boolean(page.props.showFlow)}
+						onSelect={() => {
+							const next = !page.props.showFlow
+							editor.updateShape<MangaContainer>({ id: page.id, type: CONTAINER, props: { showFlow: next } })
+							onStatus(`${next ? 'Enabled' : 'Disabled'}: gaze & focal trajectory`)
+						}}
+					/>
+					<MenuRow
+						label="Rule-of-Thirds & 180° Axis"
+						checked={hasThirds || hasAxis}
+						onSelect={() => {
+							const next = !(hasThirds || hasAxis)
+							onStatus(updatePageParametric(editor, page, { showRuleOfThirds: next, showAxis180: next }, false))
+						}}
+					/>
+				</MenuSub>
+
+				<MenuDivider />
+				<MenuSub id="export-page" label="Export Page" openLeft={openLeft}>
+					<MenuRow
+						label="Print PNG (2400px)"
+						onSelect={() => {
+							onClose()
+							void exportPagePng(page)
+						}}
+					/>
+					<MenuRow
+						label="Vector SVG"
+						onSelect={() => {
+							exportPageSvg(page)
+							onClose()
+						}}
+					/>
+					<MenuRow
+						label="Layered OpenRaster (.ora)"
+						onSelect={() => {
+							onClose()
+							void exportPageOra(page)
+						}}
+					/>
+				</MenuSub>
+			</div>
+		)
+	}
+
+	// ---- Empty canvas -------------------------------------------------------
 	return (
-		<div
-			ref={menuRef}
-			className="apple-context-menu"
-			style={{ left: pos.left, top: pos.top }}
-			onContextMenu={(e) => e.preventDefault()}
-		>
-			<div className="ctx-header">
-				<div className="ctx-header-title">
-					<strong>画布空间快捷菜单</strong>
-					<span>坐标 ({target.canvasX}, {target.canvasY}) · 以单页为单位流水线创作</span>
-				</div>
-			</div>
+		<div ref={menuRef} className="mctx-menu" style={{ left: pos.left, top: pos.top, width: MENU_W }} onContextMenu={(e) => e.preventDefault()}>
+			<MenuHeader>Manga Studio Canvas</MenuHeader>
 
-			<div className="ctx-group">
-				<div className="ctx-group-label">单页制作与流水线续写 (Page Pipeline)</div>
-				<button
-					type="button"
-					className="ctx-item pipeline-cta"
-					onClick={() => {
-						const res = extendNextPageFromPage(editor)
-						onStatus(res.message)
+			<MenuRow
+				label="New Blank Page Here"
+				onSelect={() => {
+					spawnBlankPageAtPoint(editor, target.canvasX, target.canvasY)
+					onStatus('Created new page on canvas')
+					onClose()
+				}}
+			/>
+			<MenuRow
+				label="Extend Next Page from Latest"
+				shortcut="⌘↵"
+				onSelect={() => {
+					onStatus(extendNextPageFromPage(editor).message)
+					onClose()
+				}}
+			/>
+			<MenuSub id="new-reference-card" label="New Reference Card" openLeft={openLeft}>
+				<MenuRow
+					label="Character Sheet"
+					onSelect={() => {
+						createImageCardOnCanvas(
+							editor,
+							'character',
+							'New Character Sheet',
+							'@new_char',
+							'Investigator in a dark trench coat, sharp rim lighting and a piercing gaze.',
+						)
+						onStatus('Created character sheet (@new_char)')
 						onClose()
 					}}
-				>
-					<span>从末页延续生成下一页 (继承最新 Context)</span>
-					<kbd>⌘↵</kbd>
-				</button>
-				<button
-					type="button"
-					className="ctx-item"
-					onClick={() => {
-						spawnBlankPageAtPoint(editor, target.canvasX, target.canvasY)
-						onStatus('已在当前画布位置新建分镜页')
+				/>
+				<MenuRow
+					label="World / Environment Rule"
+					onSelect={() => {
+						createTextCardOnCanvas(
+							editor,
+							'world',
+							'World & Lighting Rule Card',
+							'Hardboiled seinen monochrome slate palette, strictly enforcing the 180-degree camera axis.',
+						)
+						onStatus('Created world rule card')
 						onClose()
 					}}
-				>
-					<span>在此处新建独立分镜页</span>
-					<kbd>⌘N</kbd>
-				</button>
-			</div>
-
-			<div className="ctx-group">
-				<div className="ctx-group-label">在此处新建设定与参考资产卡 (Spawn Asset Card)</div>
-				<div className="ctx-action-grid-2">
-					<button
-						type="button"
-						className="ctx-item"
-						onClick={() => {
-							createImageCardOnCanvas(
-								editor,
-								'character',
-								'新角色视觉设定卡',
-								'@new_char',
-								'身穿深色风衣的调查员，冷峻侧逆光，眼神锐利。',
-							)
-							onStatus('已新建角色视觉设定卡 (@new_char)')
-							onClose()
-						}}
-					>
-						<span>+ 角色视觉卡 (@char)</span>
-					</button>
-					<button
-						type="button"
-						className="ctx-item"
-						onClick={() => {
-							createImageCardOnCanvas(
-								editor,
-								'image',
-								'新场景/道具参考卡',
-								'#prop_clue',
-								'关键剧情证物或场景参考图，锁定线条与光影质感。',
-							)
-							onStatus('已新建场景/道具参考卡 (#prop_clue)')
-							onClose()
-						}}
-					>
-						<span>+ 道具/场景参考卡</span>
-					</button>
-				</div>
-				<div className="ctx-action-grid-2">
-					<button
-						type="button"
-						className="ctx-item"
-						onClick={() => {
-							createTextCardOnCanvas(editor, 'story', '新场次分镜剧本卡', '在此输入本场戏的分镜动作与对白节拍。')
-							onStatus('已新建场次分镜剧本卡')
-							onClose()
-						}}
-					>
-						<span>+ 剧本文字卡</span>
-					</button>
-					<button
-						type="button"
-						className="ctx-item"
-						onClick={() => {
-							createTextCardOnCanvas(editor, 'world', '世界观与光影法则卡', '硬派青年漫黑白灰冷调，严格遵守 180° 摄像机轴线。')
-							onStatus('已新建世界观法则卡')
-							onClose()
-						}}
-					>
-						<span>+ 世界观法则卡</span>
-					</button>
-				</div>
-			</div>
-
-			<div className="ctx-group">
-				<div className="ctx-group-label">画布整理与整书预览</div>
-				<div className="ctx-action-grid-2">
-					<button
-						type="button"
-						className="ctx-item"
-						onClick={() => {
-							onStatus(tidyCanvasLayout(editor))
-							onClose()
-						}}
-					>
-						<span>横向对齐所有分镜页</span>
-					</button>
-					<button
-						type="button"
-						className="ctx-item"
-						onClick={() => {
-							editor.zoomToFit({ animation: { duration: 180 } })
-							onClose()
-						}}
-					>
-						<span>缩放适配全画布</span>
-					</button>
-				</div>
-				<button
-					type="button"
-					className="ctx-item"
-					onClick={() => {
-						onOpenReader()
+				/>
+				<MenuRow
+					label="Story Beat Card"
+					onSelect={() => {
+						createTextCardOnCanvas(editor, 'story', 'New Scene Script Card', 'Enter panel action beats and dialogue rhythm for this scene.')
+						onStatus('Created story beat card')
 						onClose()
 					}}
-				>
-					<span>打开整书翻页阅读器</span>
-					<kbd>⌘B</kbd>
-				</button>
-			</div>
+				/>
+			</MenuSub>
+
+			<MenuDivider />
+			<MenuRow
+				label="Tidy Page Pipeline Layout"
+				onSelect={() => {
+					onStatus(tidyCanvasLayout(editor))
+					onClose()
+				}}
+			/>
+			<MenuRow
+				label="Zoom to Fit All"
+				shortcut="⌘0"
+				onSelect={() => {
+					editor.zoomToFit({ animation: { duration: 180 } })
+					onClose()
+				}}
+			/>
 		</div>
 	)
 }
@@ -1521,23 +1323,23 @@ export function PageContextModal({
 		}
 	}
 	const builtinAssets: Array<{ tag: string; title: string; kind: string; imageDataUrl?: string }> = [
-		{ tag: '@lu_chen', title: '侦探·陆沉', kind: 'character', imageDataUrl: '/assets/interrogation/asset_char_lu_chen.jpg' },
-		{ tag: '@lin_ye', title: '嫌疑人·林野', kind: 'character', imageDataUrl: '/assets/interrogation/asset_char_lin_ye.jpg' },
-		{ tag: '@shen_mo', title: '副局长·沈默', kind: 'character', imageDataUrl: '/assets/interrogation/asset_char_shen_mo.jpg' },
+		{ tag: '@lu_chen', title: 'Detective Lu Chen', kind: 'character', imageDataUrl: '/assets/interrogation/asset_char_lu_chen.jpg' },
+		{ tag: '@lin_ye', title: 'Suspect Lin Ye', kind: 'character', imageDataUrl: '/assets/interrogation/asset_char_lin_ye.jpg' },
+		{ tag: '@shen_mo', title: 'Deputy Chief Shen Mo', kind: 'character', imageDataUrl: '/assets/interrogation/asset_char_shen_mo.jpg' },
 		{
 			tag: '#prop_pocket_watch',
-			title: '裂纹银壳怀表 (23:17)',
+			title: 'Cracked Silver Pocket Watch (23:17)',
 			kind: 'prop',
 			imageDataUrl: '/assets/interrogation/asset_prop_pocket_watch.jpg',
 		},
 		{
 			tag: '#env_interrogation_room',
-			title: '旧港警署三楼审讯室',
+			title: 'Precinct 3F Interrogation Room',
 			kind: 'environment',
 			imageDataUrl: '/assets/interrogation/asset_env_interrogation_room.jpg',
 		},
-		{ tag: '#prop_rust_cuff', title: '袖口红丹防锈漆', kind: 'prop' },
-		{ tag: '#prop_brass_lighter', title: '旧铜打火机', kind: 'prop' },
+		{ tag: '#prop_rust_cuff', title: 'Red-Lead Dock Primer', kind: 'prop' },
+		{ tag: '#prop_brass_lighter', title: 'Vintage Brass Lighter', kind: 'prop' },
 	]
 	for (const item of builtinAssets) {
 		if (!assetCatalog.has(item.tag)) assetCatalog.set(item.tag, item)
@@ -1567,26 +1369,26 @@ export function PageContextModal({
 			<div className="modal-box context-inspector-modal" onClick={(e) => e.stopPropagation()}>
 				<header className="ctx-modal-header">
 					<div>
-						<span className="ctx-modal-eyebrow">PAGE PIPELINE CONTEXT INSPECTOR · 单页上下文继承与流水线设定</span>
+						<span className="ctx-modal-eyebrow">PAGE PIPELINE CONTEXT INSPECTOR · Page Context & Continuity Inspector</span>
 						<h3>
 							{page.props.title}
 							{ctx.inheritedFromPageIndex ? (
-								<span className="ctx-lineage-pill">承接自 P{ctx.inheritedFromPageIndex}</span>
+								<span className="ctx-lineage-pill">Inherited from  P{ctx.inheritedFromPageIndex}</span>
 							) : (
-								<span className="ctx-lineage-pill origin">起始母页 P1</span>
+								<span className="ctx-lineage-pill origin">Root Page P1</span>
 							)}
 						</h3>
 					</div>
 					<button type="button" className="ctx-close-btn" onClick={onClose}>
-						关闭
+						Close
 					</button>
 				</header>
 
 				<div className="ctx-modal-body">
 					<section className="ctx-section">
 						<div className="ctx-sec-head">
-							<strong>① 页面流水线溯源链 (Page-to-Page Lineage)</strong>
-							<span>点击页节点可切换查看每页独立继承的 Context</span>
+							<strong>Page Pipeline Lineage</strong>
+							<span>Click any page node to inspect its inherited  Context</span>
 						</div>
 						<div className="ctx-lineage-chain">
 							{allPages.map((p, idx) => {
@@ -1604,8 +1406,8 @@ export function PageContextModal({
 											}}
 										>
 											<strong>P{p.props.pageIndex || idx + 1}</strong>
-											<span>{p.props.title.replace(/^第\d+话\s*·\s*P\d+\s*·?\s*/, '') || p.props.title}</span>
-											<small>{pCtx.lockedAssetTags.length} 项锁定设定</small>
+											<span>{p.props.title.replace(/^#\d+Ch\s*·\s*P\d+\s*·?\s*/, '') || p.props.title}</span>
+											<small>{pCtx.lockedAssetTags.length} Locked Assets</small>
 										</button>
 									</div>
 								)
@@ -1628,8 +1430,8 @@ export function PageContextModal({
 									onSelectPage(res.pageId)
 								}}
 							>
-								<strong>+ 续写 P{allPages.length + 1}</strong>
-								<span>继承当前页 Context</span>
+								<strong>+ Extend  P{allPages.length + 1}</strong>
+								<span>Inherit Context</span>
 							</button>
 						</div>
 					</section>
@@ -1637,20 +1439,20 @@ export function PageContextModal({
 					<div className="ctx-grid-2col">
 						<section className="ctx-section">
 							<div className="ctx-sec-head">
-								<strong>② 继承的世界观与环境光效 (World & Lighting)</strong>
-								<span>向下一页自动传递</span>
+								<strong>Inherited World Rules & Lighting</strong>
+								<span>Auto-propagates to downstream pages</span>
 							</div>
 							<div className="ctx-form-grid-3">
 								<label>
-									<span>画风规范</span>
+									<span>Style Guide</span>
 									<select value={stylePreset} onChange={(e) => setStylePreset(e.target.value)}>
-										<option value="seinen_noir">硬派青年漫·黑色电影 (seinen_noir)</option>
-										<option value="shonen_water">少年海风·浓墨网点 (shonen_water)</option>
-										<option value="classic">经典平实·故事漫 (classic)</option>
+										<option value="seinen_noir">Hardboiled Seinen · Film Noir (seinen_noir)</option>
+										<option value="shonen_water">Coastal Shonen · Crisp Screentone (shonen_water)</option>
+										<option value="classic">Classic Narrative Manga (classic)</option>
 									</select>
 								</label>
 								<label>
-									<span>场景拓扑</span>
+									<span>Environment</span>
 									<select value={environment} onChange={(e) => setEnvironment(e.target.value)}>
 										{ENV_IDS.map((id) => (
 											<option key={id} value={id}>
@@ -1660,7 +1462,7 @@ export function PageContextModal({
 									</select>
 								</label>
 								<label>
-									<span>主导光效</span>
+									<span>Lighting</span>
 									<select value={lighting} onChange={(e) => setLighting(e.target.value)}>
 										{LIGHT_IDS.map((id) => (
 											<option key={id} value={id}>
@@ -1671,36 +1473,36 @@ export function PageContextModal({
 								</label>
 							</div>
 							<label className="ctx-block-label">
-								<span>世界观与视觉铁律 (World Rules)</span>
+								<span>World & Visual Rules (World Rules)</span>
 								<textarea rows={2} value={worldRules} onChange={(e) => setWorldRules(e.target.value)} />
 							</label>
 						</section>
 
 						<section className="ctx-section">
 							<div className="ctx-sec-head">
-								<strong>③ 跨页镜头轴线与前情交接 (Cross-Page Handoff)</strong>
-								<span>保障翻页 180° 视线不跳轴</span>
+								<strong>Cross-Page 180° Camera & Narrative Continuity</strong>
+								<span>Ensures cross-page  180°  eyeline continuity</span>
 							</div>
 							<div className="ctx-optics-handoff-row">
 								<div className="ctx-handoff-stat">
-									<small>上页尾格景别</small>
+									<small>Prev Exit Shot</small>
 									<strong>
 										{ctx.prevExitShot} · {ANGLE_LABELS[ctx.prevExitAngle] ?? ctx.prevExitAngle}
 									</strong>
 								</div>
 								<div className="ctx-handoff-stat">
-									<small>180° 视线轴向量</small>
+									<small>180° Eyeline Vector</small>
 									<strong>
 										({ctx.prevExitEyeline[0]}, {ctx.prevExitEyeline[1]})
 									</strong>
 								</div>
 								<div className="ctx-handoff-stat">
-									<small>尾格情绪张力</small>
+									<small>Exit Tension</small>
 									<strong>{Math.round(ctx.prevExitTension * 100)}%</strong>
 								</div>
 							</div>
 							<label className="ctx-block-label">
-								<span>承接前页剧情摘要 (prevPageSummary)</span>
+								<span>Inherited Story Summary (prevPageSummary)</span>
 								<textarea rows={2} value={prevSummary} onChange={(e) => setPrevSummary(e.target.value)} />
 							</label>
 						</section>
@@ -1708,8 +1510,8 @@ export function PageContextModal({
 
 					<section className="ctx-section">
 						<div className="ctx-sec-head">
-							<strong>④ 本页锁定并延续的角色与道具资产 ({lockedTags.length} 项已激活)</strong>
-							<span>勾选的 @角色 / #道具 / #场景 将注入本页及后续派生页的 Stage 4 纯画面提示词</span>
+							<strong>Locked Character & Prop Assets ({lockedTags.length} Active)</strong>
+							<span>Checked  @Character / #Prop / #Scene  will be injected into this page and downstream pages'  Stage 4 clean image prompts</span>
 						</div>
 						<div className="ctx-asset-chips">
 							{Array.from(assetCatalog.values()).map((asset) => {
@@ -1726,7 +1528,7 @@ export function PageContextModal({
 											<strong>{asset.title}</strong>
 											<code>{asset.tag}</code>
 										</div>
-										<span className="ctx-asset-check">{isLocked ? '✓ 已锁定' : '+ 启用'}</span>
+										<span className="ctx-asset-check">{isLocked ? '✓ Locked' : '+ Active'}</span>
 									</button>
 								)
 							})}
@@ -1734,7 +1536,7 @@ export function PageContextModal({
 								<input
 									type="text"
 									value={newTagInput}
-									placeholder="新增 @角色 或 #道具 标签…"
+									placeholder="Add  @Character or #Prop  tag..."
 									onChange={(e) => setNewTagInput(e.target.value)}
 									onKeyDown={(e) => {
 										if (e.key === 'Enter') {
@@ -1744,7 +1546,7 @@ export function PageContextModal({
 									}}
 								/>
 								<button type="button" onClick={addCustomTag}>
-									+ 添加
+									+ Add
 								</button>
 							</div>
 						</div>
@@ -1753,12 +1555,12 @@ export function PageContextModal({
 					<div className="ctx-grid-2col">
 						<section className="ctx-section">
 							<div className="ctx-sec-head">
-								<strong>⑤ 本页分镜台本与情绪策略 ({page.props.title})</strong>
-								<span>可直接编辑每格景别、动作与「台词」</span>
+								<strong>Page Script Beats & Pacing Strategy ({page.props.title})</strong>
+								<span>Edit per-panel shot scale, action beat, and dialogue</span>
 							</div>
 							<div className="ctx-form-grid-3">
 								<label>
-									<span>本页情绪策略</span>
+									<span>Pacing Strategy</span>
 									<select value={scenario} onChange={(e) => setScenario(e.target.value as Scenario)}>
 										{SCENARIOS.map((sc) => (
 											<option key={sc} value={sc}>
@@ -1768,17 +1570,17 @@ export function PageContextModal({
 									</select>
 								</label>
 								<label>
-									<span>目标分格数</span>
+									<span>Target Panels</span>
 									<select value={targetPanels} onChange={(e) => setTargetPanels(Number(e.target.value))}>
 										{[3, 4, 5, 6, 7].map((n) => (
 											<option key={n} value={n}>
-												{n} 格
+												{n} 
 											</option>
 										))}
 									</select>
 								</label>
 								<label>
-									<span>导演指令焦点</span>
+									<span>Page Directive</span>
 									<input type="text" value={pageDirective} onChange={(e) => setPageDirective(e.target.value)} />
 								</label>
 							</div>
@@ -1792,14 +1594,14 @@ export function PageContextModal({
 
 						<section className="ctx-section">
 							<div className="ctx-sec-head">
-								<strong>⑥ 续写下一页 (P{(page.props.pageIndex || 1) + 1}) 剧情节拍（可选）</strong>
-								<span>留空则按本页继承 Context 自动推演 P{(page.props.pageIndex || 1) + 1} 连续分镜</span>
+								<strong>Extend Page (P{(page.props.pageIndex || 1) + 1}) Plot Beats (Optional)</strong>
+								<span>Leave blank to auto-derive from inherited  Context  auto-continuation P{(page.props.pageIndex || 1) + 1}  sequential beats</span>
 							</div>
 							<textarea
 								className="ctx-script-textarea"
 								rows={7}
 								value={nextPageCustomScript}
-								placeholder={`可选：输入 P${(page.props.pageIndex || 1) + 1} 的新一段分镜剧情（或直接点击右下角「以此 Context 延续生成 P${(page.props.pageIndex || 1) + 1}」自动续写下一幕，完整继承上方锁定的 ${lockedTags.slice(0, 4).join(' ')} 与 180° 镜头轴线）…`}
+								placeholder={`Optional: enter  P${(page.props.pageIndex || 1) + 1}  plot beats (or click " Context Extend  P${(page.props.pageIndex || 1) + 1}" below to auto-continue, inheriting locked  ${lockedTags.slice(0, 4).join(' ')}  and  180°  camera axis)...`}
 								onChange={(e) => setNextPageCustomScript(e.target.value)}
 							/>
 						</section>
@@ -1809,7 +1611,7 @@ export function PageContextModal({
 				<footer className="ctx-modal-footer">
 					<div className="ctx-footer-left">
 						<span>
-							当前页：{page.props.title} · 已锁定 {lockedTags.length} 项设定资产 · 尾格轴线 ({ctx.prevExitEyeline[0]},{' '}
+							Active Page: {page.props.title} · Locked {lockedTags.length}  Locked Assets · Exit Axis ({ctx.prevExitEyeline[0]},{' '}
 							{ctx.prevExitEyeline[1]})
 						</span>
 					</div>
@@ -1834,7 +1636,7 @@ export function PageContextModal({
 								onClose()
 							}}
 						>
-							保存设定并重编译本页 ({page.props.title})
+							Save Context & Recompile Page ({page.props.title})
 						</button>
 						<button
 							type="button"
@@ -1865,7 +1667,7 @@ export function PageContextModal({
 								onClose()
 							}}
 						>
-							以此 Context 延续生成下一页 (P{(page.props.pageIndex || 1) + 1}) →
+							Extend Next Page with This Context (P{(page.props.pageIndex || 1) + 1})
 						</button>
 					</div>
 				</footer>

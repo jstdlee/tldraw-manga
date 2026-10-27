@@ -3,7 +3,7 @@ import { loadSettings } from './settings'
 export async function askText(system: string, user: string, fallback: () => string): Promise<string> {
 	const settings = loadSettings()
 	if (!settings.useApi) return fallback()
-	const fullSystem = settings.systemAppendix ? `${system}\n补充指令：${settings.systemAppendix}` : system
+	const fullSystem = settings.systemAppendix ? `${system}\nAdditional directive: ${settings.systemAppendix}` : system
 	try {
 		const response = await fetch('/api/complete', {
 			method: 'POST',
@@ -26,30 +26,30 @@ export async function askVision(input: {
 	customPrompt?: string
 }): Promise<{ analysis: string; modelUsed: string }> {
 	const settings = loadSettings()
-	const modelLabel = settings.useApi ? `Vision (${settings.visionModel})` : `内置 Vision 视觉引擎 (${settings.visionModel})`
+	const modelLabel = settings.useApi ? `Vision (${settings.visionModel})` : `Built-in Vision engine (${settings.visionModel})`
 	const prompt = [
-		'你是漫画视觉总监与人设反推专家。请用简明专业的中文解析这张参考图/角色设定图，输出：',
-		'1) 角色/场景外观锚点（发色、服饰、道具、轮廓特征）',
-		'2) 镜头景别与构图张力（视角、焦段、留白区）',
-		'3) 网点墨线与生图提示词建议',
-		input.customPrompt ? `用户重点指令：${input.customPrompt}` : '',
-		`卡片标题：${input.title} ${input.tag ?? ''}；已有描述：${input.body ?? ''}`,
+		'You are a manga visual director and character-design reverse-engineering expert. Analyze this reference/character sheet image in concise, professional language and output:',
+		'1) Character/scene appearance anchors (hair color, costume, props, silhouette traits)',
+		'2) Shot scale and composition tension (viewpoint, focal length, negative space)',
+		'3) Screentone and ink-line notes plus image-generation prompt advice',
+		input.customPrompt ? `User focus directive: ${input.customPrompt}` : '',
+		`Card title: ${input.title} ${input.tag ?? ''}; existing description: ${input.body ?? ''}`,
 	]
 		.filter(Boolean)
 		.join('\n')
 
 	const offlineVisionFallback = () => {
-		const focus = input.customPrompt ? `（结合指令「${input.customPrompt}」）` : ''
-		if (input.tag?.includes('kanta') || input.title.includes('勘太')) {
-			return `【Vision 识图反推${focus}】\n• 外观锚点：@kanta 凌乱黑发、深蓝连帽卫衣、领口护目镜、右侧脸颊贴创可贴，手握红白条纹薯条纸盒。\n• 构图与光影：中近景仰拍 (MCU / 35mm)，正午防波堤硬光，右上角留出 22% 空白供对白气泡落位。\n• 墨线网点：主轮廓粗G笔墨线，阴影处 40% 灰网点，朱红重点色仅用于薯条盒与护目镜反光。`
+		const focus = input.customPrompt ? ` (per directive "${input.customPrompt}")` : ''
+		if (input.tag?.includes('kanta') || input.title.includes('Kanta')) {
+			return `[Vision Reverse-Read${focus}]\n• Appearance anchors: @kanta messy black hair, deep-blue hoodie, goggles at the collar, a bandage on his right cheek, holding a red-and-white striped fry box.\n• Composition & light: low-angle MCU at 35mm, hard noon light on the breakwater, 22% negative space reserved top-right for the speech balloon.\n• Ink & tone: bold G-pen outlines, 40% gray screentone in the shadows, spot vermilion reserved for the fry box and the goggle glints.`
 		}
-		if (input.tag?.includes('mei') || input.title.includes('芽衣')) {
-			return `【Vision 识图反推${focus}】\n• 外观锚点：@mei 利落短发配发卡、浅色风衣随海风扬起、斜挎胶片相机、眼神冷静克制。\n• 构图与光影：平视中景 (MS / 50mm)，海面逆光勾出风衣与发丝高光边，左上角留出安全气泡区。\n• 墨线网点：细腻丸笔发丝线条，风衣采用 25% 渐变网点，强化冷幽默静帧对比。`
+		if (input.tag?.includes('mei') || input.title.includes('Mei')) {
+			return `[Vision Reverse-Read${focus}]\n• Appearance anchors: @mei neat short hair with a hairpin, pale trench coat lifted by the sea wind, a film camera slung across her body, a calm restrained gaze.\n• Composition & light: eye-level MS at 50mm, sea backlight rimming the coat and hair with highlight edges, safe balloon zone reserved top-left.\n• Ink & tone: fine maru-pen hair strokes, 25% gradated screentone on the coat, reinforcing the deadpan still-frame contrast.`
 		}
-		if (input.tag?.includes('boss') || input.title.includes('鸥')) {
-			return `【Vision 识图反推${focus}】\n• 外观锚点：@boss 巨型银背海鸥、左眼十字旧疤、左脚套金属环、双翼展开占满上沿出血位。\n• 构图与光影：18mm 广角极限仰拍 (low angle)，强烈放射速度线聚焦鹰钩喙，压迫感拉满。\n• 墨线网点：荒木飞吕彦式硬朗排线阴影 + 爆发拟声词「轰——！！」留白区。`
+		if (input.tag?.includes('boss') || input.title.includes('Boss')) {
+			return `[Vision Reverse-Read${focus}]\n• Appearance anchors: @boss a huge silver-backed gull, an old cross scar over its left eye, a metal band on its left foot, wings spread across the full top bleed.\n• Composition & light: extreme 18mm wide low angle, hard radiating speed lines converging on the hooked beak, maximum pressure.\n• Ink & tone: Araki-style hard hatching shadows + negative space reserved for the burst onomatopoeia "BOOM—!!".`
 		}
-		return `【Vision 识图反推 · ${input.title}${focus}】\n• 视觉主体：${input.body ? input.body.slice(0, 64) : '高对比度黑白漫剧参考画面，主次剪影分明'}。\n• 镜头语言：35mm 叙事中景，前景引导线汇聚于视觉中心，右上侧预留对白气泡负空间。\n• 画风锁定：黑白墨线 + 双层灰网点 + 局部朱红点缀，严禁画面内出现AI乱码文字。`
+		return `[Vision Reverse-Read · ${input.title}${focus}]\n• Visual subject: ${input.body ? input.body.slice(0, 64) : 'a high-contrast black-and-white manga reference frame with clearly separated primary and secondary silhouettes'}.\n• Camera language: 35mm narrative medium shot, foreground leading lines converging on the visual center, negative space reserved upper-right for the speech balloon.\n• Style lock: black-and-white ink lines + two-layer gray screentone + spot vermilion accents; absolutely no garbled AI lettering in frame.`
 	}
 
 	if (!settings.useApi) {
@@ -87,26 +87,26 @@ export async function polishCardText(input: {
 	customPrompt?: string
 }): Promise<{ text: string; modelUsed: string }> {
 	const settings = loadSettings()
-	const modelLabel = settings.useApi ? `Text LLM (${settings.model})` : `内置文本模型 (${settings.model})`
-	const system = '你是资深中文漫画编剧与分镜设定顾问。请将用户的卡片内容润色得更具画面感、镜头张力与角色辨识度，直接输出润色后的中文正文，不要客套。'
+	const modelLabel = settings.useApi ? `Text LLM (${settings.model})` : `Built-in text model (${settings.model})`
+	const system = 'You are a seasoned manga scriptwriter and storyboard design consultant. Polish the user\'s card copy for stronger imagery, camera tension, and character recognizability. Output the polished body text directly, with no pleasantries.'
 	const user = [
-		`卡片类型：${input.kind}，标题：${input.title} ${input.tag ?? ''}`,
-		`原文内容：${input.body}`,
-		input.customPrompt ? `用户自定义改写指令：${input.customPrompt}` : '请强化视觉细节、动作神态、网点光影与漫画分镜表现力。',
+		`Card type: ${input.kind}, title: ${input.title} ${input.tag ?? ''}`,
+		`Original content: ${input.body}`,
+		input.customPrompt ? `User rewrite directive: ${input.customPrompt}` : 'Strengthen visual detail, action and expression, screentone lighting, and manga panel storytelling.',
 	].join('\n')
 
 	const fallback = () => {
-		const customNote = input.customPrompt ? `｜按指令「${input.customPrompt}」定向强化` : ''
+		const customNote = input.customPrompt ? ` | sharpened per directive "${input.customPrompt}"` : ''
 		if (input.kind === 'character') {
-			return `${input.body.replace(/\n*【AI 润色.*$/s, '')}\n【AI 润色设定${customNote}】锁定三视图锚点：动态衣褶随风向偏转，特写格强调眼神高光与嘴角微表情，跨格出场保持配饰与发型 100% 一致。`
+			return `${input.body.replace(/\n*\[AI Polish.*$/s, '')}\n[AI Polish${customNote}] Three-view anchors locked: costume folds sway with the wind direction, close-up panels stress eye highlights and micro-expressions at the mouth, and cross-panel entrances keep accessories and hair 100% consistent.`
 		}
 		if (input.kind === 'world' || input.kind === 'environment') {
-			return `${input.body.replace(/\n*【AI 场景深化.*$/s, '')}\n【AI 场景深化${customNote}】远景强化空气透视与海雾网点层次，近景突出地面阴影切割线，右上角预留 20% 负空间安放对白气泡。`
+			return `${input.body.replace(/\n*\[AI Scene Deepening.*$/s, '')}\n[AI Scene Deepening${customNote}] Distant views gain aerial perspective and layered sea-mist screentone; near views foreground the ground-shadow cut lines; reserve 20% negative space upper-right for the speech balloon.`
 		}
 		if (input.kind === 'image') {
-			return `${input.body.replace(/\n*【AI 生图词美化.*$/s, '')}\n【AI 生图词美化${customNote}】日式黑白漫画原稿，G笔凌厉墨线，60L灰网点过渡，局部朱红点睛，戏剧性逆光剪影，12%出血留白，无文字无气泡。`
+			return `${input.body.replace(/\n*\[AI Image Prompt Polish.*$/s, '')}\n[AI Image Prompt Polish${customNote}] Japanese black-and-white manga manuscript, sharp G-pen ink lines, 60L gray screentone gradation, spot vermilion accents, dramatic backlit silhouettes, 12% bleed margins, no text and no bubbles.`
 		}
-		return `${input.body.replace(/\n*【AI 剧本精修.*$/s, '')}\n【AI 剧本精修${customNote}】节奏由静入动：先以 35mm 平视建立日常松弛感，再用 18mm 极限仰拍切入冲突瞬间，高潮格前插入 1 格无台词静帧拉满张力。`
+		return `${input.body.replace(/\n*\[AI Script Refinement.*$/s, '')}\n[AI Script Refinement${customNote}] Pacing goes still-to-motion: open with a relaxed 35mm eye-level everyday beat, cut into the flashpoint with an extreme 18mm low angle, and slot one wordless still frame right before the climax panel to max out the tension.`
 	}
 
 	const text = await askText(system, user, fallback)
@@ -122,25 +122,25 @@ export async function regenerateCardText(input: {
 	variantSeed?: number
 }): Promise<{ text: string; modelUsed: string }> {
 	const settings = loadSettings()
-	const modelLabel = settings.useApi ? `Text LLM (${settings.model})` : `内置文本模型 (${settings.model})`
+	const modelLabel = settings.useApi ? `Text LLM (${settings.model})` : `Built-in text model (${settings.model})`
 	const variants = [
-		'版本A（热血张力风）：强化广角透视、放射速度线与极具冲击力的动作定格，台词短促有力。',
-		'版本B（冷峻悬疑风）：采用高反差黑影与斜切构图 (Dutch angle)，通过眼神特写与环境静帧烘托压迫感。',
-		'版本C（冷幽默剧场风）：先用严肃分镜铺垫史诗感，下一格突然切回荒诞日常反应，反差感拉满。',
+		'Version A (hot-blooded tension): push wide-angle perspective, radiating speed lines, and high-impact action freeze-frames; keep dialogue short and punchy.',
+		'Version B (cold suspense): use high-contrast black shadows and Dutch-angle framing; build pressure through eye close-ups and still environment beats.',
+		'Version C (deadpan theater): set up an epic mood with serious framing, then snap the next panel back to an absurd everyday reaction for maximum contrast.',
 	]
 	const chosen = variants[(input.variantSeed ?? Math.floor(Date.now() / 1000)) % variants.length]
-	const system = '你是中文漫画分镜主笔。请为该卡片重新生成一版富有创意的设定或分镜描述，直接输出中文正文。'
-	const user = `标题：${input.title}\n原内容：${input.body}\n重生成方向：${input.customPrompt || chosen}`
+	const system = 'You are the lead manga storyboard artist. Regenerate a creative new version of this card\'s setting or storyboard description and output the body text directly.'
+	const user = `Title: ${input.title}\nOriginal: ${input.body}\nRegeneration direction: ${input.customPrompt || chosen}`
 
 	const fallback = () => {
-		const direction = input.customPrompt ? `自定义方向「${input.customPrompt}」` : chosen.split('：')[0]
+		const direction = input.customPrompt ? `custom direction "${input.customPrompt}"` : chosen.split(':')[0]
 		if (input.kind === 'character') {
-			return `${input.title}（${direction}重生成）：外轮廓鲜明，标志性特征在远景剪影中一眼可辨；动作戏采用夸张透视 foreshortening，静止格保留细腻睫毛与发丝高光。`
+			return `${input.title} (${direction} regeneration): bold silhouette with signature features legible in a distant view; action beats use exaggerated foreshortening, while still panels keep the fine lashes and hair highlights.`
 		}
 		if (input.kind === 'image') {
-			return `【AI 重生成视觉参考 · ${direction}】黑白漫画精修设定图，墨线干净利落，主光源从左上方 45° 投射，背景留白干净，突出角色与核心道具的戏剧冲突。`
+			return `[AI Regenerated Visual Reference · ${direction}] Refined black-and-white manga design sheet, clean decisive ink lines, key light cast from 45° upper left, pristine negative-space background, foregrounding the dramatic clash between character and core prop.`
 		}
-		return `【AI 重新生成 · ${direction}】\n${input.body.split('\n')[0]}\n新分镜走向：第一拍远景交代环境气压，第二拍特写锁定视线交锋，第三拍斜切大格引爆核心冲突，尾格留悬念钩子。`
+		return `[AI Regenerated · ${direction}]\n${input.body.split('\n')[0]}\nNew storyboard direction: beat one establishes the atmosphere in a wide shot, beat two locks the gaze duel in close-up, beat three detonates the core conflict in a slanted full panel, and the tail panel leaves a suspense hook.`
 	}
 
 	const text = await askText(system, user, fallback)
@@ -154,16 +154,16 @@ export async function cardToPanelPrompt(input: {
 	customPrompt?: string
 }): Promise<{ prompt: string; modelUsed: string }> {
 	const settings = loadSettings()
-	const modelLabel = settings.useApi ? `Text LLM (${settings.model})` : `内置分镜编译器 (${settings.model})`
-	const system = '请将卡片内容转化为结构化中文漫画生图与分镜提示词（包含：景别机位、焦段、角色外观锁定、光影网点、安全留白区、负面约束）。'
-	const user = `标题：${input.title}\n内容：${input.body}\n附加要求：${input.customPrompt || '标准日漫右翻分镜'}`
+	const modelLabel = settings.useApi ? `Text LLM (${settings.model})` : `Built-in storyboard compiler (${settings.model})`
+	const system = 'Convert the card content into a structured manga image-generation and storyboard prompt (including: shot scale and camera placement, focal length, character appearance locks, lighting and screentone, safe negative space, and negative constraints).'
+	const user = `Title: ${input.title}\nContent: ${input.body}\nExtra requirements: ${input.customPrompt || 'standard right-to-left manga page flow'}`
 	const fallback = () =>
 		[
-			`【分镜生图提示词 · ${input.title}】`,
-			`• 镜头机位：中近景 (MCU) · 18mm 广角仰拍 · 视线引导朝左下方`,
-			`• 角色与画面：${input.tag ? `${input.tag} 外观锁定，` : ''}${input.body.slice(0, 72)}`,
-			input.customPrompt ? `• 自定义风格指令：${input.customPrompt}` : `• 画风墨线：黑白G笔浓墨线 + 45%灰网点 + 局部朱红高光`,
-			`• 构图留白：含 12% 裁切出血位，右上角预留 20% 纯净负空间放对白气泡，禁出文字与乱码符号`,
+			`[Storyboard Image Prompt · ${input.title}]`,
+			`• Camera: medium close-up (MCU) · 18mm wide low angle · gaze lead toward lower left`,
+			`• Character & frame: ${input.tag ? `${input.tag} appearance locked, ` : ''}${input.body.slice(0, 72)}`,
+			input.customPrompt ? `• Custom style directive: ${input.customPrompt}` : `• Ink style: black G-pen bold lines + 45% gray screentone + spot vermilion highlights`,
+			`• Composition margin: 12% trim bleed included; reserve 20% clean negative space upper-right for the speech balloon; no text or garbled glyphs`,
 		].join('\n')
 	const prompt = await askText(system, user, fallback)
 	return { prompt, modelUsed: modelLabel }

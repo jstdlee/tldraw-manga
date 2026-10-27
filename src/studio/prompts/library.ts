@@ -10,55 +10,55 @@ export interface PromptBlock {
 export const PROMPT_BLOCKS: PromptBlock[] = [
 	{
 		id: 'extract',
-		title: '设定集提炼',
-		summary: '故事原稿 → @角色锚点 + 三视图 + 世界规范',
+		title: 'Setting Bible Extraction',
+		summary: 'Story draft → @character anchors + three-view refs + world rules',
 		template:
-			'阅读故事，抽出角色 @tag、锁定外形、声音潜台词、三视图提示，以及世界规则和画风预设。不要写分镜。输出 JSON：characters[], world, stylePreset。',
+			'Read the story and extract character @tags, locked appearances, vocal subtext, three-view hints, plus world rules and a style preset. Do not write panels. Output JSON: characters[], world, stylePreset.',
 	},
 	{
 		id: 'chapterize',
-		title: '自动分章分页',
-		summary: '故事 + 设定集 → 话数切分与每页节拍',
+		title: 'Auto Chaptering & Paging',
+		summary: 'Story + setting bible → chapter splits and per-page beats',
 		template:
-			'把故事切成话。每话 2 到 3 页，每页 3 到 9 格。标出本章情绪和场景覆盖。最后一页留翻页钩子。输出 chapters[].pages[].beats[]。',
+			'Split the story into chapters. Give each chapter 2 to 3 pages with 3 to 9 panels per page. Mark each chapter\'s mood and scene coverage. Leave a page-turn hook on the final page. Output chapters[].pages[].beats[].',
 	},
 	{
 		id: 'name',
-		title: '分镜节拍与静帧',
-		summary: '右→左动线、高潮前无声格、末格翻页钩子',
+		title: 'Panel Beats & Still Frames',
+		summary: 'Right→left flow, silent beat before the climax, page-turn hook on the last panel',
 		template:
-			'按右到左、上到下写分镜。高潮前留一格无对白静帧。每页最后一格（左下角）写翻页钩子。台词精炼，同时给出景别、机位、焦段。',
+			'Write the panels right to left, top to bottom. Reserve one wordless still panel before the climax. Give the final panel of each page (bottom-left corner) a page-turn hook. Keep dialogue terse; include shot scale, camera angle, and focal length.',
 	},
 	{
 		id: 'camera',
-		title: '光学镜头与透视',
-		summary: 'EWS/WS/MS/MCU/CU/ECU · 18mm 张力 / 85mm 压缩',
+		title: 'Optical Lens & Perspective',
+		summary: 'EWS/WS/MS/MCU/CU/ECU · 18mm tension / 85mm compression',
 		template:
-			'景别：EWS WS MS MCU CU ECU。机位：Low High Eye Bird Dutch。18mm 夸张透视和速度线，85mm 压缩背景聚焦表情。网点用于阴影，不画文字。',
+			'Shot scale: EWS WS MS MCU CU ECU. Camera angle: Low High Eye Bird Dutch. 18mm for exaggerated perspective and speed lines; 85mm to compress the background and focus on expression. Screentone is for shadows; no lettering.',
 	},
 	{
 		id: 'random',
-		title: '环境光影变奏',
-		summary: '切换场景、光位与镜头张力组合',
+		title: 'Environment & Light Variations',
+		summary: 'Shuffle scene, light position, and lens-tension combos',
 		template:
-			'从环境池抽取场景（海岸防波堤、夕照屋顶、霓虹雨巷、暴风栈桥……），再组合光位和机位。只改氛围，不改角色锁定外形。',
+			'Draw scenes from the environment pool (seaside breakwater, sunset rooftop, neon rain alley, storm pier, ...), then combine lighting position and camera angle. Change the mood only, never the locked character designs.',
 	},
 	{
 		id: 'render',
-		title: '无字纯净成稿渲染',
-		summary: '@tag 锁定 + 光学参数 + 留白区 + 禁文字伪影',
+		title: 'Wordless Clean Render',
+		summary: '@tag locks + optical params + negative space + no lettering artifacts',
 		template:
-			'把角色锁定、光学焦段景深、机位、画幅和气泡安全区合成画面提示。写明 NO text, NO letters, NO speech bubbles，漫画墨线与网点。',
+			'Merge character locks, optical focal length and depth of field, camera angle, aspect ratio, and balloon safe zones into the image prompt. State NO text, NO letters, NO speech bubbles; manga ink lines and screentone.',
 	},
 ]
 
 export const SHOTS = ['EWS', 'WS', 'MS', 'MCU', 'CU', 'ECU'] as const
 export const ANGLES = ['low', 'high', 'eye', 'bird', 'dutch'] as const
 export const FOCALS = ['18mm', '35mm', '50mm', '85mm'] as const
-export const STYLE_PRESETS = ['少年网点', '少女淡彩', '硬诺瓦尔', '港风水墨'] as const
+export const STYLE_PRESETS = ['Shonen Screentone', 'Shojo Pastel', 'Hard Noir', 'HK Ink Wash'] as const
 
 export function defaultParams(id: BlockId): Record<string, string | number | boolean> {
-	if (id === 'extract') return { stylePreset: '少年网点' }
+	if (id === 'extract') return { stylePreset: 'Shonen Screentone' }
 	if (id === 'chapterize') return { chapters: 2, pages: 2 }
 	if (id === 'name') return { density: 48, silent: true, hook: true }
 	if (id === 'camera') return { shot: 'MS', angle: 'low', focal: '18mm', tone: 'speedlines' }

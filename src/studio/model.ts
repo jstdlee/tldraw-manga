@@ -23,27 +23,27 @@ export type Focal = '18mm' | '35mm' | '50mm' | '85mm'
 export type BubbleStyle = 'speech' | 'thought' | 'caption' | 'whisper' | 'shout' | 'broadcast' | 'sfx'
 export type ProsodyStyle = 'pill' | 'seal' | 'slant' | 'burst' | 'minimal' | 'off'
 export const PROSODY_STYLE_LABELS: Record<ProsodyStyle, string> = {
-	pill: '胶囊标签',
-	seal: '朱印方章',
-	slant: '斜切徽章',
-	burst: '炸裂星标',
-	minimal: '极简括号',
-	off: '隐藏语气层',
+	pill: 'Pill Tag',
+	seal: 'Vermilion Seal',
+	slant: 'Slant Badge',
+	burst: 'Burst Star',
+	minimal: 'Minimal Bracket',
+	off: 'Hide Prosody Layer',
 }
 export type Prosody =
 	| ''
-	| '冷笑'
-	| '颤抖'
-	| '怒吼'
-	| '低语'
-	| '停顿'
-	| '冷峻低沉 · 叙述方框'
-	| '冷笑审视'
-	| '压迫追问'
-	| '低音叩击'
-	| '一字一顿'
-	| '锋芒毕露'
-	| '雷霆指认'
+	| 'sneer'
+	| 'tremble'
+	| 'shout'
+	| 'whisper'
+	| 'pause'
+	| 'cold low-key narration box'
+	| 'cold scrutiny'
+	| 'pressing interrogation'
+	| 'low drumbeat'
+	| 'clipped syllables'
+	| 'razor edge'
+	| 'thunderous accusation'
 	| (string & {})
 export type FriesProp = 'none' | 'kanta' | 'gull' | 'air' | 'jar' | 'feather'
 
@@ -176,7 +176,7 @@ export function silentBeat(index: number): Beat {
 		shot: index % 2 ? 'CU' : 'MS',
 		angle: 'eye',
 		focal: '50mm',
-		beat: '静帧。只留风声。',
+		beat: 'A still frame. Only the wind remains.',
 		who: [],
 		fries: 'none',
 		lines: [],

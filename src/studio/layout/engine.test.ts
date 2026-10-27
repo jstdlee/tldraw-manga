@@ -183,7 +183,7 @@ describe('optical shot lab & composition overlays (sim4director)', () => {
 				{
 					panelIndex: 0,
 					style: 'speech',
-					text: '对白可见',
+					text: 'Dialogue Visible',
 					prosody: '',
 					emphasis: 1,
 					x: 80,
@@ -197,7 +197,7 @@ describe('optical shot lab & composition overlays (sim4director)', () => {
 				{
 					panelIndex: 1,
 					style: 'speech',
-					text: '静帧隐藏',
+					text: 'Silent Hidden',
 					prosody: '',
 					emphasis: 1,
 					x: 120,
@@ -216,9 +216,9 @@ describe('optical shot lab & composition overlays (sim4director)', () => {
 			showRuleOfThirds: true,
 			showAxis180: true,
 		})
-		expect(svg).toContain('B4 版心安全裁切线')
-		expect(svg).toContain('180° 越轴警告')
-		expect(svg).toContain('对白可见')
-		expect(svg).not.toContain('静帧隐藏')
+		expect(svg).toContain('B4 Safe Trim Margin')
+		expect(svg).toContain('180° Axis Warning')
+		expect(svg).toContain('Dialogue')
+		expect(svg).not.toContain('Silent Hidden')
 	})
 })

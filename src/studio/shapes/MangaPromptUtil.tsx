@@ -16,7 +16,7 @@ export class MangaPromptUtil extends BaseBoxShapeUtil<MangaPrompt> {
 			w: 270,
 			h: 196,
 			block: 'extract',
-			title: '设定集提炼',
+			title: 'Bible Extraction',
 			paramsJson: JSON.stringify(defaultParams('extract')),
 			preview: '',
 		}
@@ -52,7 +52,7 @@ function PromptView({ shape }: { shape: MangaPrompt }) {
 	const setParam = (key: string, value: string | number | boolean) => {
 		editor.updateShape({ id: shape.id, type: PROMPT, props: { paramsJson: JSON.stringify({ ...params, [key]: value }) } })
 	}
-	const engineLabel = shape.props.block === 'render' ? 'Image LLM + 网点引擎' : 'Text + Vision LLM'
+	const engineLabel = shape.props.block === 'render' ? 'Image LLM + Screentone Engine' : 'Text + Vision LLM'
 	return (
 		<HTMLContainer className="manga-prompt">
 			<header>
@@ -69,7 +69,7 @@ function PromptView({ shape }: { shape: MangaPrompt }) {
 				<pre>{shape.props.preview}</pre>
 			) : (
 				<details onPointerDown={(event) => event.stopPropagation()}>
-					<summary>查看内置提示词模板</summary>
+					<summary>Inspect Built-in Prompt Template</summary>
 					<p>{block?.template}</p>
 				</details>
 			)}
@@ -81,7 +81,7 @@ function PromptView({ shape }: { shape: MangaPrompt }) {
 				}}
 				onClick={() => void runBlock(editor, shape.props.block, params, shape.id)}
 			>
-				<IconPlay /> 执行管线节点
+				<IconPlay /> Run Pipeline Node
 			</button>
 		</HTMLContainer>
 	)
@@ -98,7 +98,7 @@ function Chips({
 }) {
 	if (block === 'extract') {
 		return (
-			<select value={String(params.stylePreset ?? '少年网点')} onChange={(event) => onChange('stylePreset', event.target.value)}>
+			<select value={String(params.stylePreset ?? 'Shonen Screentone')} onChange={(event) => onChange('stylePreset', event.target.value)}>
 				{STYLE_PRESETS.map((preset) => (
 					<option key={preset}>{preset}</option>
 				))}
@@ -109,11 +109,11 @@ function Chips({
 		return (
 			<>
 				<label>
-					话数
+					Chapters
 					<input type="number" min={1} max={4} value={Number(params.chapters ?? 2)} onChange={(event) => onChange('chapters', Number(event.target.value))} />
 				</label>
 				<label>
-					每话页数
+					Pages / Ch
 					<input type="number" min={1} max={4} value={Number(params.pages ?? 2)} onChange={(event) => onChange('pages', Number(event.target.value))} />
 				</label>
 			</>
@@ -164,6 +164,6 @@ function Chips({
 			</>
 		)
 	}
-	if (block === 'name') return <span>高潮前静帧 · 左下角翻页钩子</span>
-	return <span>禁止AI乱码字 · 安全留白 · 黑白网点</span>
+	if (block === 'name') return <span>Pre-climax silent beat · Bottom-left page-turn hook</span>
+	return <span>Zero garbled text · Safe negative space · Monochrome screentone</span>
 }

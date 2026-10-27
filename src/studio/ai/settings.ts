@@ -49,7 +49,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
 	},
 	{
 		id: 'deepseek',
-		label: 'DeepSeek (深度求索 V3 / R1)',
+		label: 'DeepSeek (V3 / R1)',
 		baseUrl: 'https://api.deepseek.com/v1',
 		textModels: ['deepseek-chat', 'deepseek-reasoner'],
 		visionModels: ['gpt-4o', 'qwen-vl-max'],
@@ -57,7 +57,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
 	},
 	{
 		id: 'local',
-		label: '本地 Ollama / vLLM / SD',
+		label: 'Local Ollama / vLLM / SD',
 		baseUrl: 'http://127.0.0.1:11434/v1',
 		textModels: ['qwen2.5:14b', 'llama3.2:latest', 'deepseek-r1:14b'],
 		visionModels: ['llava:13b', 'qwen2.5-vl:7b', 'minicpm-v:latest'],
@@ -77,7 +77,7 @@ const DEFAULTS: ApiSettings = {
 	imageProvider: 'openai',
 	imageModel: 'gpt-image-1',
 	useApi: false,
-	systemAppendix: '保持黑白网点日漫叙事张力，右起左读，画面留白避开角色五官，拟声词与对白全中文。',
+	systemAppendix: 'Keep the black-and-white screentone manga narrative tension, read right to left, keep negative space clear of character faces, and render all sound effects and dialogue in English.',
 }
 
 export function loadSettings(): ApiSettings {

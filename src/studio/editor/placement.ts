@@ -91,7 +91,7 @@ export function planBubbles(layout: Layout, beats: Beat[], pageW = pagePixelSize
 				prosodyColor: line.prosodyColor ?? '',
 				fillColor: '#fffefb',
 				fontWeight: line.type === 'shout' || line.type === 'sfx' ? 800 : 600,
-				emphasis: line.type === 'shout' || line.type === 'sfx' ? 1.3 : prosody === '低语' ? 0.85 : 1,
+				emphasis: line.type === 'shout' || line.type === 'sfx' ? 1.3 : prosody === 'whisper' ? 0.85 : 1,
 				panelIndex,
 				x,
 				y,

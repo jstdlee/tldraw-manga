@@ -23,14 +23,14 @@ describe('shared manga API server', () => {
 				body: JSON.stringify({ provider: 'openai', user: 'ping' }),
 			}).then((response) => response.json())
 			expect(complete.text).toBe('')
-			expect(complete.error).toContain('API Key')
+			expect(complete.error).toContain('API key')
 			const vision = await fetch(`${server.url}api/vision`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ provider: 'openai', prompt: '分析这张图' }),
+				body: JSON.stringify({ provider: 'openai', prompt: 'Analyze this image' }),
 			}).then((response) => response.json())
 			expect(vision.text).toBe('')
-			expect(vision.error).toContain('API Key')
+			expect(vision.error).toContain('API key')
 			const page = await fetch(`${server.url}app.js`).then((response) => response.text())
 			expect(page).toContain('page')
 			const spa = await fetch(`${server.url}missing/route`).then((response) => response.text())

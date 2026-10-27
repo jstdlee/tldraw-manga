@@ -147,7 +147,7 @@ export function renderPageSvg(model: PageRenderModel): string {
 				)
 			} else if (model.numbers === 'corner' || model.numbers === 'on') {
 				const focalText = panel.meta.focalMm ? `${panel.meta.focalMm}mm` : panel.meta.focal
-				const silentTag = panel.meta.silent ? ' · 静帧' : ''
+				const silentTag = panel.meta.silent ? ' · Silent' : ''
 				const tagText = `${index + 1} · ${panel.meta.shot}/${focalText}${silentTag}`
 				const tagW = Math.max(54, tagText.length * 6.8 + 10)
 				frameLayers.push(
@@ -171,7 +171,7 @@ export function renderPageSvg(model: PageRenderModel): string {
 				<path d="M${x - tick} ${y + h} H${x - 3} M${x} ${y + h + 3} V${y + h + tick}" stroke="#0284c7" stroke-width="1.3"/>
 				<path d="M${x + w + 3} ${y + h} H${x + w + tick} M${x + w} ${y + h + 3} V${y + h + tick}" stroke="#0284c7" stroke-width="1.3"/>
 				<rect x="${x + 6}" y="${y - 17}" width="112" height="15" rx="2" fill="#0284c7"/>
-				<text x="${x + 62}" y="${y - 6.5}" text-anchor="middle" font-size="9" font-weight="600" fill="#ffffff">B4 版心安全裁切线</text>
+				<text x="${x + 62}" y="${y - 6.5}" text-anchor="middle" font-size="9" font-weight="600" fill="#ffffff">B4 Safe Trim Margin</text>
 			</g>`,
 		)
 	}
@@ -200,7 +200,7 @@ export function renderPageSvg(model: PageRenderModel): string {
 				const my = (a[1] + b[1]) / 2
 				axisNodes.push(
 					`<line x1="${a[0].toFixed(1)}" y1="${a[1].toFixed(1)}" x2="${b[0].toFixed(1)}" y2="${b[1].toFixed(1)}" stroke="#d97706" stroke-width="2.6" stroke-dasharray="6 4" marker-end="url(#${model.uid}-arr-w)"/>`,
-					`<g transform="translate(${mx.toFixed(1)} ${my.toFixed(1)})"><rect x="-46" y="-11" width="92" height="22" rx="4" fill="#d97706"/><text y="4" text-anchor="middle" font-size="10" font-weight="700" fill="#ffffff">180° 越轴警告</text></g>`,
+					`<g transform="translate(${mx.toFixed(1)} ${my.toFixed(1)})"><rect x="-46" y="-11" width="92" height="22" rx="4" fill="#d97706"/><text y="4" text-anchor="middle" font-size="10" font-weight="700" fill="#ffffff">180° Axis Warning</text></g>`,
 				)
 			}
 		})

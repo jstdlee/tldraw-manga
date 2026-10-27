@@ -9,12 +9,12 @@ import { cardProps } from './props'
 import { CARD, type MangaCard } from './schema'
 
 const KIND_LABELS: Record<MangaCard['props']['kind'], string> = {
-	character: '角色视觉卡',
-	image: '图像参考卡',
-	story: '剧本文字卡',
-	world: '世界观文字卡',
-	environment: '场景设定卡',
-	note: '分镜文字卡',
+	character: 'Character Sheet',
+	image: 'Visual Reference',
+	story: 'Script Beat Card',
+	world: 'World Rule Card',
+	environment: 'Environment Card',
+	note: 'Storyboard Note',
 }
 
 export class MangaCardUtil extends BaseBoxShapeUtil<MangaCard> {
@@ -26,14 +26,14 @@ export class MangaCardUtil extends BaseBoxShapeUtil<MangaCard> {
 			w: 280,
 			h: 240,
 			kind: 'note',
-			title: '分镜文字设定卡',
+			title: 'Storyboard Reference Card',
 			tag: '',
 			body: '',
 			voice: '',
 			locked: true,
 			imageDataUrl: '',
 			customPrompt: '',
-			aiStatus: '由 Text LLM 驱动',
+			aiStatus: 'Powered by Text LLM',
 		}
 	}
 
@@ -85,7 +85,7 @@ function CardView({ shape }: { shape: MangaCard }) {
 	}
 
 	const handlePolish = async (overridePrompt?: string) => {
-		setBusy('润色中…')
+		setBusy('Polishing...')
 		const result = await polishCardText({
 			kind: shape.props.kind,
 			title,
@@ -100,14 +100,14 @@ function CardView({ shape }: { shape: MangaCard }) {
 			props: {
 				body: result.text,
 				customPrompt: overridePrompt ?? customPrompt,
-				aiStatus: `${result.modelUsed} 已美化`,
+				aiStatus: `${result.modelUsed} Polished`,
 			},
 		})
 		setBusy('')
 	}
 
 	const _handleRegenerate = async () => {
-		setBusy('重生成…')
+		setBusy('Regenerating...')
 		const nextCount = seedCount + 1
 		setSeedCount(nextCount)
 		const result = await regenerateCardText({
@@ -124,14 +124,14 @@ function CardView({ shape }: { shape: MangaCard }) {
 			type: CARD,
 			props: {
 				body: result.text,
-				aiStatus: `${result.modelUsed} 已重新生成`,
+				aiStatus: `${result.modelUsed} Regenerated`,
 			},
 		})
 		setBusy('')
 	}
 
 	const _handleToPanelPrompt = async () => {
-		setBusy('转提示词…')
+		setBusy('Building Prompt...')
 		const result = await cardToPanelPrompt({
 			title,
 			body,
@@ -144,14 +144,14 @@ function CardView({ shape }: { shape: MangaCard }) {
 			type: CARD,
 			props: {
 				body: result.prompt,
-				aiStatus: `${result.modelUsed} 已生成分镜词`,
+				aiStatus: `${result.modelUsed} Prompt Ready`,
 			},
 		})
 		setBusy('')
 	}
 
 	const handleVisionAnalyze = async () => {
-		setBusy('Vision 识图中…')
+		setBusy('Vision Analyzing...')
 		const result = await askVision({
 			imageDataUrl: shape.props.imageDataUrl,
 			title,
@@ -165,14 +165,14 @@ function CardView({ shape }: { shape: MangaCard }) {
 			type: CARD,
 			props: {
 				body: result.analysis,
-				aiStatus: `${result.modelUsed} 识图完成`,
+				aiStatus: `${result.modelUsed} Vision Complete`,
 			},
 		})
 		setBusy('')
 	}
 
 	const handleRedrawImage = async () => {
-		setBusy('AI 生图中…')
+		setBusy('Rendering Art...')
 		const nextCount = seedCount + 1
 		setSeedCount(nextCount)
 		const promptText = `${title} ${shape.props.tag} ${body} ${customPrompt}`.trim()
@@ -184,7 +184,7 @@ function CardView({ shape }: { shape: MangaCard }) {
 			props: {
 				imageDataUrl: remoteUrl || shape.props.imageDataUrl,
 				voice: shape.props.kind === 'image' ? nextVoiceSeed : shape.props.voice,
-				aiStatus: remoteUrl ? 'Image LLM 已重绘图像' : `生图引擎已重绘 (变体#${nextCount})`,
+				aiStatus: remoteUrl ? 'Image LLM Rendered' : `Screentone Engine Rendered (#${nextCount})`,
 			},
 		})
 		setBusy('')
@@ -202,7 +202,7 @@ function CardView({ shape }: { shape: MangaCard }) {
 				type: CARD,
 				props: {
 					imageDataUrl: dataUrl,
-					aiStatus: '已载入本地参考图 · 可点 Vision 反推',
+					aiStatus: 'Loaded local reference image · Ready for Vision analysis',
 				},
 			})
 		}
@@ -211,16 +211,16 @@ function CardView({ shape }: { shape: MangaCard }) {
 
 	const _handleCustomExecute = async () => {
 		const trimmed = customPrompt.trim()
-		if (isImageCard && (trimmed.includes('识图') || trimmed.includes('反推') || trimmed.includes('分析'))) {
+		if (isImageCard && (trimmed.includes('vision') || trimmed.includes('analyze') || trimmed.includes('inspect'))) {
 			await handleVisionAnalyze()
 			return
 		}
-		if (isImageCard && (trimmed.includes('生图') || trimmed.includes('重绘') || trimmed.includes('画'))) {
+		if (isImageCard && (trimmed.includes('render') || trimmed.includes('draw') || trimmed.includes('redraw'))) {
 			await handlePolish(trimmed)
 			await handleRedrawImage()
 			return
 		}
-		await handlePolish(trimmed || '深化漫画镜头张力与细节设定')
+		await handlePolish(trimmed || 'Enhance cinematic tension and visual continuity details')
 	}
 
 	const diff = getCardDiff(shape.id)
@@ -240,9 +240,9 @@ function CardView({ shape }: { shape: MangaCard }) {
 						className="card-lock"
 						onPointerDown={stopEvent}
 						onClick={() => editor.updateShape({ id: shape.id, type: CARD, props: { locked: !shape.props.locked } })}
-						title="锁定/解锁外观一致性标签"
+						title="Toggle appearance consistency lock"
 					>
-						<IconLock /> {shape.props.locked ? '已锁' : '未锁'}
+						<IconLock /> {shape.props.locked ? 'Locked' : 'Unlocked'}
 					</button>
 					<button
 						type="button"
@@ -252,7 +252,7 @@ function CardView({ shape }: { shape: MangaCard }) {
 							stopEvent(e)
 							openCustomContextMenu({ kind: 'card', x: e.clientX, y: e.clientY, cardId: shape.id })
 						}}
-						title="打开设定卡分组菜单 (或直接右键点击卡片)"
+						title="Open Reference Card Menu (or right-click card)"
 					>
 						⋯
 					</button>
@@ -261,7 +261,7 @@ function CardView({ shape }: { shape: MangaCard }) {
 				<input
 					className="card-title"
 					value={title}
-					placeholder="输入卡片标题…"
+					placeholder="Card title..."
 					onChange={(event) => setTitle(event.target.value)}
 					onFocus={() => {
 						focused.current = true
@@ -300,7 +300,7 @@ function CardView({ shape }: { shape: MangaCard }) {
 				<textarea
 					className="card-body"
 					value={body}
-					placeholder={isImageCard ? '图像提示词 / Vision 识图反推描述…' : '输入角色、世界观、剧情或分镜描述…'}
+					placeholder={isImageCard ? 'Visual prompt / Vision analysis notes...' : 'Describe character, world rules, or story beats...'}
 					onChange={(event) => setBody(event.target.value)}
 					onFocus={() => {
 						focused.current = true
@@ -314,18 +314,18 @@ function CardView({ shape }: { shape: MangaCard }) {
 
 				{diff ? (
 					<div className="card-diff-bar" onPointerDown={stopEvent}>
-						<span>已应用 {diff.label}</span>
+						<span>Applied {diff.label}</span>
 						<button type="button" onClick={() => revertCardDiff(editor, shape)}>
-							一键回退原版
+							Revert
 						</button>
 					</div>
 				) : null}
 
 				<div className="card-clean-foot" onPointerDown={stopEvent}>
-					<span className="card-ai-badge">{busy || shape.props.aiStatus || '右键卡片调出 AI 与 Context 绑定菜单'}</span>
+					<span className="card-ai-badge">{busy || shape.props.aiStatus || 'Right-click for AI & Context actions'}</span>
 					{isImageCard ? (
-						<button type="button" className="mini-btn" onClick={() => fileInputRef.current?.click()} title="上传本地参考图">
-							<IconUpload /> 换图
+						<button type="button" className="mini-btn" onClick={() => fileInputRef.current?.click()} title="Upload local reference image">
+							<IconUpload /> Replace
 						</button>
 					) : null}
 				</div>

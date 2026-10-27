@@ -115,10 +115,10 @@ export function inferProsodyStyleFromText(prosody?: string, explicitStyle?: stri
 	if (explicitStyle && explicitStyle.trim()) return normalizeProsodyStyle(explicitStyle)
 	const text = (prosody ?? '').trim()
 	if (!text) return 'pill'
-	if (text.includes('雷霆') || text.includes('怒吼') || text.includes('咆哮') || text.includes('炸')) return 'burst'
-	if (text.includes('叙述') || text.includes('旁白') || text.includes('一字一顿') || text.includes('印')) return 'seal'
-	if (text.includes('冷笑') || text.includes('锋芒') || text.includes('压迫') || text.includes('审视')) return 'slant'
-	if (text.includes('低语') || text.includes('停顿') || text.includes('轻声')) return 'minimal'
+	if (text.includes('thunder') || text.includes('roar') || text.includes('shout') || text.includes('burst')) return 'burst'
+	if (text.includes('narrat') || text.includes('caption') || text.includes('measured') || text.includes('seal')) return 'seal'
+	if (text.includes('sneer') || text.includes('sharp') || text.includes('press') || text.includes('scrutin')) return 'slant'
+	if (text.includes('whisper') || text.includes('pause') || text.includes('soft')) return 'minimal'
 	return 'pill'
 }
 
@@ -239,7 +239,7 @@ export function bubbleMarkup(bubble: BubbleDraw): string {
 			bubble.fillColor && bubble.fillColor.trim() && bubble.fillColor !== '#fffefb'
 				? bubble.fillColor.trim()
 				: '#d6453d'
-		body = `<text x="${(w / 2).toFixed(1)}" y="${(h * 0.72).toFixed(1)}" text-anchor="middle" font-family="Hiragino Sans, PingFang SC, Noto Sans SC, sans-serif" font-size="${font.toFixed(1)}" font-weight="900" fill="${sfxColor}" stroke="#fffefb" stroke-width="5" paint-order="stroke">${escapeXml(bubble.text || '轰！！')}</text>`
+		body = `<text x="${(w / 2).toFixed(1)}" y="${(h * 0.72).toFixed(1)}" text-anchor="middle" font-family="Hiragino Sans, PingFang SC, Noto Sans SC, sans-serif" font-size="${font.toFixed(1)}" font-weight="900" fill="${sfxColor}" stroke="#fffefb" stroke-width="5" paint-order="stroke">${escapeXml(bubble.text || 'BOOM!!')}</text>`
 	} else if (style === 'thought') {
 		body = `${tailPolygon(w, h, bubble.tailX, bubble.tailY, bgFill, stroke)}<ellipse cx="${w / 2}" cy="${h / 2}" rx="${w / 2 - 2}" ry="${h / 2 - 2}" fill="${bgFill}" stroke="${stroke}" stroke-width="${sw}"/><circle cx="${(bubble.tailX * 0.35 + w * 0.2).toFixed(1)}" cy="${(h + 8).toFixed(1)}" r="5" fill="${bgFill}" stroke="${stroke}" stroke-width="2"/><circle cx="${(bubble.tailX * 0.45 + w * 0.12).toFixed(1)}" cy="${(h + 18).toFixed(1)}" r="3" fill="${bgFill}" stroke="${stroke}" stroke-width="1.6"/>`
 	} else {

@@ -119,7 +119,7 @@ function safeFile(root, urlPath) {
 async function complete(body) {
 	const provider = body.provider || 'openai'
 	const key = body.apiKey || keyFor(provider)
-	if (!key && provider !== 'local') return { text: '', error: '未配置 API Key，已自动切换为内置中文离线模型。' }
+	if (!key && provider !== 'local') return { text: '', error: 'No API key configured; automatically fell back to the built-in offline model.' }
 	const system = body.system || ''
 	const user = body.user || ''
 	if (provider === 'gemini') {
@@ -132,7 +132,7 @@ async function complete(body) {
 		})
 		const data = await response.json()
 		const text = data.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('\n') || ''
-		return text ? { text } : { text: '', error: data.error?.message || 'Gemini 没有返回文本' }
+		return text ? { text } : { text: '', error: data.error?.message || 'Gemini returned no text' }
 	}
 	const base = baseFor(provider, body.baseUrl)
 	const response = await fetch(`${base}/chat/completions`, {
@@ -149,14 +149,14 @@ async function complete(body) {
 	})
 	const data = await response.json()
 	const text = data.choices?.[0]?.message?.content || ''
-	return text ? { text } : { text: '', error: data.error?.message || '模型没有返回文本' }
+	return text ? { text } : { text: '', error: data.error?.message || 'The model returned no text' }
 }
 
 async function analyzeVision(body) {
 	const provider = body.provider || 'openai'
 	const key = body.apiKey || keyFor(provider)
-	if (!key && provider !== 'local') return { text: '', error: '未配置视觉模型 API Key，已使用内置 Vision 视觉解析引擎。' }
-	const prompt = body.prompt || '请用中文分析这张漫画/参考图的角色外观特征、服装锚点、镜头景别、光影氛围与分镜构图建议。'
+	if (!key && provider !== 'local') return { text: '', error: 'No Vision API key configured; used the built-in Vision analysis engine.' }
+	const prompt = body.prompt || 'Analyze this manga/reference image: character appearance traits, costume anchors, shot scale, lighting mood, and storyboard composition suggestions.'
 	const imageDataUrl = body.imageDataUrl || ''
 	if (provider === 'gemini') {
 		const model = body.visionModel || body.model || 'gemini-2.5-flash'
@@ -173,7 +173,7 @@ async function analyzeVision(body) {
 		})
 		const data = await response.json()
 		const text = data.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('\n') || ''
-		return text ? { text } : { text: '', error: data.error?.message || 'Gemini Vision 未返回解析结果' }
+		return text ? { text } : { text: '', error: data.error?.message || 'Gemini Vision returned no analysis' }
 	}
 	const base = baseFor(provider, body.baseUrl)
 	const content = [{ type: 'text', text: prompt }]
@@ -191,14 +191,14 @@ async function analyzeVision(body) {
 	})
 	const data = await response.json()
 	const text = data.choices?.[0]?.message?.content || ''
-	return text ? { text } : { text: '', error: data.error?.message || 'Vision 模型未返回解析文本' }
+	return text ? { text } : { text: '', error: data.error?.message || 'The Vision model returned no analysis text' }
 }
 
 async function drawRemote(body) {
 	const provider = body.provider || 'openai'
 	const key = body.apiKey || keyFor(provider)
 	const prompt = body.prompt || ''
-	if (!key && provider !== 'local') return { dataUrl: '', error: '未配置生图 API Key，已使用内置网点手绘引擎渲染。' }
+	if (!key && provider !== 'local') return { dataUrl: '', error: 'No image-generation API key configured; rendered with the built-in screentone hand-drawn engine.' }
 	if (provider === 'gemini') {
 		const model = body.imageModel || 'gemini-2.5-flash-image'
 		const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`, {
@@ -212,7 +212,7 @@ async function drawRemote(body) {
 		})
 		const data = await response.json()
 		const inline = data.candidates?.[0]?.content?.parts?.find((part) => part.inlineData?.data)?.inlineData
-		if (!inline?.data) return { dataUrl: '', error: data.error?.message || 'Gemini 没有返回图像' }
+		if (!inline?.data) return { dataUrl: '', error: data.error?.message || 'Gemini returned no image' }
 		return { dataUrl: `data:${inline.mimeType || 'image/png'};base64,${inline.data}` }
 	}
 	const base = baseFor(provider, body.baseUrl)
@@ -230,7 +230,7 @@ async function drawRemote(body) {
 	const first = data.data?.[0]
 	if (first?.b64_json) return { dataUrl: `data:image/png;base64,${first.b64_json}` }
 	if (first?.url) return { dataUrl: first.url }
-	return { dataUrl: '', error: data.error?.message || '图像接口没有返回数据' }
+	return { dataUrl: '', error: data.error?.message || 'The image endpoint returned no data' }
 }
 
 function keyFor(provider) {

@@ -199,7 +199,7 @@ export function compileBook(editor: Editor, filter?: { chapters?: TLShapeId[]; p
 			reference: '3-view',
 		}))
 	const worldCard = cards.find((card) => card.props.kind === 'world')
-	const style = bible?.props.stylePreset || '少年网点'
+	const style = bible?.props.stylePreset || 'Shonen Screentone'
 	const locks = characters.map((character) => `${character.tag} locked: ${character.appearance}`).join(' ')
 	const selectedChapters = filter?.chapters?.length ? chapters.filter((chapter) => filter.chapters?.includes(chapter.id)) : chapters
 	const chapterBlocks = (selectedChapters.length ? selectedChapters : chapters).map((chapter) => {
@@ -229,7 +229,7 @@ export function compileBook(editor: Editor, filter?: { chapters?: TLShapeId[]; p
 			chapterBlocks.push({
 				chapter: {
 					...page,
-					props: { ...page.props, role: 'chapter', title: '未分章', chapterIndex: page.props.chapterIndex },
+					props: { ...page.props, role: 'chapter', title: 'Unassigned', chapterIndex: page.props.chapterIndex },
 				} as MangaContainer,
 				environment: page.props.environment,
 				lighting: page.props.lighting || 'hard-noon',
@@ -370,7 +370,7 @@ export function compileBook(editor: Editor, filter?: { chapters?: TLShapeId[]; p
 		}))
 	const spec: ComicsSpec = {
 		version: 'comics-spec/1',
-		title: bible?.props.title || '未命名漫画',
+		title: bible?.props.title || 'Untitled Manga',
 		compiledAt: new Date().toISOString(),
 		bible: {
 			story: bible?.props.story || '',
@@ -378,7 +378,7 @@ export function compileBook(editor: Editor, filter?: { chapters?: TLShapeId[]; p
 			stylePreset: style,
 			characters,
 		},
-		style: { preset: style, ink: '黑墨线', tone: '灰网点，局部红' },
+		style: { preset: style, ink: 'Black ink lines', tone: 'Gray screentone with spot red' },
 		chapters: specChapters,
 	}
 	return {

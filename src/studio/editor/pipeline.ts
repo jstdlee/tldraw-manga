@@ -64,7 +64,7 @@ export function revertCardDiff(editor: Editor, card: MangaCard): void {
 	editor.updateShape<MangaCard>({
 		id: card.id,
 		type: CARD,
-		props: { body: snap.prevBody, aiStatus: '已回退至改写前版本' },
+		props: { body: snap.prevBody, aiStatus: 'Reverted to previous version' },
 	})
 	cardDiffStore.delete(card.id)
 }
@@ -87,7 +87,7 @@ export function revertPageDiff(editor: Editor, page: MangaContainer): void {
 		props: {
 			panelsJson: snap.prevPanelsJson,
 			scriptJson: snap.prevScriptJson,
-			subtitle: `${metas.length} 格 · 已回退原分镜`,
+			subtitle: `${metas.length} Panels · Reverted`,
 		},
 	})
 	spawnPageBubbles(editor, page.id, layout, beats, metas)
@@ -110,8 +110,8 @@ export function readCharacterLocks(editor: Editor): string {
 		.filter((shape): shape is MangaCard => shape.type === CARD && (shape.props.kind === 'character' || shape.props.kind === 'image'))
 	const tags = cards.filter((card) => card.props.locked && card.props.tag).map((card) => card.props.tag)
 	const unique = Array.from(new Set(tags))
-	if (unique.length) return `${unique.join(' ')} 外观锁定`
-	return '角色与资产外观锁定'
+	if (unique.length) return `${unique.join(' ')} Locked`
+	return 'Character & Asset Consistency Locked'
 }
 
 /**
@@ -120,9 +120,9 @@ export function readCharacterLocks(editor: Editor): string {
  */
 export function applyUniversalFiveStagePreset(editor: Editor, presetId: string): string {
 	const book = universalPresetToBook(presetId)
-	if (!book) return `未找到通用五阶段预设「${presetId}」`
+	if (!book) return `Preset not found: ${presetId}`
 	spawnBook(editor, book)
-	return `已载入通用五阶段预设「${book.title}」并按 JEV 引擎重建画布分镜`
+	return `Loaded preset "${book.title}" and compiled JEV storyboard`
 }
 
 /**
@@ -132,7 +132,7 @@ export function applyUniversalFiveStagePreset(editor: Editor, presetId: string):
  */
 export function runJevFiveStageCompile(editor: Editor): string {
 	const pages = selectedPages(editor)
-	if (!pages.length) return '请先选择要进行 JEV 五阶段编译的分镜页'
+	if (!pages.length) return 'Select a page to run JEV 5-Stage compilation'
 	let totalPanels = 0
 	let minScore = 1
 	let axisOk = true
@@ -185,7 +185,7 @@ export function runJevFiveStageCompile(editor: Editor): string {
 				showBubblesLayer: page.props.showBubblesLayer ?? true,
 				showProsodyLayer: page.props.showProsodyLayer ?? true,
 				showSfxLayer: page.props.showSfxLayer ?? true,
-				subtitle: `${layout.panels.length} 格 · JEV 程式化锁定 ${Math.round(finalScore * 100)} 分 · ${poll.axisAuditPass ? '180°轴线连贯' : '轴线已校准'}`,
+				subtitle: `${layout.panels.length} Panels · JEV ${Math.round(finalScore * 100)} · ${poll.axisAuditPass ? '180° Axis OK' : 'Axis Calibrated'}`,
 			},
 		})
 		// Stage 5: Spawn anti-occlusion vector bubbles & independent prosody layer
@@ -194,245 +194,83 @@ export function runJevFiveStageCompile(editor: Editor): string {
 		minScore = Math.min(minScore, finalScore)
 		axisOk = axisOk && poll.axisAuditPass
 	}
-	return `JEV 五阶段程式化编译完成：${pages.length} 页 / ${totalPanels} 格 · 14因子机位+张力耦合版式已锁定（${Math.round(minScore * 100)} 分）· 独立气泡与语气图层就绪`
+	return `JEV 5-Stage compilation complete: ${pages.length} pages / ${totalPanels} panels · Score ${Math.round(minScore * 100)}`
 }
 
 export function spawnBook(editor: Editor, book: BookDraft): void {
 	const existing = [...editor.getCurrentPageShapeIds()]
 	if (existing.length) editor.deleteShapes(existing)
 
-	const bibleId = createShapeId('bible')
-	editor.createShape<MangaContainer>({
-		id: bibleId,
-		type: CONTAINER,
-		x: 40,
-		y: 60,
-		props: {
-			w: 580,
-			h: 920,
-			role: 'bible',
-			title: `${book.title} · 设定母容器`,
-			subtitle: book.subtitle,
-			story: book.story,
-			worldRules: book.world,
-			stylePreset: book.stylePreset,
-			mood: '盐风与夕照',
-			environment: 'boardwalk',
-			lighting: 'hard-noon',
-			chapterIndex: 0,
-			pageIndex: 0,
-			scenario: 'establishing',
-			layoutPreset: 'std',
-			dialogueDensity: 0.45,
-			targetPanels: 4,
-			seed: 'bible',
-			genomeJson: '',
-			panelsJson: '[]',
-			scriptJson: '[]',
-			score: 0,
-			reasonsJson: '[]',
-			showFlow: false,
-			selectedPanel: -1,
-		},
+	// Page-first workspace: the production unit is the Page. Rather than dumping a
+	// cluttered Story Bible, Chapter container, prompt node and six scattered
+	// reference cards across the canvas, seed a clean, spacious 2-page horizontal
+	// pipeline (P1 -> P2). All reference assets, world rules and the style preset
+	// live inside the Page Context (contextJson) and are surfaced in the Page
+	// Context Inspector and the Reference Assets drawer -- never as loose shapes.
+	const chapter = book.chapters[0]
+	const firstPage: PageDraft = chapter?.pages[0] ?? {
+		scenario: 'establishing',
+		layoutPreset: 'std',
+		dialogueDensity: 0.45,
+		targetPanels: 4,
+		seed: `${book.stylePreset || 'page'}-c1-p1`,
+		showFlow: false,
+		beats: [],
+	}
+
+	// Build the locked reference-asset tag set from the book's cast plus any
+	// character / prop / environment tags referenced by the opening page beats.
+	const castTags = book.characters.map((character) => character.tag).filter(Boolean)
+	const beatTags = firstPage.beats
+		.flatMap((beat) => [...(beat.who ?? []), ...(beat.assetRefs ?? [])])
+		.filter(Boolean)
+	const isNoir = book.stylePreset === 'seinen_noir' || book.title.toLowerCase().includes('interrogation')
+	const referenceTags = isNoir ? ['#prop_pocket_watch', '#env_interrogation_room'] : []
+	const lockedAssetTags = Array.from(new Set([...castTags, ...beatTags, ...referenceTags]))
+
+	const sceneTitle = (chapter?.title || book.title).split(/[·:]/)[0].trim() || 'Opening Scene'
+
+	// Page 1 -- top-left origin, clean and focused.
+	const page1Id = createPageShape(editor, firstPage, {
+		id: 'page-c1-p1',
+		x: 80,
+		y: 80,
+		chapterIndex: 1,
+		pageIndex: 1,
+		title: `Ch.1 · P1 · ${sceneTitle}`,
+		environment: chapter?.environment ?? 'boardwalk',
+		lighting: chapter?.lighting ?? 'hard-noon',
+		stylePreset: book.stylePreset,
+		lockedAssetTags,
+		worldRules: book.world,
+		prevPageSummary: `Opening Page (P1) of "${book.title}". Context, ${lockedAssetTags.length} locked reference assets, world rules and the style preset are injected from the story bible.`,
+		pageDirective: `${sceneTitle}: establish the scene, lock the ${lockedAssetTags.length} reference assets and the 180° camera axis, and land a page-turn hook on the final panel to hand off into P2.`,
 	})
 
-	editor.createShape<MangaCard>({
-		id: createShapeId('story-card'),
-		type: CARD,
-		x: 62,
-		y: 120,
-		props: {
-			w: 262,
-			h: 224,
-			kind: 'story',
-			title: '故事原稿 · 核心梗概',
-			tag: '剧情主线',
-			body: book.story,
-			voice: '',
-			locked: true,
-			imageDataUrl: '',
-			customPrompt: '',
-			aiStatus: 'Text LLM 就绪',
-		},
-	})
+	// Page 2 -- automatically extended to the right of Page 1, inheriting the full
+	// page context (locked assets, 180° axis, world rules). This immediately shows
+	// the P1 -> P2 page pipeline with inherited context in action.
+	try {
+		extendNextPageFromPage(editor, page1Id)
+	} catch {
+		// In headless / mock environments the extension step may be unavailable;
+		// Page 1 still stands as a valid single-page pipeline root.
+	}
 
-	editor.createShape<MangaCard>({
-		id: createShapeId('world-card'),
-		type: CARD,
-		x: 336,
-		y: 120,
-		props: {
-			w: 262,
-			h: 224,
-			kind: 'world',
-			title: '世界观与画风规范',
-			tag: book.stylePreset,
-			body: book.world,
-			voice: '',
-			locked: true,
-			imageDataUrl: '',
-			customPrompt: '',
-			aiStatus: 'Text LLM 就绪',
-		},
-	})
-
-	book.characters.forEach((character, index) => {
-		const col = index % 2
-		const row = Math.floor(index / 2)
-		editor.createShape<MangaCard>({
-			id: createShapeId(`char-${character.tag.replace('@', '')}`),
-			type: CARD,
-			x: 62 + col * 274,
-			y: 360 + row * 268,
-			props: {
-				w: index === 2 ? 536 : 262,
-				h: 252,
-				kind: 'character',
-				title: character.name,
-				tag: character.tag,
-				body: `${character.appearance}｜台词气质：${character.voice}`,
-				voice: character.voice,
-				locked: character.locked,
-				imageDataUrl: character.imageDataUrl ?? '',
-				customPrompt: '',
-				aiStatus: 'Vision + Image 就绪',
-			},
-		})
-	})
-
-	const isNoirBook = book.stylePreset === 'seinen_noir' || book.title.includes('审讯')
-	const refCard1Id = createShapeId('img-card-boardwalk')
-	editor.createShape<MangaCard>({
-		id: refCard1Id,
-		type: CARD,
-		x: 40,
-		y: 1010,
-		props: {
-			w: 280,
-			h: 276,
-			kind: 'image',
-			title: isNoirBook ? '关键证物：裂纹银壳怀表 (23:17)' : '第一话参考图：防波堤正午逆光',
-			tag: isNoirBook ? '#prop_pocket_watch' : '@boardwalk',
-			body: isNoirBook
-				? '死者遗留的裂纹银壳怀表，蓝钢指针死死卡在 23:17，表盖内侧留有左撇子反手调表的反向刮痕与暗格底片。'
-				: '正午硬光下的海岸防波堤，18mm 广角透视，海鸥俯冲速度线与红白薯条盒形成视觉焦点。',
-			voice: 'ref-boardwalk-1',
-			locked: true,
-			imageDataUrl: isNoirBook ? '/assets/interrogation/asset_prop_pocket_watch.jpg' : '',
-			customPrompt: isNoirBook ? '微距银质裂纹与23:17指针反光' : '强化海面反光网点与俯冲张力',
-			aiStatus: 'Vision + Image 驱动',
-		},
-	})
-
-	const refCard2Id = createShapeId('img-card-rooftop')
-	editor.createShape<MangaCard>({
-		id: refCard2Id,
-		type: CARD,
-		x: 340,
-		y: 1010,
-		props: {
-			w: 280,
-			h: 276,
-			kind: 'image',
-			title: isNoirBook ? '场景拓扑：旧港警署三楼审讯室' : '第二话参考图：夕照屋顶剪影',
-			tag: isNoirBook ? '#env_interrogation_room' : '@rooftop',
-			body: isNoirBook
-				? '暴雨冲刷百叶窗、摇晃单盏吊灯、冰冷不锈钢审讯桌与单向玻璃观察窗，严格遵守180°审讯轴线。'
-				: '旧商店街屋顶铁丝网与水塔长影，暮色逆光勾勒一人一鸥对峙轮廓，保留右上角对白留白区。',
-			voice: 'ref-rooftop-1',
-			locked: true,
-			imageDataUrl: isNoirBook ? '/assets/interrogation/asset_env_interrogation_room.jpg' : '',
-			customPrompt: isNoirBook ? '百叶窗雨夜条纹投影与伦勃朗侧逆光' : '增加黄昏渐变网点与胶片颗粒感',
-			aiStatus: 'Vision + Image 驱动',
-		},
-	})
-
-	book.chapters.forEach((chapter, chapterIdx) => {
-		const chapterId = createShapeId(`chapter-${chapterIdx + 1}`)
-		const baseY = 60 + chapterIdx * 780
-		editor.createShape<MangaContainer>({
-			id: chapterId,
-			type: CONTAINER,
-			x: 680,
-			y: baseY,
-			props: {
-				w: 290,
-				h: 390,
-				role: 'chapter',
-				title: chapter.title,
-				subtitle: `${ENV_LABELS[chapter.environment] ?? chapter.environment} · ${LIGHT_LABELS[chapter.lighting] ?? chapter.lighting}`,
-				story: '',
-				worldRules: '',
-				stylePreset: book.stylePreset,
-				mood: chapter.mood,
-				environment: chapter.environment,
-				lighting: chapter.lighting,
-				chapterIndex: chapterIdx + 1,
-				pageIndex: 0,
-				scenario: 'establishing',
-				layoutPreset: 'std',
-				dialogueDensity: 0.45,
-				targetPanels: 4,
-				seed: `chapter-${chapterIdx + 1}`,
-				genomeJson: '',
-				panelsJson: '[]',
-				scriptJson: '[]',
-				score: 0,
-				reasonsJson: '[]',
-				showFlow: false,
-				selectedPanel: -1,
-			},
-		})
-		editor.createShape<MangaCard>({
-			id: createShapeId(`env-${chapterIdx + 1}`),
-			type: CARD,
-			x: 698,
-			y: baseY + 64,
-			props: {
-				w: 254,
-				h: 248,
-				kind: 'environment',
-				title: ENV_LABELS[chapter.environment] ?? chapter.environment,
-				tag: LIGHT_LABELS[chapter.lighting] ?? chapter.lighting,
-				body: `本章情绪：${chapter.mood}。光线：${LIGHT_LABELS[chapter.lighting] ?? chapter.lighting}。分镜留白优先右上角。`,
-				voice: '',
-				locked: false,
-				imageDataUrl: '',
-				customPrompt: '',
-				aiStatus: 'Text LLM 就绪',
-			},
-		})
-		wire(editor, bibleId, chapterId, 620, 260 + chapterIdx * 120, 680, baseY + 120)
-		wire(editor, chapterIdx === 0 ? refCard1Id : refCard2Id, chapterId, 600, 1120, 680, baseY + 260)
-
-		const count = chapter.pages.length
-		chapter.pages.forEach((page, pos) => {
-			const pageNumber = pos + 1
-			const rtlSlot = count - 1 - pos
-			const pageX = 1040 + rtlSlot * 520
-			const pageId = createPageShape(editor, page, {
-				id: `page-c${chapterIdx + 1}-p${pageNumber}`,
-				x: pageX,
-				y: baseY,
-				chapterIndex: chapterIdx + 1,
-				pageIndex: pageNumber,
-				title: `第${chapterIdx + 1}话 · P${pageNumber}`,
-				environment: chapter.environment,
-				lighting: chapter.lighting,
-				stylePreset: book.stylePreset,
-			})
-			wire(editor, chapterId, pageId, 970, baseY + 140 + pos * 40, pageX, baseY + 140)
-		})
-	})
-
-	editor.zoomToFit({ animation: { duration: 0 } })
+	// Start the user at the pipeline root and frame the whole pipeline cleanly.
+	try {
+		editor.select(page1Id)
+		editor.zoomToFit({ animation: { duration: 0 } })
+	} catch {
+		// Ignore selection / zoom errors in headless / mock environments.
+	}
 }
 
 export function createTextCardOnCanvas(
 	editor: Editor,
 	kind: Exclude<CardKind, 'image' | 'character'> = 'note',
-	title = '新建文字设定卡',
-	body = '在此输入角色小传、场景规则或单场戏剧情。点击下方「AI 润色美化」或输入自定义提示词即可由 Text LLM 扩写。',
+	title = 'New Text Reference Card',
+	body = 'Enter character bio, environment rules, or scene beats here. Use AI Polish to expand with Text LLM.',
 ): TLShapeId {
 	const center = editor.getViewportPageBounds().center
 	const id = createShapeId(`text-card-${Date.now()}`)
@@ -446,13 +284,13 @@ export function createTextCardOnCanvas(
 			h: 240,
 			kind,
 			title,
-			tag: kind === 'world' ? '世界观' : kind === 'story' ? '剧情段' : '设定卡',
+			tag: kind === 'world' ? 'World' : kind === 'story' ? 'Story' : 'Ref',
 			body,
 			voice: '',
 			locked: false,
 			imageDataUrl: '',
 			customPrompt: '',
-			aiStatus: '由 Text LLM 驱动',
+			aiStatus: 'Powered by Text LLM',
 		},
 	})
 	editor.select(id)
@@ -462,9 +300,9 @@ export function createTextCardOnCanvas(
 export function createImageCardOnCanvas(
 	editor: Editor,
 	kind: 'image' | 'character' = 'image',
-	title = '新建视觉参考图卡',
+	title = 'New Visual Reference Card',
 	tag = '@boardwalk',
-	body = '海岸防波堤仰拍参考图，黑白G笔浓墨线配60L灰网点，右上角留出对白气泡安全区。可点「Vision 反推」或「AI 重绘」。',
+	body = 'Low-angle coastal breakwater reference, monochrome G-pen ink with 60L screentone and top-right safe balloon zone.',
 ): TLShapeId {
 	const center = editor.getViewportPageBounds().center
 	const id = createShapeId(`img-card-${Date.now()}`)
@@ -484,7 +322,7 @@ export function createImageCardOnCanvas(
 			locked: true,
 			imageDataUrl: '',
 			customPrompt: '',
-			aiStatus: 'Vision + Image 驱动',
+			aiStatus: 'Powered by Vision + Image',
 		},
 	})
 	editor.select(id)
@@ -504,6 +342,14 @@ function createPageShape(
 		environment: string
 		lighting: string
 		stylePreset: string
+		// Optional book-level context overrides. When seeding the clean 2-page
+		// pipeline these carry the story bible's locked reference-asset tags, world
+		// rules and page directive straight into the page context (contextJson) so
+		// nothing is dumped onto the canvas as scattered cards.
+		lockedAssetTags?: string[]
+		worldRules?: string
+		prevPageSummary?: string
+		pageDirective?: string
 	},
 ): TLShapeId {
 	const stage3 = compileTensionCoupledLayout(draft.seed, draft.beats, draft.scenario, draft.layoutPreset)
@@ -518,23 +364,32 @@ function createPageShape(
 	)
 	const lastBeat = beats[beats.length - 1]
 	const lastMeta = metas[metas.length - 1]
+	const mergedLockedTags = Array.from(new Set([...(info.lockedAssetTags ?? []), ...initialTags]))
 	const initialCtx: PagePipelineContext = {
 		inheritedFromPageIndex: info.pageIndex > 1 ? info.pageIndex - 1 : undefined,
 		stylePreset: info.stylePreset,
 		environment: info.environment,
 		lighting: info.lighting,
-		worldRules: info.stylePreset === 'seinen_noir'
-			? '浦泽直树式硬派青年漫黑白灰蓝冷调 + 伦勃朗 50% 半脸明暗分割 + 百叶窗雨夜条纹投影 + 180°审讯轴线连贯'
-			: 'G笔主线 + 60L灰网点 + 右上角对白留白安全区',
-		lockedAssetTags: initialTags.length ? initialTags : ['@lu_chen', '@lin_ye', '@shen_mo', '#prop_pocket_watch', '#env_interrogation_room'],
-		prevPageSummary: info.pageIndex === 1
-			? '开篇起始页（P1）：由全局故事母容器与锁定角色/道具资产卡直接注入初始上下文。'
-			: `承接第 ${info.pageIndex - 1} 页分镜叙事与镜头轴线。`,
+		worldRules: info.worldRules?.trim()
+			? info.worldRules
+			: info.stylePreset === 'seinen_noir'
+				? 'Hardboiled seinen monochrome slate-blue palette + 50% Rembrandt split lighting + venetian-blind rain shadows + 180° axis continuity'
+				: 'G-pen linework + 60L grey screentone + top-right balloon negative space',
+		lockedAssetTags: mergedLockedTags.length
+			? mergedLockedTags
+			: ['@lu_chen', '@lin_ye', '@shen_mo', '#prop_pocket_watch', '#env_interrogation_room'],
+		prevPageSummary: info.prevPageSummary?.trim()
+			? info.prevPageSummary
+			: info.pageIndex === 1
+				? 'Opening Page (P1): Initial context injected from story bible and locked character/prop reference assets.'
+				: `Continues narrative beats and 180° camera axis from Page ${info.pageIndex - 1}.`,
 		prevExitShot: lastMeta?.shot ?? lastBeat?.shot ?? 'CU',
 		prevExitAngle: lastMeta?.angle ?? lastBeat?.angle ?? 'eye',
 		prevExitEyeline: (lastMeta?.eyeline ?? lastBeat?.eyeline ?? [-22, 2]) as [number, number],
 		prevExitTension: Number((lastBeat?.tension ?? 0.85).toFixed(2)),
-		pageDirective: `${info.title}：围绕 ${draft.scenario} 情绪推进分镜节拍，末格制造翻页悬念钩子。`,
+		pageDirective: info.pageDirective?.trim()
+			? info.pageDirective
+			: `${info.title}: Advance ${draft.scenario} pacing beats and land a page-turn hook on the final panel.`,
 	}
 	editor.createShape<MangaContainer>({
 		id: pageId,
@@ -546,7 +401,7 @@ function createPageShape(
 			h: PAGE_H,
 			role: 'page',
 			title: info.title,
-			subtitle: `${layout.panels.length} 格 · 评分 ${Math.round(stage3.score * 100)}`,
+			subtitle: `${layout.panels.length} Panels · JEV ${Math.round(stage3.score * 100)}`,
 			story: formatBeatsToScriptText(beats),
 			worldRules: initialCtx.worldRules,
 			stylePreset: info.stylePreset,
@@ -694,7 +549,7 @@ export function applyLayoutChoice(
 		type: CONTAINER,
 		props: {
 			seed: choice.seed,
-			subtitle: `${layout.panels.length} 格 · 评分 ${Math.round(choice.score * 100)}`,
+			subtitle: `${layout.panels.length} Panels · JEV ${Math.round(choice.score * 100)}`,
 			genomeJson: JSON.stringify(layout.genome),
 			panelsJson: JSON.stringify(refreshAspects(metas, layout.panels, choice.seed)),
 			scriptJson: JSON.stringify(beats),
@@ -759,7 +614,7 @@ export function updatePageParametric(
 				reasons: best.reasons,
 			})
 		}
-		return `已更新版式几何参数并重算最高分排布（${Math.round(best.score * 100)} 分）`
+		return `Updated layout geometry and recomputed optimal topology (JEV ${Math.round(best.score * 100)})`
 	}
 
 	const rawGenome = readJson(page.props.genomeJson, generate(page.props.seed, config).genome)
@@ -774,7 +629,7 @@ export function updatePageParametric(
 			reasonsJson: JSON.stringify(judged.reasons),
 		},
 	})
-	return '已更新原稿框线与安全参考线显示'
+	return 'Updated manuscript border and guide visibility'
 }
 
 export function applyEditorialRemedyOnPage(
@@ -807,7 +662,7 @@ export function applyEditorialRemedyOnPage(
 		score: judged.score,
 		reasons: judged.reasons,
 	})
-	return `已执行主编诊断修复「${remedy.actionLabel}」· 综合评分提升至 ${Math.round(judged.score * 100)} 分`
+	return `Applied layout remedy "${remedy.actionLabel}" · JEV score ${Math.round(judged.score * 100)}`
 }
 
 export function applyEmotionStrategyOnPage(
@@ -838,7 +693,7 @@ export function applyEmotionStrategyOnPage(
 			shot: isLastHook && scenario === 'climax' ? ('ECU' as const) : beat.shot,
 			angle: scenario === 'action' || scenario === 'tension' ? ('low' as const) : beat.angle,
 			beat: isPreClimax
-				? `${beat.beat.replace(/（.*）$/, '')}（高潮前无声留白静帧）`
+				? `${beat.beat} (Silent Ma Beat)`
 				: `${beat.beat.replace(/【.*】$/, '')}【${tip.label}】`,
 		}
 	})
@@ -852,7 +707,7 @@ export function applyEmotionStrategyOnPage(
 			layoutPreset: tip.recommendedPreset,
 			mood: serializePageParams(nextOverrides),
 			seed: best.seed,
-			subtitle: `${layout.panels.length} 格 · ${tip.label} · 评分 ${Math.round(best.score * 100)}`,
+			subtitle: `${layout.panels.length} Panels · ${tip.label} · JEV ${Math.round(best.score * 100)}`,
 			genomeJson: JSON.stringify(layout.genome),
 			panelsJson: JSON.stringify(metas),
 			scriptJson: JSON.stringify(beats),
@@ -861,7 +716,7 @@ export function applyEmotionStrategyOnPage(
 		},
 	})
 	spawnPageBubbles(editor, page.id, layout, beats, metas)
-	return `已应用「${tip.label}」分镜锦囊：${tip.beatRule}`
+	return `Applied director preset "${tip.label}": ${tip.beatRule}`
 }
 
 export function toggleSilentPanelOnPage(
@@ -875,15 +730,15 @@ export function toggleSilentPanelOnPage(
 	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
 	const beats = fitBeats(readJson<Beat[]>(page.props.scriptJson, []), layout.panels.length)
 	const targetMeta = metas[panelIndex]
-	if (!targetMeta) return '未找到目标分镜格'
+	if (!targetMeta) return 'Target panel not found'
 
 	const nextSilent = !targetMeta.silent
 	metas[panelIndex] = {
 		...targetMeta,
 		silent: nextSilent,
 		beat: nextSilent
-			? `${targetMeta.beat.replace(/（无声留白静帧）$/, '')}（无声留白静帧）`
-			: targetMeta.beat.replace(/（无声留白静帧）$/, ''),
+			? `${targetMeta.beat.replace(/ \(Silent Ma Beat\)$/, '')} (Silent Ma Beat)`
+			: targetMeta.beat.replace(/ \(Silent Ma Beat\)$/, ''),
 	}
 	if (beats[panelIndex]) {
 		beats[panelIndex] = {
@@ -902,8 +757,8 @@ export function toggleSilentPanelOnPage(
 	})
 	spawnPageBubbles(editor, page.id, layout, beats, metas)
 	return nextSilent
-		? `第 ${panelIndex + 1} 格已设为「无声留白静帧」，自动清空对白气泡并注入留白提示词`
-		: `第 ${panelIndex + 1} 格已恢复对白模式`
+		? `Panel #${panelIndex + 1} set to Silent Ma Beat (dialogue hidden)`
+		: `Panel #${panelIndex + 1} restored to dialogue mode`
 }
 
 export function togglePanelBleedOnPage(
@@ -924,8 +779,8 @@ export function togglePanelBleedOnPage(
 		score: judged.score,
 		reasons: judged.reasons,
 	})
-	const edgeLabel = { bT: '上出血', bB: '下出血', bL: '左出血', bR: '右出血' }[edge]
-	return `已切换第 ${panelIndex + 1} 格「${edgeLabel}」破框状态`
+	const edgeLabel = { bT: 'Top Bleed', bB: 'Bottom Bleed', bL: 'Left Bleed', bR: 'Right Bleed' }[edge]
+	return `Toggled ${edgeLabel} on Panel #${panelIndex + 1}`
 }
 
 export function togglePanelNestOnPage(
@@ -945,7 +800,7 @@ export function togglePanelNestOnPage(
 		score: judged.score,
 		reasons: judged.reasons,
 	})
-	return `已切换第 ${panelIndex + 1} 格纵切子分格嵌套（当前共 ${layout.panels.length} 格）`
+	return `Toggled subsplit on Panel #${panelIndex + 1} (${layout.panels.length} panels total)`
 }
 
 export function applyOpticsToPanel(
@@ -956,7 +811,7 @@ export function applyOpticsToPanel(
 ): string {
 	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
 	const current = metas[panelIndex]
-	if (!current) return '未找到选中分镜格'
+	if (!current) return 'No selected panel found'
 
 	const baseOpt = defaultOpticsForMeta(current)
 	const mergedOpt = {
@@ -981,7 +836,7 @@ export function applyOpticsToPanel(
 		type: CONTAINER,
 		props: { panelsJson: JSON.stringify(metas) },
 	})
-	return `第 ${panelIndex + 1} 格光学镜头：${mergedOpt.focalMm}mm (等效 ${computed.eqFocalMm}mm) · f/${mergedOpt.fStop} · 自动推导为 ${computed.shotLabelZh}`
+	return `Panel #${panelIndex + 1} optics: ${mergedOpt.focalMm}mm (eq ${computed.eqFocalMm}mm) · f/${mergedOpt.fStop} · ${computed.shotLabelZh}`
 }
 
 export function addBubbleToPage(
@@ -989,7 +844,7 @@ export function addBubbleToPage(
 	page: MangaContainer,
 	panelIndex: number,
 	style: BubbleStyle = 'speech',
-	text = '新台词内容',
+	text = 'New dialogue line...',
 	prosody = '',
 	prosodyStyle: ProsodyStyle = 'pill',
 ): TLShapeId | undefined {
@@ -1043,9 +898,9 @@ export function addStandaloneProsodyToPage(
 	editor: Editor,
 	page: MangaContainer,
 	panelIndex = 0,
-	prosodyText = '冷笑审视',
+	prosodyText = 'Cold Scrutinizing',
 	prosodyStyle: ProsodyStyle = 'seal',
-	sfxText = '咔哒！',
+	sfxText = 'CLACK!',
 ): TLShapeId | undefined {
 	return addBubbleToPage(editor, page, panelIndex, 'sfx', sfxText, prosodyText, prosodyStyle)
 }
@@ -1075,7 +930,7 @@ export function fillRealInterrogationArtworkOnPage(editor: Editor, page: MangaCo
 		type: CONTAINER,
 		props: { panelsJson: JSON.stringify(updated) },
 	})
-	return `已将 ${updated.length} 张真实 AI 分镜原画载入当前页单元格（可直接拖拽平移与滚轮缩放）`
+	return `Loaded ${updated.length} panel illustrations into current page (drag to pan, scroll to zoom)`
 }
 
 export function toggleAllFlow(editor: Editor): boolean {
@@ -1099,22 +954,22 @@ export async function polishPageWithAi(editor: Editor, customPrompt?: string): P
 		pageDiffStore.set(page.id, {
 			prevPanelsJson: page.props.panelsJson,
 			prevScriptJson: page.props.scriptJson,
-			summary: customPrompt || 'AI 导演润色分镜与台词',
+			summary: customPrompt || 'AI Director Polish',
 		})
 		const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
 		const beats = readJson<Beat[]>(page.props.scriptJson, [])
-		const suffix = customPrompt ? `（${customPrompt}）` : '（光影网点强化）'
+		const suffix = customPrompt ? ` (${customPrompt})` : ' (Chiaroscuro & Screentone Polish)'
 		const updatedMetas = metas.map((meta, idx) => ({
 			...meta,
 			prevBeat: meta.beat,
-			beat: meta.beat.includes('【AI') ? meta.beat : `${meta.beat} 【AI 镜头润色#${idx + 1}${suffix}】`,
+			beat: meta.beat.includes('[AI') ? meta.beat : `${meta.beat} [AI Polish #${idx + 1}${suffix}]`,
 		}))
 		editor.updateShape<MangaContainer>({
 			id: page.id,
 			type: CONTAINER,
 			props: {
 				panelsJson: JSON.stringify(updatedMetas),
-				subtitle: `${updatedMetas.length} 格 · AI 已润色分镜`,
+				subtitle: `${updatedMetas.length} Panels · AI Polished`,
 			},
 		})
 		const bubbles = editor
@@ -1126,27 +981,27 @@ export async function polishPageWithAi(editor: Editor, customPrompt?: string): P
 				editor.updateShape<MangaBubble>({
 					id: bubble.id,
 					type: BUBBLE,
-					props: { text: '轰——！！' },
+					props: { text: 'BOOM—!!' },
 				})
 			}
 		}
 		polishedCount += Math.max(updatedMetas.length, beats.length)
 	}
 	const summary = await askText(
-		'你是漫画导演。请用一句简短中文总结本轮分镜润色重点。',
-		customPrompt || '强化镜头对比、角色锁定与台词张力',
-		() => `Text + Vision LLM 已润色 ${pages.length} 页共 ${polishedCount} 格分镜与台词${customPrompt ? `（指令：${customPrompt}）` : ''}。`,
+		'You are a manga director. Summarize this storyboard polish pass in one concise sentence.',
+		customPrompt || 'Sharpen camera contrast, character consistency locks, and dialogue subtext',
+		() => `Polished ${polishedCount} panels across ${pages.length} pages${customPrompt ? ` (${customPrompt})` : ''}.`,
 	)
 	return summary
 }
 
 export async function rewriteStoryWithLlm(story: string, customPrompt: string): Promise<string> {
 	return askText(
-		'你是资深中文漫画编剧。请根据用户的自定义指令改写或扩写以下漫画故事大纲，保留核心人物（勘太、芽衣、头目鸥），输出精炼有力的中文故事梗概（120~220字）。',
-		`原故事：${story}\n改写指令：${customPrompt || '强化戏剧冲突与漫画分镜画面感'}`,
+		'You are a senior manga writer. Rewrite or expand the story synopsis below according to the directive while preserving the core characters.',
+		`Original Story: ${story}\nDirective: ${customPrompt || 'Heighten dramatic conflict and visual staging'}`,
 		() => {
-			const directive = customPrompt.trim() || '强化戏剧冲突与镜头感'
-			return `${story.replace(/\n*【AI 剧本改写.*$/s, '')}\n【AI 剧本改写 · ${directive}】正午盐风骤紧，勘太死死护住最后一盒现炸金黄薯条，芽衣的胶片相机快门声与独眼头目鸥的俯冲破空声同时炸响；傍晚旧商店街屋顶暮色如血，头目鸥衔来发光汽水瓶盖作为赎金，一人一鸟在18mm广角逆光下完成史诗级和解。`
+			const directive = customPrompt.trim() || 'Heighten dramatic conflict and visual staging'
+			return `${story.replace(/\n*\[AI Script Rewrite.*$/s, '')}\n[AI Script Rewrite · ${directive}] Under the fierce noon salt wind, Kanta guards the last cone of golden fries as Mei's shutter clicks against the one-eyed Gull Boss's dive; at dusk on the rooftop, the Gull Boss offers a gleaming bottle cap as truce under 18mm backlight.`
 		},
 	)
 }
@@ -1167,13 +1022,13 @@ export async function applySelectedCardAiAction(
 			body: card.props.body,
 			customPrompt: promptToUse,
 		})
-		cardDiffStore.set(card.id, { prevBody, nextBody: res.analysis, modelUsed: res.modelUsed, label: 'Vision 识图反推' })
+		cardDiffStore.set(card.id, { prevBody, nextBody: res.analysis, modelUsed: res.modelUsed, label: 'Vision Reverse-Analysis' })
 		editor.updateShape<MangaCard>({
 			id: card.id,
 			type: CARD,
-			props: { body: res.analysis, customPrompt: promptToUse, aiStatus: `${res.modelUsed} 识图完成` },
+			props: { body: res.analysis, customPrompt: promptToUse, aiStatus: `${res.modelUsed} Analysis Complete` },
 		})
-		return `已对「${card.props.title}」执行 Vision 识图反推`
+		return `Completed Vision Reverse-Analysis on "${card.props.title}"`
 	}
 	if (action === 'redraw') {
 		const remoteUrl = await askImage(`${card.props.title} ${card.props.body} ${promptToUse}`, '16:9')
@@ -1185,10 +1040,10 @@ export async function applySelectedCardAiAction(
 				imageDataUrl: remoteUrl || card.props.imageDataUrl,
 				voice: card.props.kind === 'image' ? nextSeed : card.props.voice,
 				customPrompt: promptToUse,
-				aiStatus: remoteUrl ? 'Image LLM 已重绘' : '生图引擎已重绘新变体',
+				aiStatus: remoteUrl ? 'Image LLM Rendered' : 'Screentone Engine Rendered Variant',
 			},
 		})
-		return `已对「${card.props.title}」重新生成参考图像`
+		return `Regenerated reference illustration for "${card.props.title}"`
 	}
 	if (action === 'regenerate') {
 		const res = await regenerateCardText({
@@ -1198,13 +1053,13 @@ export async function applySelectedCardAiAction(
 			tag: card.props.tag,
 			customPrompt: promptToUse,
 		})
-		cardDiffStore.set(card.id, { prevBody, nextBody: res.text, modelUsed: res.modelUsed, label: 'AI 重新生成' })
+		cardDiffStore.set(card.id, { prevBody, nextBody: res.text, modelUsed: res.modelUsed, label: 'AI Regenerated' })
 		editor.updateShape<MangaCard>({
 			id: card.id,
 			type: CARD,
-			props: { body: res.text, customPrompt: promptToUse, aiStatus: `${res.modelUsed} 已重新生成` },
+			props: { body: res.text, customPrompt: promptToUse, aiStatus: `${res.modelUsed} Regenerated` },
 		})
-		return `已对「${card.props.title}」重新生成内容`
+		return `Regenerated content for "${card.props.title}"`
 	}
 	const res = await polishCardText({
 		kind: card.props.kind,
@@ -1213,13 +1068,13 @@ export async function applySelectedCardAiAction(
 		tag: card.props.tag,
 		customPrompt: promptToUse,
 	})
-	cardDiffStore.set(card.id, { prevBody, nextBody: res.text, modelUsed: res.modelUsed, label: 'AI 润色美化' })
+	cardDiffStore.set(card.id, { prevBody, nextBody: res.text, modelUsed: res.modelUsed, label: 'AI Polished' })
 	editor.updateShape<MangaCard>({
 		id: card.id,
 		type: CARD,
-		props: { body: res.text, customPrompt: promptToUse, aiStatus: `${res.modelUsed} 已美化` },
+		props: { body: res.text, customPrompt: promptToUse, aiStatus: `${res.modelUsed} Polished` },
 	})
-	return `已对「${card.props.title}」执行 AI 润色美化`
+	return `Applied AI Polish to "${card.props.title}"`
 }
 
 export async function runBlock(
@@ -1237,7 +1092,7 @@ export async function runBlock(
 	if (block === 'extract') {
 		const draft = bookFromText(story)
 		const note = await askText(
-			'抽出漫画角色设定和世界规则，简短中文列出 @tag 与外观锁定。',
+			'Extract manga character sheets and world rules, listing @tag and consistency locks.',
 			story,
 			() => draft.characters.map((char) => `${char.tag} ${char.name}：${char.appearance}`).join('；'),
 		)
@@ -1245,7 +1100,7 @@ export async function runBlock(
 			editor.updateShape<MangaContainer>({
 				id: bible.id,
 				type: CONTAINER,
-				props: { stylePreset: String(merged.stylePreset || draft.stylePreset), subtitle: `设定已由 Text LLM 提炼 · ${draft.characters.length} 名角色` },
+				props: { stylePreset: String(merged.stylePreset || draft.stylePreset), subtitle: `Extracted by Text LLM · ${draft.characters.length} Characters` },
 			})
 		}
 		updatePromptPreview(editor, promptShapeId, note)
@@ -1255,7 +1110,7 @@ export async function runBlock(
 	if (block === 'chapterize') {
 		const draft = bookFromText(story)
 		spawnBook(editor, draft)
-		const summary = `已由 Text LLM 拆为 ${draft.chapters.length} 话 / ${draft.chapters.reduce((acc, item) => acc + item.pages.length, 0)} 页`
+		const summary = `Structured into ${draft.chapters.length} chapters / ${draft.chapters.reduce((acc, item) => acc + item.pages.length, 0)} pages`
 		updatePromptPreview(editor, promptShapeId, summary)
 		return summary
 	}
@@ -1269,7 +1124,7 @@ export async function runBlock(
 			const beats = fitBeats(base, layout.panels.length)
 			if (merged.silent && beats.length >= 3) {
 				const silentIdx = Math.max(1, beats.length - 2)
-				beats[silentIdx] = { ...beats[silentIdx], silent: true, lines: [], beat: `${beats[silentIdx].beat}（高潮前静帧）` }
+				beats[silentIdx] = { ...beats[silentIdx], silent: true, lines: [], beat: `${beats[silentIdx].beat} (Pre-climax Silent Beat)` }
 			}
 			const metas = layout.panels.map((panel, index) => metaFromBeat(beats[index], panel, page.props.seed, index))
 			editor.updateShape<MangaContainer>({
@@ -1279,7 +1134,7 @@ export async function runBlock(
 			})
 			spawnPageBubbles(editor, page.id, layout, beats, metas)
 		}
-		const summary = '已按右→左重排分镜节拍，高潮前留静帧，末格落翻页钩子'
+		const summary = 'Arranged right-to-left beats with pre-climax silent pause and final-panel hook'
 		updatePromptPreview(editor, promptShapeId, summary)
 		return summary
 	}
@@ -1296,7 +1151,7 @@ export async function runBlock(
 				editor.updateShape<MangaContainer>({ id: page.id, type: CONTAINER, props: { panelsJson: JSON.stringify(metas) } })
 			}
 		}
-		const summary = `当前分镜格机位已设为 ${shot} · ${angle} · ${focal}`
+		const summary = `Panel camera set to ${shot} · ${angle} · ${focal}`
 		updatePromptPreview(editor, promptShapeId, summary)
 		return summary
 	}
@@ -1317,7 +1172,7 @@ export async function runBlock(
 				props: { environment: env, lighting: light, panelsJson: JSON.stringify(metas) },
 			})
 		}
-		const summary = `随机氛围：${ENV_LABELS[env] ?? env} · ${LIGHT_LABELS[light] ?? light} · ${shot}/${angle}/${focal}`
+		const summary = `Randomized mood: ${ENV_LABELS[env] ?? env} · ${LIGHT_LABELS[light] ?? light} · ${shot}/${angle}/${focal}`
 		updatePromptPreview(editor, promptShapeId, summary)
 		return summary
 	}
@@ -1351,7 +1206,7 @@ export async function runBlock(
 		}
 		editor.updateShape<MangaContainer>({ id: page.id, type: CONTAINER, props: { panelsJson: JSON.stringify(next) } })
 	}
-	const summary = `已调用生图管线渲染 ${rendered} 格无字纯净画面（气泡矢量化独立悬浮）`
+	const summary = `Rendered ${rendered} clean panel illustrations with independent vector balloon layers`
 	updatePromptPreview(editor, promptShapeId, summary)
 	return summary
 }
@@ -1393,7 +1248,7 @@ export function formatBeatsToScriptText(beats: Beat[]): string {
 		.map((b, idx) => {
 			const header = `${idx + 1}. [${b.shot}/${b.angle}/${b.focal}]`
 			const lineStr = (b.lines ?? [])
-				.map((l) => `${l.type === 'sfx' ? '⚡' : l.type === 'caption' ? '📝' : '💬'}「${l.text}」${l.prosody ? `(${l.prosody})` : ''}`)
+				.map((l) => `${l.type === 'sfx' ? '[SFX]' : l.type === 'caption' ? '[CAP]' : ''}「${l.text}」${l.prosody ? `(${l.prosody})` : ''}`)
 				.join(' ')
 			return `${header} ${b.beat}${lineStr ? ` — ${lineStr}` : ''}`
 		})
@@ -1426,15 +1281,24 @@ export function parseScriptTextToBeats(
 
 		const [actionPart, dialoguePart] = rest.split(/\s*—\s*/)
 		const quotedMatches = [...(dialoguePart || rest).matchAll(/[「“"]([^」”"]+)[」”"](?:\(([^)]+)\))?/g)]
-		const isSilent = /无声|静帧|silent/i.test(actionPart) && quotedMatches.length === 0
+		const isSilent = /silent|wordless|ma-beat/i.test(actionPart) && quotedMatches.length === 0
 
 		const parsedLines: Beat['lines'] = isSilent
 			? []
 			: quotedMatches.length > 0
 				? quotedMatches.map((m, mIdx) => {
 						const prefixChar = (dialoguePart || rest).slice(0, m.index ?? 0)
-						const isSfx = prefixChar.endsWith('⚡') || /^(咔|砰|轰|哗|叮|啪)/.test(m[1])
-						const isCaption = prefixChar.endsWith('📝') || (idx === 0 && mIdx === 0 && m[1].includes('：'))
+						// Accept the clean [SFX]/[CAP] markers emitted by the formatter and
+						// the legacy emoji markers kept for backward compatibility with any
+						// previously saved scripts.
+						const isSfx =
+							prefixChar.endsWith('[SFX]') ||
+							prefixChar.endsWith('⚡') ||
+							/^(CLACK|BOOM|BANG|SHAAA|KCHK|RUMBLE|WHOOSH)/i.test(m[1])
+						const isCaption =
+							prefixChar.endsWith('[CAP]') ||
+							prefixChar.endsWith('📝') ||
+							(idx === 0 && mIdx === 0 && m[1].includes('：'))
 						return {
 							type: isSfx ? 'sfx' : isCaption ? 'caption' : m[1].endsWith('？！') || m[1].endsWith('！！') ? 'shout' : 'speech',
 							text: m[1],
@@ -1458,7 +1322,7 @@ export function parseScriptTextToBeats(
 			focal,
 			focalMm: shot === 'WS' || shot === 'EWS' ? 24 : shot === 'CU' || shot === 'ECU' ? 85 : 50,
 			fStop: shot === 'CU' || shot === 'ECU' ? 1.8 : 2.8,
-			beat: actionPart.trim() || fallback?.beat || `P-0${idx + 1} · 分镜动作节拍`,
+			beat: actionPart.trim() || fallback?.beat || `P-0${idx + 1} · Panel Action Beat`,
 			who: fallback?.who?.length ? fallback.who : charTags.slice(0, 2),
 			assetRefs: Array.from(new Set([...(fallback?.assetRefs ?? []), ...allTags])),
 			imageDataUrl: fallback?.imageDataUrl,
@@ -1517,22 +1381,22 @@ export function readPageContext(editor: Editor | null, page: MangaContainer): Pa
 		worldRules:
 			parsed.worldRules ||
 			bibleWorld ||
-			'浦泽直树式硬派青年漫黑白灰蓝冷调 + 伦勃朗 50% 半脸明暗分割 + 180°审讯轴线连贯',
+			'Hardboiled seinen monochrome slate-blue palette + 50% Rembrandt split lighting + 180° axis continuity',
 		lockedAssetTags: mergedTags.length
 			? mergedTags
 			: ['@lu_chen', '@lin_ye', '@shen_mo', '#prop_pocket_watch', '#env_interrogation_room'],
 		prevPageSummary:
 			parsed.prevPageSummary ||
 			(page.props.pageIndex <= 1
-				? '开篇起始页（P1）：由全局故事设定母容器与锁定角色/道具卡直接注入初始上下文。'
-				: `承接 P${page.props.pageIndex - 1} 的镜头轴线、人物锁定与悬念钩子。`),
+				? 'Opening Page (P1): Initial context injected from story bible and locked character/prop reference assets.'
+				: `Inherits 180° camera axis, locked character assets, and cliffhanger hook from P${page.props.pageIndex - 1}.`),
 		prevExitShot: parsed.prevExitShot || lastMeta?.shot || lastBeat?.shot || 'CU',
 		prevExitAngle: parsed.prevExitAngle || lastMeta?.angle || lastBeat?.angle || 'eye',
 		prevExitEyeline: (parsed.prevExitEyeline || lastMeta?.eyeline || lastBeat?.eyeline || [-24, 2]) as [number, number],
 		prevExitTension: parsed.prevExitTension ?? Number((lastBeat?.tension ?? 0.85).toFixed(2)),
 		pageDirective:
 			parsed.pageDirective ||
-			`${page.props.title}：围绕 ${page.props.scenario || 'tension'} 情绪推进分镜叙事，保持跨页人物外观与 180° 视线轴连贯。`,
+			`${page.props.title}: Drive ${page.props.scenario || 'tension'} staging while preserving cross-page character locks and 180° axis continuity.`,
 	}
 }
 
@@ -1552,8 +1416,8 @@ export function extractPageOutgoingContext(editor: Editor | null, page: MangaCon
 	const exitEyeline = (lastMeta?.eyeline || lastBeat?.eyeline || currentCtx.prevExitEyeline || [-26, 2]) as [number, number]
 	const exitTension = Number((lastBeat?.tension ?? currentCtx.prevExitTension ?? 0.88).toFixed(2))
 
-	const firstBeatSummary = (beats[0]?.beat || metas[0]?.beat || '开场镜头建立空间').replace(/^P\d+-\d+\s*·\s*/, '')
-	const lastBeatSummary = (lastBeat?.beat || lastMeta?.beat || '末格抛出悬念钩子').replace(/^P\d+-\d+\s*·\s*/, '')
+	const firstBeatSummary = (beats[0]?.beat || metas[0]?.beat || 'Opening establishing shot').replace(/^P\d+-\d+\s*·\s*/, '')
+	const lastBeatSummary = (lastBeat?.beat || lastMeta?.beat || 'Final cliffhanger hook').replace(/^P\d+-\d+\s*·\s*/, '')
 	const keySpoken = beats
 		.flatMap((b) => b.lines ?? [])
 		.filter((l) => l.type !== 'sfx')
@@ -1561,7 +1425,7 @@ export function extractPageOutgoingContext(editor: Editor | null, page: MangaCon
 		.map((l) => `「${l.text}」`)
 		.join(' ')
 
-	const summary = `承接 ${page.props.title}（${beats.length || metas.length} 格）：由「${firstBeatSummary.slice(0, 28)}」推进至尾格「${lastBeatSummary.slice(0, 32)}」${keySpoken ? ` ${keySpoken}` : ''}（末格定格 ${exitShot}/${exitAngle} · 张力 ${Math.round(exitTension * 100)}%）。`
+	const summary = `Continues from ${page.props.title} (${beats.length || metas.length} panels): from "${firstBeatSummary.slice(0, 36)}" to exit beat "${lastBeatSummary.slice(0, 42)}"${keySpoken ? ` ${keySpoken}` : ''} (exit ${exitShot}/${exitAngle} · tension ${Math.round(exitTension * 100)}%).`
 
 	return {
 		parentPageId: page.id,
@@ -1577,7 +1441,7 @@ export function extractPageOutgoingContext(editor: Editor | null, page: MangaCon
 		prevExitAngle: exitAngle,
 		prevExitEyeline: exitEyeline,
 		prevExitTension: exitTension,
-		pageDirective: `承接 ${page.props.title} 尾格（${exitShot}/${exitAngle}，张力 ${Math.round(exitTension * 100)}%），延续 180° 视线轴（${exitEyeline[0]}, ${exitEyeline[1]}）与锁定资产展开第 ${(page.props.pageIndex || 1) + 1} 页交锋。`,
+		pageDirective: `Carry over ${page.props.title} exit frame (${exitShot}/${exitAngle}, tension ${Math.round(exitTension * 100)}%), 180° axis [${exitEyeline[0]}, ${exitEyeline[1]}], and locked assets into Page ${(page.props.pageIndex || 1) + 1}.`,
 	}
 }
 
@@ -1599,23 +1463,23 @@ function buildContinuationTemplate(
 	const isNoir =
 		outgoing.stylePreset === 'seinen_noir' ||
 		outgoing.lockedAssetTags.some((t) => t === '@lu_chen' || t === '#prop_pocket_watch') ||
-		sourcePage.props.title.includes('审讯')
+		sourcePage.props.title.toLowerCase().includes('interrogation')
 	const isSeagull =
 		outgoing.lockedAssetTags.some((t) => t.includes('gull') || t === '@kanta') ||
 		sourcePage.props.stylePreset === 'shonen_water' ||
-		sourcePage.props.title.includes('海鸥')
+		sourcePage.props.title.toLowerCase().includes('seagull')
 
 	const eyeSign = outgoing.prevExitEyeline[0] >= 0 ? 1 : -1
 
 	if (isNoir) {
 		if (nextPageIndex === 2) {
 			return {
-				titleSuffix: '暗格底片与走廊脚步',
+				titleSuffix: 'Hidden Negative & Footsteps in the Corridor',
 				scenario: 'reveal',
 				layoutPreset: 'kin',
 				environment: outgoing.environment || 'interrogation-room',
 				lighting: outgoing.lighting || 'rim',
-				directive: '承接 P1 陆沉当庭指认单向玻璃后的沈默副局长，廊灯骤灭，怀表暗格底片揭晓，门外逼近灭口脚步。',
+				directive: 'Continuing from P1 where Lu Chen points out Deputy Chief Shen Mo behind the one-way mirror: corridor lights cut out, the watch\'s hidden negative is exposed, and heavy footsteps close in.',
 				beats: [
 					{
 						shot: 'WS',
@@ -1624,7 +1488,7 @@ function buildContinuationTemplate(
 						focalMm: 24,
 						fStop: 4.0,
 						imageDataUrl: '/assets/interrogation/panel1_establishing.jpg',
-						beat: 'P02-01 · 观察窗后的廊灯骤然熄灭！窗外闪电将审讯室劈成惨白与深黑，林野猛地从椅上撑身弹起。',
+						beat: 'P02-01 · The corridor light behind the observation glass snaps off! Lightning splits the room into stark white and ink black as Lin Ye bolts upright.',
 						who: ['@lu_chen', '@lin_ye'],
 						assetRefs: ['#env_interrogation_room', '@lu_chen', '@lin_ye'],
 						mccloudTransition: 'action_to_action',
@@ -1633,8 +1497,8 @@ function buildContinuationTemplate(
 						eyeline: [eyeSign * 22, 2],
 						focalPointRel: [0.46, 0.42],
 						lines: [
-							{ type: 'caption', text: '23:18，观察窗后的打火机火苗掐灭了。', placement: 'top-right' },
-							{ type: 'speech', text: '他拉断了三楼电闸……要把我们一起灭口！', prosody: '惊骇急促', placement: 'bottom-left' },
+							{ type: 'caption', text: '23:18. Behind the observation glass, the lighter flame goes dark.', placement: 'top-right' },
+							{ type: 'speech', text: 'He cut the third-floor breaker... he\'s going to silence us both!', prosody: 'Panicked', placement: 'bottom-left' },
 						],
 					},
 					{
@@ -1644,7 +1508,7 @@ function buildContinuationTemplate(
 						focalMm: 85,
 						fStop: 2.0,
 						imageDataUrl: '/assets/interrogation/panel3_watch_macro.jpg',
-						beat: 'P02-02 · 陆沉一把按住桌上的裂纹银壳怀表，拇指顺着反向刮痕撬开表盖夹层——露出一卷微缩胶片。',
+						beat: 'P02-02 · Lu Chen seizes the cracked silver pocket watch, thumb prying open the inner seam along the reverse scratch to reveal a micro-film roll.',
 						who: ['@lu_chen'],
 						assetRefs: ['#prop_pocket_watch', '@lu_chen'],
 						mccloudTransition: 'subject_to_subject',
@@ -1653,8 +1517,8 @@ function buildContinuationTemplate(
 						eyeline: [eyeSign * 18, 6],
 						focalPointRel: [0.5, 0.48],
 						lines: [
-							{ type: 'sfx', text: '咔哒！', placement: 'top-left' },
-							{ type: 'speech', text: '23:17 停摆不是摔坏，是为了锁死这枚暗格齿轮。', prosody: '冷峻洞察', placement: 'top-right' },
+							{ type: 'sfx', text: 'CLACK!', placement: 'top-left' },
+							{ type: 'speech', text: 'Stopping at 23:17 wasn\'t impact damage—it locked this hidden compartment gear.', prosody: 'Sharp Insight', placement: 'top-right' },
 						],
 					},
 					{
@@ -1664,7 +1528,7 @@ function buildContinuationTemplate(
 						focalMm: 50,
 						fStop: 2.8,
 						imageDataUrl: '/assets/interrogation/panel2_cuff_probe.jpg',
-						beat: 'P02-03 · 林野扯开沾着红丹防锈漆的右袖口，声音压得极低，指向单向玻璃后的证物暗道。',
+						beat: 'P02-03 · Lin Ye pulls back his red-lead-stained cuff, voice dropping to a tense whisper as he points toward the corridor behind the mirror.',
 						who: ['@lin_ye', '@lu_chen'],
 						assetRefs: ['@lin_ye', '#prop_rust_cuff', '#env_interrogation_room'],
 						mccloudTransition: 'subject_to_subject',
@@ -1673,7 +1537,7 @@ function buildContinuationTemplate(
 						eyeline: [eyeSign * 20, -2],
 						focalPointRel: [0.54, 0.44],
 						lines: [
-							{ type: 'whisper', text: '旧码头三号仓的走私底片就在表芯里……走廊脚步声上来了！', prosody: '压低喘息', placement: 'top-right' },
+							{ type: 'whisper', text: 'The Pier 3 smuggling negatives are inside the movement... footsteps are coming up the hall!', prosody: 'Hushed Breath', placement: 'top-right' },
 						],
 					},
 					{
@@ -1683,7 +1547,7 @@ function buildContinuationTemplate(
 						focalMm: 85,
 						fStop: 1.4,
 						imageDataUrl: '/assets/interrogation/panel4_silent_lighter_spark.jpg',
-						beat: 'P02-04 · 无声静帧：审讯室金属门把手缓缓下压，门缝积水倒映出左撇子铜打火机的冷光。',
+						beat: 'P02-04 · Silent Ma Beat: the steel door handle slowly depresses; puddle water under the gap reflects the glint of a left-handed brass lighter.',
 						who: ['@shen_mo'],
 						assetRefs: ['@shen_mo', '#prop_brass_lighter'],
 						mccloudTransition: 'aspect_to_aspect',
@@ -1701,7 +1565,7 @@ function buildContinuationTemplate(
 						focalMm: 35,
 						fStop: 2.0,
 						imageDataUrl: '/assets/interrogation/panel5_climax_accusation.jpg',
-						beat: 'P02-05 · 陆沉将怀表底片塞进风衣内袋，拔枪横挡在林野身前，目光直刺推门而入的沈默副局长！',
+						beat: 'P02-05 · Lu Chen slips the watch negative into his trench coat, stepping in front of Lin Ye as his gaze locks onto Deputy Chief Shen Mo entering the doorway!',
 						who: ['@lu_chen', '@shen_mo'],
 						assetRefs: ['@lu_chen', '@shen_mo', '#prop_pocket_watch', '#env_interrogation_room'],
 						mccloudTransition: 'action_to_action',
@@ -1714,11 +1578,11 @@ function buildContinuationTemplate(
 							targetTag: '@shen_mo',
 							rectRel: [0.62, 0.06, 0.96, 0.42],
 							shot: 'ECU',
-							caption: '门口冷笑的沈默',
+							caption: 'Shen Mo at the doorway',
 						},
 						lines: [
-							{ type: 'sfx', text: '砰——！！', placement: 'top-left' },
-							{ type: 'shout', text: '沈副局长，深更半夜亲自来取这块怀表吗？！', prosody: '雷霆喝问', placement: 'top-right' },
+							{ type: 'sfx', text: 'BANG—!!', placement: 'top-left' },
+							{ type: 'shout', text: 'Deputy Chief Shen—coming in person at midnight to collect this watch?!', prosody: 'Thunderous Challenge', placement: 'top-right' },
 						],
 					},
 				],
@@ -1727,12 +1591,12 @@ function buildContinuationTemplate(
 
 		// P3 and beyond for Noir Interrogation
 		return {
-			titleSuffix: nextPageIndex === 3 ? '旧港天台雨幕对决' : `第 ${nextPageIndex} 幕·雷霆收网`,
+			titleSuffix: nextPageIndex === 3 ? 'Rain-Lashed Rooftop Showdown' : `Act ${nextPageIndex} · Final Net`,
 			scenario: 'climax',
 			layoutPreset: 'kin',
 			environment: 'rooftop',
 			lighting: 'rim',
-			directive: `承接 P${nextPageIndex - 1} 正面交锋，陆沉与林野退上旧港警署暴雨天台，在探照灯逆光下用怀表微缩底片完成终极定罪。`,
+			directive: `Continuing from P${nextPageIndex - 1}, Lu Chen and Lin Ye back onto the storm-swept precinct rooftop, using the micro-film under searchlight backlight for the final indictment.`,
 			beats: [
 				{
 					shot: 'EWS',
@@ -1741,7 +1605,7 @@ function buildContinuationTemplate(
 					focalMm: 24,
 					fStop: 4.0,
 					imageDataUrl: '/assets/interrogation/panel1_establishing.jpg',
-					beat: `P0${nextPageIndex}-01 · 狂风暴雨席卷警署四楼天台，远处旧港三号仓探照灯划破夜幕，陆沉与沈默隔着积水对峙。`,
+					beat: `P0${nextPageIndex}-01 · Gale-force rain sweeps the 4F precinct rooftop as Pier 3 searchlights slice the night; Lu Chen and Shen Mo face off across the flooded deck.`,
 					who: ['@lu_chen', '@shen_mo'],
 					assetRefs: ['@lu_chen', '@shen_mo', '#env_interrogation_room'],
 					mccloudTransition: 'scene_to_scene',
@@ -1750,7 +1614,7 @@ function buildContinuationTemplate(
 					eyeline: [eyeSign * 24, 4],
 					focalPointRel: [0.5, 0.45],
 					lines: [
-						{ type: 'caption', text: '23:25 · 旧港警署天台，暴雨如注。', placement: 'top-right' },
+						{ type: 'caption', text: '23:25 · Precinct Rooftop. Torrential rain.', placement: 'top-right' },
 					],
 				},
 				{
@@ -1760,7 +1624,7 @@ function buildContinuationTemplate(
 					focalMm: 50,
 					fStop: 2.2,
 					imageDataUrl: '/assets/interrogation/panel4_silent_lighter_spark.jpg',
-					beat: `P0${nextPageIndex}-02 · 沈默在雨中左手反握铜打火机，冷笑着逼近一步，试图索要怀表底片。`,
+					beat: `P0${nextPageIndex}-02 · Shen Mo advances a step in the rain, brass lighter in his left hand, demanding the pocket-watch negative.`,
 					who: ['@shen_mo'],
 					assetRefs: ['@shen_mo', '#prop_brass_lighter'],
 					mccloudTransition: 'subject_to_subject',
@@ -1769,7 +1633,7 @@ function buildContinuationTemplate(
 					eyeline: [eyeSign * 20, 2],
 					focalPointRel: [0.52, 0.44],
 					lines: [
-						{ type: 'speech', text: '陆沉，把 23:17 的底片交出来，这案子今晚就能结。', prosody: '阴鸷威逼', placement: 'top-right' },
+						{ type: 'speech', text: 'Lu Chen, hand over the 23:17 negative and this case closes tonight.', prosody: 'Menacing', placement: 'top-right' },
 					],
 				},
 				{
@@ -1779,7 +1643,7 @@ function buildContinuationTemplate(
 					focalMm: 85,
 					fStop: 1.8,
 					imageDataUrl: '/assets/interrogation/panel3_watch_macro.jpg',
-					beat: `P0${nextPageIndex}-03 · 无声静帧：雨水顺着裂纹银壳怀表滑落，蓝钢指针与内盖反向刮痕在闪电下清晰无比。`,
+					beat: `P0${nextPageIndex}-03 · Silent Ma Beat: rainwater streams over the cracked silver watch as lightning illuminates the 23:17 hands and reverse scratch.`,
 					who: [],
 					assetRefs: ['#prop_pocket_watch'],
 					mccloudTransition: 'aspect_to_aspect',
@@ -1797,7 +1661,7 @@ function buildContinuationTemplate(
 					focalMm: 50,
 					fStop: 1.8,
 					imageDataUrl: '/assets/interrogation/panel5_climax_accusation.jpg',
-					beat: `P0${nextPageIndex}-04 · 陆沉举起胸前开启录音与微距传输的警用终端，天台四周红蓝警灯骤然亮起！`,
+					beat: `P0${nextPageIndex}-04 · Lu Chen raises his live-transmitting police terminal as red-and-blue sirens ignite around the rooftop perimeter!`,
 					who: ['@lu_chen', '@lin_ye', '@shen_mo'],
 					assetRefs: ['@lu_chen', '@lin_ye', '@shen_mo', '#prop_pocket_watch'],
 					mccloudTransition: 'action_to_action',
@@ -1810,11 +1674,11 @@ function buildContinuationTemplate(
 						targetTag: '@lin_ye',
 						rectRel: [0.64, 0.56, 0.96, 0.94],
 						shot: 'CU',
-						caption: '证人林野指认',
+						caption: 'Witness Lin Ye\'s identification',
 					},
 					lines: [
-						{ type: 'sfx', text: '轰隆——！！', placement: 'top-left' },
-						{ type: 'shout', text: '底片和刚才的口供，已经同步发往督察处了！', prosody: '决绝宣判', placement: 'top-right' },
+						{ type: 'sfx', text: 'RUMBLE—!!', placement: 'top-left' },
+						{ type: 'shout', text: 'The micro-film and your confession were just transmitted live to Internal Affairs!', prosody: 'Decisive Verdict', placement: 'top-right' },
 					],
 				},
 			],
@@ -1823,43 +1687,43 @@ function buildContinuationTemplate(
 
 	if (isSeagull) {
 		return {
-			titleSuffix: nextPageIndex === 2 ? '防波堤逆风俯冲' : '夕照屋顶的瓶盖赎金',
+			titleSuffix: nextPageIndex === 2 ? 'Headwind Dive on the Breakwater' : 'Bottle-Cap Ransom on the Sunset Roof',
 			scenario: nextPageIndex === 2 ? 'action' : 'climax',
 			layoutPreset: 'kin',
 			environment: nextPageIndex === 2 ? 'boardwalk' : 'rooftop',
 			lighting: nextPageIndex === 2 ? 'hard-noon' : 'sunset',
-			directive: `承接 P${nextPageIndex - 1} 的海鸥对峙，延续海岸高对比光影与角色锁定展开第 ${nextPageIndex} 页动作交锋。`,
+			directive: `Continuing from P${nextPageIndex - 1}'s gull standoff, carrying coastal high-contrast lighting and character locks into Page ${nextPageIndex}.`,
 			beats: [
 				{
 					shot: 'WS',
 					angle: 'low',
 					focal: '18mm',
 					imageDataUrl: '/assets/seagull/env_rocky_pier_cliff.jpg',
-					beat: `P0${nextPageIndex}-01 · 狂风卷起防波堤浪花，两只海鸥围绕薯条筒展开高空盘旋。`,
+					beat: `P0${nextPageIndex}-01 · Sea spray erupts over the breakwater as both gulls circle high above the paper cone of fries.`,
 					who: ['@gull_philosopher', '@gull_foodie'],
 					assetRefs: ['#env_rocky_pier_cliff', '#prop_pier_fries_cone', '@gull_philosopher', '@gull_foodie'],
 					tension: 0.72,
 					eyeline: [eyeSign * 18, 4],
-					lines: [{ type: 'caption', text: '海风骤紧，第二轮争夺一触即发。', placement: 'top-right' }],
+					lines: [{ type: 'caption', text: 'The sea wind sharpens; Round Two is about to break.', placement: 'top-right' }],
 				},
 				{
 					shot: 'MCU',
 					angle: 'eye',
 					focal: '50mm',
 					imageDataUrl: '/assets/seagull/char_gull_foodie.jpg',
-					beat: `P0${nextPageIndex}-02 · 馋嘴海鸥压低双翼，目光死死锁定金黄薯条。`,
+					beat: `P0${nextPageIndex}-02 · The foodie gull tucks its wings low, eyes locked onto the golden fries.`,
 					who: ['@gull_foodie'],
 					assetRefs: ['@gull_foodie', '#prop_pier_fries_cone'],
 					tension: 0.8,
 					eyeline: [eyeSign * 22, 2],
-					lines: [{ type: 'shout', text: '最后一根归我了！', prosody: '俯冲咆哮', placement: 'top-right' }],
+					lines: [{ type: 'shout', text: 'The last fry is mine!', prosody: 'Diving Roar', placement: 'top-right' }],
 				},
 				{
 					shot: 'CU',
 					angle: 'high',
 					focal: '85mm',
 					imageDataUrl: '/assets/seagull/prop_pier_fries_cone.jpg',
-					beat: `P0${nextPageIndex}-03 · 无声静帧：红白纸筒在礁石边缘摇摇欲坠。`,
+					beat: `P0${nextPageIndex}-03 · Silent Ma Beat: the red-and-white paper cone teeters on the edge of the reef.`,
 					who: [],
 					assetRefs: ['#prop_pier_fries_cone'],
 					tension: 0.86,
@@ -1872,14 +1736,14 @@ function buildContinuationTemplate(
 					angle: 'eye',
 					focal: '35mm',
 					imageDataUrl: '/assets/seagull/char_gull_philosopher.jpg',
-					beat: `P0${nextPageIndex}-04 · 哲学家海鸥轻巧叼住纸筒边缘，在浪花拍岸瞬间稳住平衡。`,
+					beat: `P0${nextPageIndex}-04 · The philosopher gull deftly catches the rim of the cone, steadying it just as the wave crashes.`,
 					who: ['@gull_philosopher', '@gull_foodie'],
 					assetRefs: ['@gull_philosopher', '@gull_foodie', '#prop_pier_fries_cone'],
 					tension: 0.9,
 					eyeline: [eyeSign * 20, -2],
 					lines: [
-						{ type: 'sfx', text: '哗啦——！', placement: 'top-left' },
-						{ type: 'speech', text: '在风暴里守住午餐，才算真正的哲学。', prosody: '从容笃定', placement: 'bottom-left' },
+						{ type: 'sfx', text: 'SPLASH—!', placement: 'top-left' },
+						{ type: 'speech', text: 'Keeping lunch dry in a storm—that is true philosophy.', prosody: 'Calm & Composed', placement: 'bottom-left' },
 					],
 				},
 			],
@@ -1888,7 +1752,7 @@ function buildContinuationTemplate(
 
 	// Generic continuation template for any custom story
 	return {
-		titleSuffix: `第 ${nextPageIndex} 页·剧情延续`,
+		titleSuffix: `Page ${nextPageIndex} · Continuity Extension`,
 		scenario: nextPageIndex % 2 === 0 ? 'tension' : 'climax',
 		layoutPreset: 'kin',
 		environment: outgoing.environment,
@@ -1899,7 +1763,7 @@ function buildContinuationTemplate(
 				shot: 'WS',
 				angle: 'eye',
 				focal: '35mm',
-				beat: `P0${nextPageIndex}-01 · 承接上页尾格状态（${outgoing.prevExitShot}/${outgoing.prevExitAngle}），场景气氛进一步收紧。`,
+				beat: `P0${nextPageIndex}-01 · Picking up from the previous exit frame (${outgoing.prevExitShot}/${outgoing.prevExitAngle}), the tension tightens.`,
 				who: outgoing.lockedAssetTags.filter((t) => t.startsWith('@')).slice(0, 2),
 				assetRefs: outgoing.lockedAssetTags,
 				tension: 0.68,
@@ -1910,18 +1774,18 @@ function buildContinuationTemplate(
 				shot: 'MCU',
 				angle: 'eye',
 				focal: '50mm',
-				beat: `P0${nextPageIndex}-02 · 主角直面核心线索，眼神锋利回应对方质疑。`,
+				beat: `P0${nextPageIndex}-02 · The lead confronts the core clue with a sharp counter-gaze.`,
 				who: outgoing.lockedAssetTags.filter((t) => t.startsWith('@')).slice(0, 1),
 				assetRefs: outgoing.lockedAssetTags,
 				tension: 0.78,
 				eyeline: [eyeSign * 22, 0],
-				lines: [{ type: 'speech', text: '线索从一开始就指向上一页留下的破绽。', prosody: '沉稳追问', placement: 'top-right' }],
+				lines: [{ type: 'speech', text: 'Every clue pointed from the start to the flaw left on the previous page.', prosody: 'Steady Pressing', placement: 'top-right' }],
 			},
 			{
 				shot: 'CU',
 				angle: 'low',
 				focal: '85mm',
-				beat: `P0${nextPageIndex}-03 · 无声静帧：关键证物特写，呼吸声在光影分界线上凝滞。`,
+				beat: `P0${nextPageIndex}-03 · Silent Ma Beat: extreme close-up on the key evidence as breath freezes along the shadow line.`,
 				who: [],
 				assetRefs: outgoing.lockedAssetTags.filter((t) => t.startsWith('#')),
 				tension: 0.86,
@@ -1933,14 +1797,14 @@ function buildContinuationTemplate(
 				shot: 'MS',
 				angle: 'low',
 				focal: '35mm',
-				beat: `P0${nextPageIndex}-04 · 局势骤然翻转，抛出通往下一页的悬念钩子。`,
+				beat: `P0${nextPageIndex}-04 · The tables turn sharply, launching a cliffhanger hook toward the next page.`,
 				who: outgoing.lockedAssetTags.filter((t) => t.startsWith('@')),
 				assetRefs: outgoing.lockedAssetTags,
 				tension: 0.94,
 				eyeline: [eyeSign * 26, -2],
 				lines: [
-					{ type: 'sfx', text: '砰——！', placement: 'top-left' },
-					{ type: 'shout', text: '真正的幕后之人，现在才刚刚现身！', prosody: '雷霆揭晓', placement: 'top-right' },
+					{ type: 'sfx', text: 'BANG—!', placement: 'top-left' },
+					{ type: 'shout', text: 'The true mastermind has only just stepped into the light!', prosody: 'Thunderous Reveal', placement: 'top-right' },
 				],
 			},
 		],
@@ -1988,7 +1852,7 @@ export function extendNextPageFromPage(
 	}
 
 	if (!sourcePage) {
-		throw new Error('画布上尚未找到可延续的源分镜页')
+		throw new Error('No source manga page found on canvas to extend')
 	}
 
 	const outgoing = extractPageOutgoingContext(editor, sourcePage)
@@ -2049,7 +1913,7 @@ export function extendNextPageFromPage(
 	const newPageId = createShapeId(`page-c${sourcePage.props.chapterIndex || 1}-p${nextPageIndex}-${Date.now().toString(36).slice(-3)}`)
 	const finalScore = Number(Math.max(poll.convergedScore, stage3.score).toFixed(3))
 	const chapterIdx = sourcePage.props.chapterIndex || 1
-	const newTitle = `第${chapterIdx}话 · P${nextPageIndex} · ${template.titleSuffix}`
+	const newTitle = `Ch.${chapterIdx} · P${nextPageIndex} · ${template.titleSuffix}`
 
 	editor.createShape<MangaContainer>({
 		id: newPageId,
@@ -2061,7 +1925,7 @@ export function extendNextPageFromPage(
 			h: PAGE_H,
 			role: 'page',
 			title: newTitle,
-			subtitle: `${layout.panels.length} 格 · 承接 P${sourcePage.props.pageIndex || 1} · JEV ${Math.round(finalScore * 100)} 分`,
+			subtitle: `${layout.panels.length} Panels · From P${sourcePage.props.pageIndex || 1} · JEV ${Math.round(finalScore * 100)}`,
 			story: formatBeatsToScriptText(repairedBeats),
 			worldRules: nextContext.worldRules,
 			stylePreset: nextContext.stylePreset,
@@ -2120,7 +1984,7 @@ export function extendNextPageFromPage(
 		pageId: newPageId,
 		page: created,
 		context: nextContext,
-		message: `已从 P${sourcePage.props.pageIndex || 1} 流水线延续生成「${newTitle}」：继承 ${nextContext.lockedAssetTags.length} 项锁定设定（${nextContext.lockedAssetTags.slice(0, 4).join(' ')}）与 180° 尾格视线轴（${nextContext.prevExitShot}/${nextContext.prevExitAngle}）`,
+		message: `Extended "${newTitle}" from P${sourcePage.props.pageIndex || 1}: inherited ${nextContext.lockedAssetTags.length} locked assets (${nextContext.lockedAssetTags.slice(0, 4).join(' ')}) and 180° exit axis (${nextContext.prevExitShot}/${nextContext.prevExitAngle})`,
 	}
 }
 
@@ -2193,19 +2057,19 @@ export function updatePageContextAndRecompile(
 			score: finalScore,
 			reasonsJson: JSON.stringify(stage3.reasons),
 			contextJson: JSON.stringify(nextCtx),
-			subtitle: `${layout.panels.length} 格 · Context 已同步 · JEV ${Math.round(finalScore * 100)} 分`,
+			subtitle: `${layout.panels.length} Panels · Context Synced · JEV ${Math.round(finalScore * 100)}`,
 		},
 	})
 
 	spawnPageBubbles(editor, page.id, layout, repaired, metas)
-	return `已保存 ${page.props.title} 的继承上下文（${nextCtx.lockedAssetTags.length} 项锁定资产）并完成 JEV 重编译（${Math.round(finalScore * 100)} 分）`
+	return `Saved inherited context for ${page.props.title} (${nextCtx.lockedAssetTags.length} locked assets) and recompiled (JEV ${Math.round(finalScore * 100)})`
 }
 
 export function cloneVariantPage(editor: Editor, sourcePageId?: TLShapeId): string {
 	const page =
 		(sourcePageId ? (editor.getShape(sourcePageId) as MangaContainer | undefined) : undefined) ??
 		selectedPages(editor)[0]
-	if (!page) return '请先选择要克隆变体的分镜页'
+	if (!page) return 'Select a page to duplicate as a layout variant'
 
 	const overrides = readPageParams(page.props.mood, page.props.layoutPreset)
 	const config = configFor(page.props.layoutPreset, page.props.targetPanels, overrides)
@@ -2233,8 +2097,8 @@ export function cloneVariantPage(editor: Editor, sourcePageId?: TLShapeId): stri
 		y: cloneY,
 		props: {
 			...page.props,
-			title: `${page.props.title} · 变体对比`,
-			subtitle: `${layout.panels.length} 格 · 变体评分 ${Math.round(judged.score * 100)}`,
+			title: `${page.props.title} · Variant`,
+			subtitle: `${layout.panels.length} Panels · Variant JEV ${Math.round(judged.score * 100)}`,
 			seed: `${page.props.seed}-var`,
 			genomeJson: JSON.stringify(layout.genome),
 			panelsJson: JSON.stringify(metas),
@@ -2245,7 +2109,7 @@ export function cloneVariantPage(editor: Editor, sourcePageId?: TLShapeId): stri
 	})
 	spawnPageBubbles(editor, cloneId, layout, beats, metas)
 	editor.select(cloneId)
-	return `已克隆生成「${page.props.title} · 变体对比」（评分 ${Math.round(judged.score * 100)} 分）`
+	return `Cloned layout variant for "${page.props.title}" (JEV ${Math.round(judged.score * 100)})`
 }
 
 export async function regenerateSelectedPanel(
@@ -2256,7 +2120,7 @@ export async function regenerateSelectedPanel(
 	const idx = panelIndex ?? (page.props.selectedPanel >= 0 ? page.props.selectedPanel : 0)
 	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
 	const target = metas[idx]
-	if (!target) return '未找到目标分镜格'
+	if (!target) return 'Target panel not found'
 
 	const ctx = readPageContext(editor, page)
 	const opt = computeOptics(defaultOpticsForMeta(target))
@@ -2284,7 +2148,7 @@ export async function regenerateSelectedPanel(
 		type: CONTAINER,
 		props: { panelsJson: JSON.stringify(metas), selectedPanel: idx },
 	})
-	return `已按本页锁定资产（${ctx.lockedAssetTags.slice(0, 3).join(' ')}）重绘第 ${idx + 1} 格（${target.shot}/${target.focal}）`
+	return `Redrew Panel #${idx + 1} (${target.shot}/${target.focal}) with locked assets (${ctx.lockedAssetTags.slice(0, 3).join(' ')})`
 }
 
 export function loadPresetArtIntoPanel(
@@ -2308,8 +2172,8 @@ export function loadPresetArtIntoPanel(
 	]
 	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
 	const target = metas[panelIndex]
-	if (!target) return '未找到目标分镜格'
-	const isSeagull = page.props.stylePreset === 'shonen_water' || page.props.title.includes('海鸥')
+	if (!target) return 'Target panel not found'
+	const isSeagull = page.props.stylePreset === 'shonen_water' || page.props.title.toLowerCase().includes('seagull')
 	const pool = isSeagull ? seagullUrls : noirUrls
 	const currentIdx = pool.indexOf(target.imageDataUrl || '')
 	const chosenUrl = customUrl || pool[(currentIdx >= 0 ? currentIdx + 1 : panelIndex) % pool.length]
@@ -2327,12 +2191,12 @@ export function loadPresetArtIntoPanel(
 		type: CONTAINER,
 		props: { panelsJson: JSON.stringify(metas), selectedPanel: panelIndex },
 	})
-	return `已为第 ${panelIndex + 1} 格载入高清分镜原画`
+	return `Loaded studio illustration into Panel #${panelIndex + 1}`
 }
 
 export function resetPanelTransformOnPage(editor: Editor, page: MangaContainer, panelIndex: number): string {
 	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
-	if (!metas[panelIndex]) return '未找到目标分镜格'
+	if (!metas[panelIndex]) return 'Target panel not found'
 	metas[panelIndex] = {
 		...metas[panelIndex],
 		imageOffsetX: 0,
@@ -2345,7 +2209,7 @@ export function resetPanelTransformOnPage(editor: Editor, page: MangaContainer, 
 		type: CONTAINER,
 		props: { panelsJson: JSON.stringify(metas), selectedPanel: panelIndex },
 	})
-	return `已复位第 ${panelIndex + 1} 格画面位移、缩放 (100%) 与旋转角 (0°)`
+	return `Reset Panel #${panelIndex + 1} pan, zoom (100%), and rotation (0°)`
 }
 
 export function rotatePanelImageOnPage(
@@ -2356,7 +2220,7 @@ export function rotatePanelImageOnPage(
 ): string {
 	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
 	const target = metas[panelIndex]
-	if (!target) return '未找到目标分镜格'
+	if (!target) return 'Target panel not found'
 	const nextRot = deltaOrReset === 'reset' ? 0 : Math.max(-45, Math.min(45, (target.imageRotation ?? 0) + deltaOrReset))
 	metas[panelIndex] = {
 		...target,
@@ -2367,7 +2231,7 @@ export function rotatePanelImageOnPage(
 		type: CONTAINER,
 		props: { panelsJson: JSON.stringify(metas), selectedPanel: panelIndex },
 	})
-	return `第 ${panelIndex + 1} 格画面旋转角度已设为 ${nextRot}°`
+	return `Set Panel #${panelIndex + 1} artwork rotation to ${nextRot}°`
 }
 
 export function togglePanelSubsplitOnPage(
@@ -2378,7 +2242,7 @@ export function togglePanelSubsplitOnPage(
 	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
 	const beats = readJson<Beat[]>(page.props.scriptJson, [])
 	const target = metas[panelIndex]
-	if (!target) return '未找到目标分镜格'
+	if (!target) return 'Target panel not found'
 
 	const ctx = readPageContext(editor, page)
 	const firstCharTag = ctx.lockedAssetTags.find((t) => t.startsWith('@')) || '@shen_mo'
@@ -2390,7 +2254,7 @@ export function togglePanelSubsplitOnPage(
 				targetTag: firstCharTag,
 				rectRel: [0.62, 0.08, 0.95, 0.44] as [number, number, number, number],
 				shot: 'ECU' as const,
-				caption: `${firstCharTag} 反应特写`,
+				caption: `${firstCharTag} Reaction CU`,
 			}
 
 	metas[panelIndex] = {
@@ -2413,8 +2277,8 @@ export function togglePanelSubsplitOnPage(
 		},
 	})
 	return currentlyEnabled
-		? `已关闭第 ${panelIndex + 1} 格画中画反应子格 (PiP)`
-		: `已在第 ${panelIndex + 1} 格开启画中画反应子格 (PiP · 锁定 ${firstCharTag})`
+		? `Disabled PiP inset on Panel #${panelIndex + 1}`
+		: `Enabled PiP reaction inset on Panel #${panelIndex + 1} (${firstCharTag})`
 }
 
 export function bindCardToPageContext(
@@ -2423,7 +2287,7 @@ export function bindCardToPageContext(
 	targetPage?: MangaContainer,
 ): string {
 	const page = targetPage ?? selectedPages(editor)[0]
-	if (!page) return '画布上没有可绑定的目标分镜页'
+	if (!page) return 'No target page found on canvas'
 	const rawTag = card.props.tag?.trim() || (card.props.kind === 'character' ? `@${card.props.title}` : `#${card.props.title}`)
 	const normalizedTag = rawTag.startsWith('@') || rawTag.startsWith('#') ? rawTag : card.props.kind === 'character' ? `@${rawTag}` : `#${rawTag}`
 
@@ -2448,7 +2312,7 @@ export function bindCardToPageContext(
 			contextJson: JSON.stringify(nextCtx),
 		},
 	})
-	return `已将设定卡「${card.props.title} (${normalizedTag})」锁定并注入 ${page.props.title} 的继承上下文`
+	return `Locked "${card.props.title} (${normalizedTag})" and injected into ${page.props.title} context`
 }
 
 export function spawnBlankPageAtPoint(editor: Editor, x?: number, y?: number): TLShapeId {
@@ -2466,7 +2330,7 @@ export function spawnBlankPageAtPoint(editor: Editor, x?: number, y?: number): T
 		y: py,
 		chapterIndex: 1,
 		pageIndex: nextIdx,
-		title: `第1话 · P${nextIdx}`,
+		title: `Ch.1 · P${nextIdx}`,
 		environment: 'interrogation-room',
 		lighting: 'rim',
 		stylePreset: 'seinen_noir',
@@ -2489,5 +2353,5 @@ export function tidyCanvasLayout(editor: Editor): string {
 		})
 	})
 	editor.zoomToFit({ animation: { duration: 180 } })
-	return `已按流水线顺序（P1 → P${pages.length}）横向对齐全部 ${pages.length} 页分镜稿`
+	return `Aligned all ${pages.length} pages horizontally in pipeline order (P1 → P${pages.length})`
 }

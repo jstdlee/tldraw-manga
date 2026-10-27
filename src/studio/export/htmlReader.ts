@@ -31,7 +31,7 @@ export function readerHtml(book: CompiledBook): string {
 	}
 	const json = JSON.stringify(payload).replace(/</g, '\\u003c')
 	return `<!DOCTYPE html>
-<html lang="zh-Hans">
+<html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -86,13 +86,13 @@ body[data-director="0"] .layer-director { display: none; }
 </aside>
 <main>
   <div class="bar">
-    <button class="mode on" data-mode="spread">日漫右翻双页</button>
-    <button class="mode" data-mode="webtoon">条漫纵向滚动</button>
-    <button class="mode" data-mode="guided">分镜格逐格推镜</button>
+    <button class="mode on" data-mode="spread">Right-to-Left Spread</button>
+    <button class="mode" data-mode="webtoon">Webtoon Scroll</button>
+    <button class="mode" data-mode="guided">Guided Panel Zoom</button>
     <span class="spacer"></span>
-    <button class="tog on" id="bub">台词气泡</button>
-    <button class="tog" id="dir">导演分镜与动线</button>
-    <button class="tog" id="app">特典设定集</button>
+    <button class="tog on" id="bub">Speech Balloons</button>
+    <button class="tog" id="dir">Director & Flow Overlays</button>
+    <button class="tog" id="app">Character & World Bible</button>
   </div>
   <div id="stage">${book.pages[0]?.svg ?? ''}</div>
 </main>
@@ -107,7 +107,7 @@ let panel = 0
 let appendix = false
 const stage = document.getElementById('stage')
 document.getElementById('title').textContent = book.title
-document.getElementById('sub').textContent = book.subtitle + ' · ' + pages.length + '页'
+document.getElementById('sub').textContent = book.subtitle + ' · ' + pages.length + ' pages'
 const toc = document.getElementById('toc')
 book.chapters.forEach((chapter) => {
   const h = document.createElement('div')
@@ -139,7 +139,7 @@ function renderSpread() {
   const right = pages[spread * 2]
   const left = pages[spread * 2 + 1]
   cursor = spread * 2
-  stage.innerHTML = '<div class="spread"><div class="sheet">' + (left ? left.svg : '<div class="blank">空白页</div>') + '</div><div class="sheet">' + (right ? right.svg : '<div class="blank">封面内侧</div>') + '</div></div><div class="nav"><button id="next"></button><button id="prev"></button></div>'
+  stage.innerHTML = '<div class="spread"><div class="sheet">' + (left ? left.svg : '<div class="blank">Blank page</div>') + '</div><div class="sheet">' + (right ? right.svg : '<div class="blank">Inside front cover</div>') + '</div></div><div class="nav"><button id="next"></button><button id="prev"></button></div>'
   document.getElementById('next').onclick = () => { if (spread < Math.ceil(pages.length / 2) - 1) { spread += 1; render() } }
   document.getElementById('prev').onclick = () => { if (spread > 0) { spread -= 1; render() } }
 }
@@ -180,8 +180,8 @@ function step(dir) {
   render()
 }
 function renderBible() {
-  const people = book.sheets.map((person) => '<article class="card"><div>' + person.svg + '</div><div><div class="tag">' + person.tag + ' ' + person.name + '</div><p>' + person.appearance + '</p><p>声音：' + person.voice + (person.locked ? ' · 外形锁定' : '') + '</p></div></article>').join('')
-  stage.innerHTML = '<div class="appendix"><h2>特典设定集</h2><p>' + book.bible.worldRules + '</p><p>' + book.bible.story + '</p>' + people + '</div>'
+  const people = book.sheets.map((person) => '<article class="card"><div>' + person.svg + '</div><div><div class="tag">' + person.tag + ' ' + person.name + '</div><p>' + person.appearance + '</p><p>Voice: ' + person.voice + (person.locked ? ' · appearance locked' : '') + '</p></div></article>').join('')
+  stage.innerHTML = '<div class="appendix"><h2>Character & World Bible</h2><p>' + book.bible.worldRules + '</p><p>' + book.bible.story + '</p>' + people + '</div>'
 }
 addEventListener('keydown', (event) => {
   if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') { event.preventDefault(); mode === 'guided' ? step(1) : (spread = Math.min(Math.ceil(pages.length / 2) - 1, spread + 1), cursor = spread * 2, render()) }

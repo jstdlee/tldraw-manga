@@ -88,7 +88,7 @@ describe('Stage 2 — McCloud on-demand bubble & sfx gating', () => {
 		const res = solveOnDemandBubbleAndSfxGates({
 			wordPictureMode: 'picture_specific',
 			tension: 0.5,
-			lines: [{ type: 'speech', text: '本不该说出口的话' }],
+			lines: [{ type: 'speech', text: 'Words that should never have been spoken' }],
 		})
 		expect(res.hasBubble).toBe(false)
 		expect(res.filteredLines.some((line) => line.type !== 'sfx')).toBe(false)
@@ -99,8 +99,8 @@ describe('Stage 2 — McCloud on-demand bubble & sfx gating', () => {
 			silent: true,
 			tension: 0.95,
 			lines: [
-				{ type: 'sfx', text: '轰' },
-				{ type: 'speech', text: '喂' },
+				{ type: 'sfx', text: 'BOOM' },
+				{ type: 'speech', text: 'Hey' },
 			],
 		})
 		expect(res.hasBubble).toBe(false)
@@ -112,19 +112,19 @@ describe('Stage 2 — McCloud on-demand bubble & sfx gating', () => {
 		const res = solveOnDemandBubbleAndSfxGates({
 			tension: 0.3,
 			transition: 'subject_to_subject',
-			lines: [{ type: 'speech', text: '你说呢' }],
+			lines: [{ type: 'speech', text: 'What do you think' }],
 		})
 		expect(res.hasBubble).toBe(true)
 		expect(res.hasSfx).toBe(false)
 	})
 
 	it('keeps an explicit sfx, and earns one on a high-tension action beat', () => {
-		expect(solveOnDemandBubbleAndSfxGates({ tension: 0.2, lines: [{ type: 'sfx', text: '咔' }] }).hasSfx).toBe(true)
+		expect(solveOnDemandBubbleAndSfxGates({ tension: 0.2, lines: [{ type: 'sfx', text: 'CLICK' }] }).hasSfx).toBe(true)
 		expect(
 			solveOnDemandBubbleAndSfxGates({
 				tension: 0.82,
 				transition: 'action_to_action',
-				lines: [{ type: 'speech', text: '上' }],
+				lines: [{ type: 'speech', text: 'Go' }],
 			}).hasSfx,
 		).toBe(true)
 	})
@@ -132,19 +132,19 @@ describe('Stage 2 — McCloud on-demand bubble & sfx gating', () => {
 
 describe('Stage 2 — Chinese rhetorical-pause balloon splitting', () => {
 	it('splits a long line at rhetorical pauses into capped lead/follow balloons', () => {
-		const long = '你带来的东西，会让这座城市重新计时……也可能，让它彻底停摆。'
+		const long = 'What you brought here will restart the clock of this city—or stop it forever.'
 		const parts = splitChineseDialogueBalloons(long, 12)
 		expect(parts.length).toBeGreaterThanOrEqual(2)
 		for (const part of parts) expect(Array.from(part).length).toBeLessThanOrEqual(12)
 	})
 
 	it('keeps short lines whole and returns nothing for empty input', () => {
-		expect(splitChineseDialogueBalloons('好的。')).toEqual(['好的。'])
+		expect(splitChineseDialogueBalloons('Understood.')).toEqual(['Understood.'])
 		expect(splitChineseDialogueBalloons('')).toEqual([])
 	})
 
 	it('hard-wraps a pause-free overflowing run', () => {
-		const parts = splitChineseDialogueBalloons('一二三四五六七八九十甲乙丙丁戊己', 8)
+		const parts = splitChineseDialogueBalloons('ABCDEFGHIJKLMNOP', 8)
 		expect(parts.length).toBeGreaterThanOrEqual(2)
 		for (const part of parts) expect(Array.from(part).length).toBeLessThanOrEqual(8)
 	})
@@ -340,7 +340,7 @@ describe('Universal story presets', () => {
 describe('Interrogation Room (noir-ch03-interrogation) — full 5-stage verification', () => {
 	it('locks all 8 discrete assets, splits Chinese breathing dialogue, gates silent Ma panel P4, and solves 5-panel gaze HUD', () => {
 		const preset = UNIVERSAL_STORY_PRESETS['noir-watchmaker']
-		expect(preset.title).toContain('第三章：雨夜审讯室的停摆怀表')
+		expect(preset.title).toContain('Ch.3: The Stopped Pocket Watch')
 		expect(preset.assets).toHaveLength(8)
 		expect(preset.panels).toHaveLength(5)
 
@@ -354,16 +354,16 @@ describe('Interrogation Room (noir-ch03-interrogation) — full 5-stage verifica
 
 		// Verify Chinese breathing pause splitter on P2, P3, P5 source lines
 		expect(
-			splitChineseDialogueBalloons('你说你整晚都在书店整理旧画册——那你袖口上的码头红丹防锈漆，也是书架上蹭的？', 26),
-		).toEqual(['你说你整晚都在书店整理旧画册——', '那你袖口上的码头红丹防锈漆，也是书架上蹭的？'])
+			splitChineseDialogueBalloons('You claim you spent all night sorting old books—then where did that primer come from?', 48),
+		).toEqual(['You claim you spent all night sorting old books—', 'then where did that primer come from?'])
 		expect(
-			splitChineseDialogueBalloons('看着它——这只表停下的时候，真正的凶手就在离你不到半米的地方。', 26),
-		).toEqual(['看着它——', '这只表停下的时候，真正的凶手就在离你不到半米的地方。'])
+			splitChineseDialogueBalloons('Look at it—when this watch stopped, the real killer was right beside you.', 45),
+		).toEqual(['Look at it—when this watch stopped,', 'the real killer was right beside you.'])
 		expect(
-			splitChineseDialogueBalloons('因为表盖内侧的刮痕只有左撇子反手调表才会留下——我说的对吗，沈副局长？！', 26),
-		).toEqual(['因为表盖内侧的刮痕只有左撇子反手调表才会留下——', '我说的对吗，沈副局长？！'])
+			splitChineseDialogueBalloons('Because the scratch inside was made left-handed—right, Deputy Chief Shen?!', 48),
+		).toEqual(['Because the scratch inside was made left-handed—', 'right, Deputy Chief Shen?!'])
 
-		// P2 has 0 SFX, P4 is silent Ma beat with 0 bubbles + 0% negative space + ambient micro-SFX '嚓……'
+		// P2 has 0 SFX, P4 is silent Ma beat with 0 bubbles + 0% negative space + ambient micro-SFX 'KCHK...'
 		const p2Gate = solveOnDemandBubbleAndSfxGates({
 			wordPictureMode: preset.panels[1].wordPictureMode,
 			transition: preset.panels[1].mccloudTransition,
@@ -421,7 +421,7 @@ describe("Programmatic Stage 2+3 Layout & Camera Decision Lock-in", () => {
 		// Last row is the high-tension climax hook -> bottom & horizontal bleed locked
 		expect(prog.genome.rows[2].p[0].bB).toBe(true);
 		expect(prog.decisionTrace.length).toBeGreaterThanOrEqual(4);
-		expect(prog.decisionTrace[0]).toContain("Stage2→3 程式化决策");
+		expect(prog.decisionTrace[0]).toContain("Stage2→3 Procedural Decision");
 
 		const compiled = compileTensionCoupledLayout("noir-lock", stage2.repairedBeats, preset.scenario, preset.layoutPreset);
 		expect(compiled.layout.panels).toHaveLength(5);
@@ -447,8 +447,8 @@ describe("Independent Prosody Layer & Bubble Style Controls", () => {
 		for (const prosodyStyle of styles) {
 			const svg = bubbleMarkup({
 				style: "speech",
-				text: "看着这只怀表！",
-				prosody: "冷笑审视",
+				text: "Look at this pocket watch!",
+				prosody: "Cold Scrutinizing",
 				emphasis: 1.1,
 				w: 180,
 				h: 96,
@@ -463,14 +463,14 @@ describe("Independent Prosody Layer & Bubble Style Controls", () => {
 				fillColor: "#f1f5f9",
 			});
 			expect(svg).toContain(`data-prosody-style="${prosodyStyle}"`);
-			expect(svg).toContain("冷笑审视");
+			expect(svg).toContain("Cold Scrutinizing");
 			expect(svg).toContain("#c93d35");
 		}
 
 		const baseAnchor = computeProsodyBadgeAnchor({
 			style: "speech",
-			text: "看着这只怀表！",
-			prosody: "冷笑审视",
+			text: "Look at this pocket watch!",
+			prosody: "Cold Scrutinizing",
 			emphasis: 1,
 			w: 180,
 			h: 96,
@@ -484,8 +484,8 @@ describe("Independent Prosody Layer & Bubble Style Controls", () => {
 		});
 		const shiftedAnchor = computeProsodyBadgeAnchor({
 			style: "speech",
-			text: "看着这只怀表！",
-			prosody: "冷笑审视",
+			text: "Look at this pocket watch!",
+			prosody: "Cold Scrutinizing",
 			emphasis: 1,
 			w: 180,
 			h: 96,
@@ -503,8 +503,8 @@ describe("Independent Prosody Layer & Bubble Style Controls", () => {
 
 		const hiddenSvg = bubbleMarkup({
 			style: "speech",
-			text: "隐藏语气层测试",
-			prosody: "不显示",
+			text: "Hidden prosody layer test",
+			prosody: "none",
 			emphasis: 1,
 			w: 180,
 			h: 90,
@@ -544,10 +544,10 @@ describe("Stage 8 — Page-as-Production-Unit pipeline & multi-page context inhe
 
 	it("compiles continuous multi-page layouts across P1 -> P2 -> P3 with inherited asset tags and 180-degree eyeline continuity", () => {
 		const p2Script = [
-			"1. [CU/high/50mm] 陆沉拇指用力按向停摆怀表的表冠，表壳背面弹开一道极细的暗格缝隙 — 💬「十一点四十七分不是停摆……是暗格的密码锁。」(冷峻审视) ⚡「咔哒！」",
-			"2. [ECU/dutch/85mm] 暗格内露出一枚染有暗红水渍的微型胶卷底片（无声静帧）",
-			"3. [MS/eye/35mm] 林野原本后仰的肩膀骤然绷紧，手铐铁链在审讯桌下绷直 — 💬「你竟然懂老钟表匠的机关……」(瞳孔骤缩) ⚡「哗啦」",
-			"4. [WS/low/28mm] 审讯室铁门外的积水走廊忽然响起急促而沉重的靴声，沈默推门而入带来一身冷雨 — 💬「陆队！证物科刚发现码头那具钟楼停在同一秒！！」(急促低吼)",
+			'1. [CU/high/50mm] Lu Chen presses the crown of the stopped watch; a hidden seam pops open on the caseback — 💬 "23:17 wasn\'t a breakdown... it\'s the combination lock." (Cold Scrutinizing) ⚡ "CLACK!"',
+			'2. [ECU/dutch/85mm] Inside the hidden compartment lies a micro-film negative stained with dark water (Silent Ma)',
+			'3. [MS/eye/35mm] Lin Ye\'s shoulders stiffen as his handcuff chain pulls taut under the table — 💬 "You actually know the old watchmaker\'s mechanism..." (Shaken) ⚡ "CLINK"',
+			'4. [WS/low/28mm] Heavy boots echo down the flooded corridor outside as the iron door swings open — 💬 "Captain Lu! Forensics just found the harbor clock tower stopped at the exact same second!!" (Urgent)',
 		].join("\n");
 
 		const p2Beats = parseScriptTextToBeats(

@@ -292,3 +292,20 @@ export function IconWand(props: IconProps) {
 		</BaseIcon>
 	)
 }
+
+export function IconBolt(props: IconProps) {
+	return (
+		<BaseIcon {...props}>
+			<path d="M9 1.8 4 9h3.3l-.7 5.2L12 7.2H8.3L9 1.8Z" />
+		</BaseIcon>
+	)
+}
+
+export function IconTag(props: IconProps) {
+	return (
+		<BaseIcon {...props}>
+			<path d="M2.5 2.5h5l6 6-5 5-6-6v-5Z" />
+			<circle cx="5.2" cy="5.2" r="1" />
+		</BaseIcon>
+	)
+}

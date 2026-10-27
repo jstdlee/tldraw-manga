@@ -56,18 +56,18 @@ export interface ParametricOverrides {
 }
 
 export const PAGE_RATIOS: { id: string; label: string; ratio: number }[] = [
-	{ id: 'b4', label: 'B4 日漫原稿 (0.708)', ratio: 0.708 },
-	{ id: 'a4', label: 'A4 标准刊物 (0.707)', ratio: 0.707 },
-	{ id: 'webtoon', label: '竖屏条漫 (0.563)', ratio: 0.5625 },
-	{ id: 'yonkoma', label: '四格窄幅 (0.500)', ratio: 0.5 },
-	{ id: 'wide', label: '宽银幕跨页 (1.333)', ratio: 1.333 },
+	{ id: 'b4', label: 'B4 Manga Manuscript (0.708)', ratio: 0.708 },
+	{ id: 'a4', label: 'A4 Standard Print (0.707)', ratio: 0.707 },
+	{ id: 'webtoon', label: 'Vertical Webtoon (0.563)', ratio: 0.5625 },
+	{ id: 'yonkoma', label: '4-Koma Strip (0.500)', ratio: 0.5 },
+	{ id: 'wide', label: 'Widescreen Spread (1.333)', ratio: 1.333 },
 ]
 
 export const ROW_RANGES: { id: '1-3' | '2-3' | '2-4' | '3-4'; label: string; min: number; max: number }[] = [
-	{ id: '1-3', label: '1–3 段 (疏朗扉页)', min: 1, max: 3 },
-	{ id: '2-3', label: '2–3 段 (动作冲击)', min: 2, max: 3 },
-	{ id: '2-4', label: '2–4 段 (标准叙事)', min: 2, max: 4 },
-	{ id: '3-4', label: '3–4 段 (密集对白)', min: 3, max: 4 },
+	{ id: '1-3', label: '1–3 Rows (Splash / Open)', min: 1, max: 3 },
+	{ id: '2-3', label: '2–3 Rows (Dynamic Action)', min: 2, max: 3 },
+	{ id: '2-4', label: '2–4 Rows (Standard Narrative)', min: 2, max: 4 },
+	{ id: '3-4', label: '3–4 Rows (Dense Dialogue)', min: 3, max: 4 },
 ]
 
 export interface RealizedPanel {

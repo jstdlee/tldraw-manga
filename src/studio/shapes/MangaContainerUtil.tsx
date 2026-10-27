@@ -56,7 +56,7 @@ export class MangaContainerUtil extends BaseBoxShapeUtil<MangaContainer> {
 			subtitle: '',
 			story: '',
 			worldRules: '',
-			stylePreset: '少年网点',
+			stylePreset: 'Shonen Screentone',
 			mood: '',
 			environment: 'boardwalk',
 			lighting: 'hard-noon',
@@ -117,7 +117,7 @@ export class MangaContainerUtil extends BaseBoxShapeUtil<MangaContainer> {
 function ContainerView({ shape }: { shape: MangaContainer }) {
 	const editor = useEditor()
 	if (shape.props.role !== 'page') {
-		const roleLabel = shape.props.role === 'bible' ? '设定集' : `第${shape.props.chapterIndex}话`
+		const roleLabel = shape.props.role === 'bible' ? 'Story Bible' : `Ch.${shape.props.chapterIndex}`
 		const envLabel = ENV_LABELS[shape.props.environment] ?? shape.props.environment
 		const lightLabel = LIGHT_LABELS[shape.props.lighting] ?? shape.props.lighting
 		return (
@@ -132,7 +132,7 @@ function ContainerView({ shape }: { shape: MangaContainer }) {
 					</span>
 				</header>
 				<div className="container-body">
-					<p>{shape.props.subtitle || shape.props.mood || '将设定卡、视觉参考卡或 AI 节点放入此容器，并通过连线驱动分镜页。'}</p>
+					<p>{shape.props.subtitle || shape.props.mood || 'Place reference cards or pipeline nodes here to drive page compilation.'}</p>
 				</div>
 			</HTMLContainer>
 		)
@@ -251,7 +251,7 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 
 	const selected = shape.props.selectedPanel
 	const reasons = readJson<string[]>(shape.props.reasonsJson, [])
-	const _scenarioZh = SCENARIO_LABELS[shape.props.scenario] ?? shape.props.scenario
+	const _scenarioLabel = SCENARIO_LABELS[shape.props.scenario] ?? shape.props.scenario
 
 	const sx = layout.width / shape.props.w
 	const sy = layout.height / Math.max(1, shape.props.h - 60)
@@ -285,8 +285,19 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 	const parsedCtx = readJson<Partial<PagePipelineContext>>(shape.props.contextJson || '{}', {})
 	const lockedTagCount = Array.isArray(parsedCtx.lockedAssetTags) && parsedCtx.lockedAssetTags.length > 0 ? parsedCtx.lockedAssetTags.length : 5
 	const inheritedIdx = parsedCtx.inheritedFromPageIndex
+	const styleRaw = (parsedCtx.stylePreset || shape.props.stylePreset || '').toLowerCase()
+	const styleShort = styleRaw.includes('noir')
+		? 'Noir'
+		: styleRaw.includes('water')
+			? 'Watercolor'
+			: styleRaw.includes('shonen') || styleRaw.includes('blade')
+				? 'Shonen'
+				: 'Story'
+	const contextPillLabel = inheritedIdx
+		? `Inherited from P${inheritedIdx} · ${lockedTagCount} Assets · 180° Axis OK`
+		: `Context · ${lockedTagCount} Locked Assets · ${styleShort}`
 
-	void [_fileInputRef, _scenarioZh]
+	void [_fileInputRef, _scenarioLabel]
 	return (
 		<HTMLContainer className="manga-container role-page">
 			<div className="page-dom-root" data-page-id={shape.id}>
@@ -298,10 +309,10 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 					stopEvent(e)
 					triggerExtendNextPage(shape.id)
 				}}
-				title={`基于 ${shape.props.title} 的设定 Context 流水线续写 P${(shape.props.pageIndex || 1) + 1}`}
+				title={`Extend P${(shape.props.pageIndex || 1) + 1} inheriting context from ${shape.props.title}`}
 			>
 				<span className="extend-plus">+</span>
-				<span className="extend-label">续写 P{(shape.props.pageIndex || 1) + 1}</span>
+				<span className="extend-label">Extend P{(shape.props.pageIndex || 1) + 1}</span>
 			</button>
 			<header className="container-bar page-bar">
 				<span className="role-pill">
@@ -315,18 +326,18 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 						stopEvent(e)
 						openPageContextInspector(shape.id)
 					}}
-					title="点击查看或编辑本页继承的角色/道具设定、180°视线轴与分镜剧情"
+					title="Inspect and edit inherited assets, 180-deg camera axis, and page script beats"
 				>
-					{inheritedIdx ? `承接 P${inheritedIdx} · ${lockedTagCount}设定` : `Context · ${lockedTagCount}设定`}
+					{contextPillLabel}
 				</button>
 				<span className="badge score" title={reasons.join(' · ')}>
-					JEV {Math.round(shape.props.score * 100)}分
+					JEV {Math.round(shape.props.score * 100)}
 				</span>
 				<div className="page-mini-actions" onPointerDown={stopEvent}>
 					<button
 						type="button"
 						className="mini-icon-btn page-more-btn"
-						title="打开整页与流水线分组菜单 (也可在任意分格/页面上直接右键)"
+						title="Open Page & Pipeline Menu (or right-click any panel/page)"
 						onClick={(e) => {
 							stopEvent(e)
 							openCustomContextMenu({ kind: 'page', x: e.clientX, y: e.clientY, pageId: shape.id })
@@ -535,28 +546,28 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 					return (
 						<div className="page-cell-hud">
 							<div className="page-foot-left">
-								<span className="pill accent" style={{ fontSize: 10, padding: '1px 6px' }}>格#{activeIdx + 1}</span>
+								<span className="pill accent" style={{ fontSize: 10, padding: '1px 6px' }}>Panel #{activeIdx + 1}</span>
 								<span className="page-foot-meta">
-									{activeMeta ? `${activeMeta.shot} · ${activeMeta.focal} · ${Math.round(scaleVal * 100)}%` : `${layout.panels.length} 格`}
+									{activeMeta ? `${activeMeta.shot} · ${activeMeta.focal} · ${Math.round(scaleVal * 100)}%` : `${layout.panels.length} Panels`}
 								</span>
 							</div>
 							<div className="page-foot-right">
-								<span className="page-foot-hint">右键分格/气泡使用分组菜单</span>
+								<span className="page-foot-hint">Right-click panel or bubble for context actions</span>
 								<button
 									type="button"
 									className="mini-btn"
-									title="浏览或编辑本页继承 Context"
+									title="Inspect or edit inherited page context"
 									onClick={() => openPageContextInspector(shape.id)}
 								>
-									设定Context
+									Context
 								</button>
 								<button
 									type="button"
 									className="mini-btn primary-mini"
-									title="以此页 Context 延续生成下一页"
+									title="Extend next page with inherited context"
 									onClick={() => triggerExtendNextPage(shape.id)}
 								>
-									+ 续写P{(shape.props.pageIndex || 1) + 1}
+									+ Page {(shape.props.pageIndex || 1) + 1}
 								</button>
 							</div>
 						</div>

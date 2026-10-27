@@ -83,12 +83,12 @@ export interface EmotionDirectionTip {
 const RAW_TIPS = {
 	establishing: {
 		scenario: 'establishing',
-		title: '开场铺垫 · 建立空间',
-		subtitle: '首格大景定调，后续稳步切入人物反应',
-		rhythm: '前大后稳（首格占 30%+ 建立世界坐标，后续中近景自然过渡）',
-		camera: '推荐 18mm–28mm 广角俯拍/平视（EWS → MS → MCU）',
-		bleedTip: '首格可开启上/右出血，增强开篇空间呼吸感',
-		silentTip: '首格或环境转场格可留白少字，让读者视线先落入场景',
+		title: 'Opening Setup · Establish Space',
+		subtitle: 'Large opening panel sets tone, followed by steady character reaction cuts',
+		rhythm: 'Front-heavy rhythm (Panel 1 takes 30%+ to anchor world coordinates, then smooth MS/MCU transitions)',
+		camera: 'Recommended 18mm–28mm wide high/eye-level (EWS → MS → MCU)',
+		bleedTip: 'Enable top/right bleed on Panel 1 to expand spatial breathing room',
+		silentTip: 'Keep Panel 1 or transition panel light on text so the eye enters the scene first',
 		recommendedPreset: 'std',
 		recommendedTilt: 0.18,
 		recommendedBleed: 0.25,
@@ -97,12 +97,12 @@ const RAW_TIPS = {
 	},
 	tension: {
 		scenario: 'tension',
-		title: '悬疑压迫 · 步步逼近',
-		subtitle: '密集窄格压缩呼吸，视线冷峻交锋',
-		rhythm: '格数偏密（4–6 格），面积均等偏窄，制造倒计时般的紧迫感',
-		camera: '推荐 50mm–85mm 中长焦压缩空间 + 低机位/斜角（MCU → CU → ECU）',
-		bleedTip: '前段保持内框封闭压抑感，仅在末格局部破框',
-		silentTip: '高潮前一格设为「无声静帧」特写眼神或局部动作',
+		title: 'Suspense & Pressure · Closing In',
+		subtitle: 'Dense narrow panels compress breathing room and sharpen eyeline clashes',
+		rhythm: 'Tighter panel count (4–6 panels) with narrow slices for countdown urgency',
+		camera: 'Recommended 50mm–85mm telephoto compression + low/dutch angles (MCU → CU → ECU)',
+		bleedTip: 'Keep early panels enclosed in tight borders; break frame only on the final beat',
+		silentTip: 'Set the pre-climax panel as a silent Ma beat focusing on eyes or micro-action',
 		recommendedPreset: 'seizen',
 		recommendedTilt: 0.28,
 		recommendedBleed: 0.12,
@@ -111,12 +111,12 @@ const RAW_TIPS = {
 	},
 	intimacy: {
 		scenario: 'intimacy',
-		title: '亲密喘息 · 情感留白',
-		subtitle: '正交平稳框线，留出充足对白与空气感',
-		rhythm: '正交低斜切（Tilt ≤ 10%），节奏舒缓，大面积留白承载情绪潜台词',
-		camera: '推荐 35mm–50mm 平视标准镜头，浅景深柔化背景杂讯（MS ↔ CU）',
-		bleedTip: '回忆或情绪共鸣格可开启单侧出血，营造余韵',
-		silentTip: '在关键台词后插入一格无对白空镜（海风、衣角或光影）',
+		title: 'Intimate Quiet · Emotional Negative Space',
+		subtitle: 'Orthogonal calm borders with generous negative space for subtext',
+		rhythm: 'Low slant (Tilt <= 10%), unhurried pacing, wide negative space carrying subtext',
+		camera: 'Recommended 35mm–50mm eye-level standard lens with shallow DOF (MS ↔ CU)',
+		bleedTip: 'Single-edge bleed on memory or resonance panels creates lingering aftertaste',
+		silentTip: 'Insert a wordless pillow shot after key dialogue (wind, hem, or shadow)',
 		recommendedPreset: 'seizen',
 		recommendedTilt: 0.06,
 		recommendedBleed: 0.15,
@@ -125,12 +125,12 @@ const RAW_TIPS = {
 	},
 	action: {
 		scenario: 'action',
-		title: '动作冲击 · 破框速度',
-		subtitle: '锐利斜切刀口与大比例出血，强化动势连贯',
-		rhythm: '大小格强烈对比（CV ≥ 0.45），斜切分割线引导视线高速滑落',
-		camera: '推荐 18mm 超广角近迫透视 + 仰拍/荷兰斜角（WS ↔ CU 急促切换）',
-		bleedTip: '主打击格开启双边或三边出血，冲破版心束缚',
-		silentTip: '重击命中瞬间可不放对白，仅留视觉冲击或精炼拟声词',
+		title: 'Kinetic Action · Frame-Breaking Speed',
+		subtitle: 'Sharp diagonal gutters and bold bleed amplify kinetic flow',
+		rhythm: 'High size contrast (CV >= 0.45) with diagonal cuts guiding rapid eye descent',
+		camera: 'Recommended 18mm ultra-wide foreshortening + low/dutch angles (rapid WS ↔ CU cuts)',
+		bleedTip: 'Enable 2- or 3-edge bleed on the impact panel to shatter the safe margin',
+		silentTip: 'Drop dialogue on the impact frame; leave pure visual force or a single SFX',
 		recommendedPreset: 'action',
 		recommendedTilt: 0.62,
 		recommendedBleed: 0.5,
@@ -139,12 +139,12 @@ const RAW_TIPS = {
 	},
 	reveal: {
 		scenario: 'reveal',
-		title: '戏剧揭晓 · 翻页惊奇',
-		subtitle: '前段克制铺垫，真相落于主视觉大格',
-		rhythm: '前 2–3 格紧凑收敛，随后突然展开占页 38%+ 的揭晓主格',
-		camera: '前段遮挡局部特写（CU），揭晓格切广角全景或冲击近景（WS / MCU）',
-		bleedTip: '揭晓格开启左/下出血，将读者视线直接牵引至翻页处',
-		silentTip: '揭晓前一格保持绝对静默，拉满期待值',
+		title: 'Dramatic Reveal · Page-Turn Hook',
+		subtitle: 'Restrained setup in early panels, landing the reveal in a dominant hero frame',
+		rhythm: '2–3 compact setup panels before expanding into a 38%+ reveal frame',
+		camera: 'Early occluded close-ups (CU) cutting to a wide reveal or impact MCU',
+		bleedTip: 'Open left/bottom bleed on the reveal panel to pull the eye toward the page turn',
+		silentTip: 'Keep the panel right before the reveal completely silent to maximize tension',
 		recommendedPreset: 'tobira',
 		recommendedTilt: 0.35,
 		recommendedBleed: 0.6,
@@ -153,12 +153,12 @@ const RAW_TIPS = {
 	},
 	climax: {
 		scenario: 'climax',
-		title: '高潮爆发 · 终局定格',
-		subtitle: '全页视觉重心集中，高潮前留白一拍',
-		rhythm: '极高主次反差（主格占 42%+），辅以 2–3 格急促切镜烘托顶点',
-		camera: '18mm 极端仰拍或 85mm 极致眼神大特写（ECU → EWS 史诗定格）',
-		bleedTip: '主格大面积出血（≥ 65%），释放全书最高情绪张力',
-		silentTip: '爆发前一格强制留空无声格，形成「静→爆」反差',
+		title: 'Climax Impact · Finale Freeze',
+		subtitle: 'Concentrated visual gravity across the page with a silent pause before impact',
+		rhythm: 'Extreme hierarchy contrast (hero panel 42%+), backed by 2–3 rapid cuts',
+		camera: '18mm extreme low angle or 85mm eye ECU (ECU → EWS epic freeze)',
+		bleedTip: 'Wide bleed on hero panel (>= 65%) releasing peak emotional tension',
+		silentTip: 'Force a silent Ma panel right before the burst for quiet-to-explosive contrast',
 		recommendedPreset: 'tobira',
 		recommendedTilt: 0.48,
 		recommendedBleed: 0.72,
@@ -271,53 +271,53 @@ export function layoutScore(features: LayoutFeatures, targetPanels: number, scen
 
 	const countDiff = Math.abs(features.n - targetPanels)
 	const countScore = Math.max(0, 1 - countDiff * 0.28)
-	if (countDiff === 0) reasons.push(`格数精准 (${features.n}格)`)
-	else if (countDiff === 1) reasons.push(`格数接近 (${features.n}/${targetPanels})`)
+	if (countDiff === 0) reasons.push(`Exact panel count (${features.n})`)
+	else if (countDiff === 1) reasons.push(`Near target count (${features.n}/${targetPanels})`)
 	else {
-		deficits.push(`当前格数 (${features.n}格) 偏离目标剧本节拍 (${targetPanels}格)`)
-		mutations.push(`建议调整段数或嵌套拆格率，使格数回归 ${targetPanels} 格`)
+		deficits.push(`Panel count (${features.n}) deviates from target script beats (${targetPanels})`)
+		mutations.push(`Adjust row count or subsplit rate to align with ${targetPanels} panels`)
 		remedies.push({
 			actionLabel: '', description: '',
 			id: 'split-dense',
-			label: '校准格数密度',
-			detail: `将分格密度向目标 ${targetPanels} 格对齐`,
+			label: 'Calibrate Panel Count',
+			detail: `Align panel density to target ${targetPanels} panels`,
 		})
 	}
 
 	let heroBonus = 0.55
 	if (w.heroWhere === 'first' && features.bigIdx === 0) {
 		heroBonus = 1
-		reasons.push('首格主视觉定调')
+		reasons.push('Strong opening anchor')
 	} else if (w.heroWhere === 'last' && features.bigIdx >= features.n - 2) {
 		heroBonus = 1
-		reasons.push('末段视觉落点强')
+		reasons.push('Strong final-panel hook')
 	} else if (w.heroWhere === 'mid' && features.bigIdx > 0 && features.bigIdx < features.n - 1) {
 		heroBonus = 1
-		reasons.push('中段情绪重心稳')
+		reasons.push('Balanced mid-page anchor')
 	} else if (w.heroWhere === 'any' && features.bigShare > 0.28) {
 		heroBonus = 1
-		reasons.push(`主格突出 (${Math.round(features.bigShare * 100)}%)`)
+		reasons.push(`Hero panel dominance (${Math.round(features.bigShare * 100)}%)`)
 	}
 
 	if (features.bigShare < 0.24 && (scenario === 'climax' || scenario === 'reveal' || scenario === 'action')) {
-		deficits.push(`主格面积占比偏小 (${Math.round(features.bigShare * 100)}%)，缺乏视觉统治力`)
-		mutations.push('建议提升「大格权重 (Big ≥ 40%)」拉开主次层级对比')
+		deficits.push(`Hero panel share is low (${Math.round(features.bigShare * 100)}%), lacking visual dominance`)
+		mutations.push('Increase Hero Weight (Big >= 40%) to widen visual hierarchy')
 		remedies.push({
 			actionLabel: '', description: '',
 			id: 'expand-hero',
-			label: '放大主视觉格',
-			detail: '拉高主格行高与列宽权重，强化核心戏剧镜头',
+			label: 'Amplify Hero Panel',
+			detail: 'Boost hero row/column weights to emphasize the key dramatic beat',
 		})
 	}
 
 	if (features.lastShare < 0.14 && features.n >= 4) {
-		deficits.push(`末格面积偏小 (${Math.round(features.lastShare * 100)}%)，左下角翻页悬念钩子偏弱`)
-		mutations.push('建议扩大末格面积并开启左/下出血，强化翻页牵引力')
+		deficits.push(`Final panel share is small (${Math.round(features.lastShare * 100)}%), weakening the page-turn hook`)
+		mutations.push('Enlarge final panel and enable left/bottom bleed to strengthen the page-turn pull')
 		remedies.push({
 			actionLabel: '', description: '',
 			id: 'bleed-last-hook',
-			label: '强化末格翻页钩子',
-			detail: '开启末格左下出血并扩大末段行高',
+			label: 'Boost Page-Turn Hook',
+			detail: 'Enable bottom-left bleed on the final panel and expand bottom row height',
 		})
 	}
 
@@ -329,46 +329,46 @@ export function layoutScore(features: LayoutFeatures, targetPanels: number, scen
 		w.diag >= 0 ? features.diagRatio * w.diag : (1 - features.diagRatio) * -w.diag * 0.8 + (features.diagRatio === 0 ? 0.08 : 0)
 
 	if (w.diag > 0.15 && features.diagRatio > 0.35) {
-		reasons.push(`斜切张力 (${Math.round(features.diagRatio * 100)}%)`)
+		reasons.push(`Diagonal tension (${Math.round(features.diagRatio * 100)}%)`)
 	} else if (w.diag > 0.18 && features.diagRatio < 0.18) {
-		deficits.push('分割线过于平直，动作/冲突场景的速度感不足')
-		mutations.push('建议将「斜切度 (Tilt)」提升至 40%–60% 制造动势切线')
+		deficits.push('Dividers are too orthogonal; action/conflict scene lacks kinetic speed')
+		mutations.push('Increase Tilt to 40%–60% for kinetic diagonal gutters')
 		remedies.push({
 			actionLabel: '', description: '',
 			id: 'boost-tilt',
-			label: '注入斜切动势',
-			detail: '为行/列分割线注入漫画斜切角度，强化视觉速度感',
+			label: 'Inject Diagonal Kinetic Cut',
+			detail: 'Add diagonal slant to row/column gutters for visual velocity',
 		})
 	}
 
 	if (w.diag < 0 && features.diagRatio < 0.15) {
-		reasons.push('正交沉稳叙事')
+		reasons.push('Calm orthogonal framing')
 	} else if (w.diag < -0.1 && features.diagRatio > 0.35) {
-		deficits.push('斜切线过多，破坏了亲密/铺垫场景的平稳呼吸感')
-		mutations.push('建议降低「斜切度 (Tilt ≤ 15%)」恢复正交框线')
+		deficits.push('Excessive diagonal cuts disrupt the calm rhythm of an intimate/setup scene')
+		mutations.push('Reduce Tilt (<= 15%) to restore orthogonal panel framing')
 		remedies.push({
 			actionLabel: '', description: '',
 			id: 'calm-tilt',
-			label: '收敛正交框线',
-			detail: '降低分割线斜率，恢复沉稳正交的叙事画框',
+			label: 'Restore Orthogonal Framing',
+			detail: 'Reduce divider slant for composed orthogonal storytelling',
 		})
 	}
 
 	if (features.bleedRatio > 0.22 && w.bleed > 0.2) {
-		reasons.push('破框出血释放空间')
+		reasons.push('Frame-breaking bleed')
 	} else if (w.bleed >= 0.28 && features.bleedRatio < 0.15) {
-		deficits.push('四边均受内框束缚，缺少破框出血带来的空间冲击')
-		mutations.push('建议开启主格或末格的「边缘出血 (Bleed)」打破版心边界')
+		deficits.push('All edges are boxed in; lacks spatial release from full-bleed panels')
+		mutations.push('Enable edge bleed on the hero or final panel to break the trim margin')
 		if (!remedies.some((r) => r.id === 'bleed-last-hook')) {
 			remedies.push({
 				id: 'bleed-last-hook',
-				label: '开启主格/末格出血',
-				detail: '打开关键分镜格的外缘出血，释放画面空间感',
+				label: 'Enable Hero/Final Bleed',
+				detail: 'Open outer bleed on key panels to expand spatial impact',
 			})
 		}
 	}
 
-	if (features.cv > 0.38) reasons.push('大小格主次分明')
+	if (features.cv > 0.38) reasons.push('Clear size hierarchy')
 
 	const raw =
 		countScore * 0.34 +
@@ -402,10 +402,10 @@ export function layoutScore(features: LayoutFeatures, targetPanels: number, scen
 	}
 
 	if (deficits.length === 0) {
-		deficits.push('当前版式结构均衡，无明显叙事或动线硬伤')
+		deficits.push('Layout topology is balanced with clear reading flow')
 	}
 	if (mutations.length === 0) {
-		mutations.push('可尝试微调单格四边出血或在高潮前插入一格「无声静帧」')
+		mutations.push('Try fine-tuning per-panel edge bleed or inserting a silent Ma beat before the climax')
 	}
 
 	return {
@@ -604,10 +604,10 @@ export function readingOrderAudit(layout: Omit<Layout, 'seed'>): { hops: FlowHop
 		const a = hops[i]
 		const b = hops[i + 1]
 		if (curr.row === next.row && curr.sub === next.sub && b.x > a.x + 12) {
-			warnings.push(`第 ${i + 1}→${i + 2} 格违反右起阅读顺序`)
+			warnings.push(`Panel ${i + 1}→${i + 2} violates right-to-left reading order`)
 		}
 		if (curr.row < next.row && b.y < a.y - 18) {
-			warnings.push(`第 ${i + 1}→${i + 2} 格出现向上逆跳`)
+			warnings.push(`Panel ${i + 1}→${i + 2} jumps upward against reading flow`)
 		}
 	}
 	return { hops, warnings }

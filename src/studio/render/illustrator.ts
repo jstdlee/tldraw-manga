@@ -403,9 +403,9 @@ function frame(focus: { x: number; y: number }, shot: string, aspect: string, an
 
 function actorId(name: string, index: number): string {
 	const value = name.toLowerCase()
-	if (value.includes('kanta') || name.includes('勘')) return 'kanta'
-	if (value.includes('mei') || name.includes('芽')) return 'mei'
-	if (value.includes('boss') || name.includes('鸥') || value.includes('gull')) return 'boss'
+	if (value.includes('kanta') || name.includes('kanta')) return 'kanta'
+	if (value.includes('mei') || name.includes('mei')) return 'mei'
+	if (value.includes('boss') || name.includes('gull') || value.includes('gull')) return 'boss'
 	return index % 2 === 0 ? 'kanta' : 'mei'
 }
 
@@ -591,7 +591,7 @@ function renderNoirInterrogationPanel(input: IllustrationInput): { viewBox: stri
 				<path d="M55,275 Q170,220 285,275" fill="none" stroke="#cbd5e1" stroke-width="28" stroke-linecap="round"/>
 				<path d="M40,245 L55,225 M295,245 L280,225 M170,210 L170,192" stroke="#38bdf8" stroke-width="3"/>
 				<rect x="8" y="8" width="215" height="30" rx="4" fill="#0f172a" opacity="0.9"/>
-				<text x="16" y="28" font-size="16" font-weight="700" fill="#38bdf8">PiP · 瞳孔微缩反应切格</text>
+				<text x="16" y="28" font-size="16" font-weight="700" fill="#38bdf8">PiP · Pupil Contraction Cut</text>
 			</g>
 		`
 		return { viewBox: '0 0 1000 1000', markup }
@@ -695,14 +695,14 @@ function renderNoirInterrogationPanel(input: IllustrationInput): { viewBox: stri
 			<circle cx="95" cy="195" r="76" fill="#1e293b" stroke="#e2e8f0" stroke-width="4"/>
 			<circle cx="95" cy="195" r="62" fill="#334155" stroke="#94a3b8" stroke-width="2"/>
 			<path d="M135,155 L52,228 M142,168 L64,238" stroke="#ef4444" stroke-width="4.5" stroke-linecap="round"/>
-			<text x="95" y="305" text-anchor="middle" font-size="15" font-weight="700" fill="#fca5a5">左撇子反手调表刮痕</text>
+			<text x="95" y="305" text-anchor="middle" font-size="15" font-weight="700" fill="#fca5a5">Left-Handed Crown Scratch</text>
 			<!-- Right half: Shen Mo's left thumb striking the brass lighter wheel -->
 			<rect x="252" y="165" width="48" height="76" rx="5" fill="#b45309" stroke="#fde047" stroke-width="3"/>
 			<path d="M276,155 C262,128 272,102 276,88 C288,108 294,130 276,155 Z" fill="#fde047"/>
 			<path d="M210,185 Q242,152 268,158 L262,228 L212,228 Z" fill="#cbd5e1" stroke="#090d14" stroke-width="3"/>
-			<text x="276" y="305" text-anchor="middle" font-size="15" font-weight="700" fill="#fde047">沈默左手反握打火机</text>
+			<text x="276" y="305" text-anchor="middle" font-size="15" font-weight="700" fill="#fde047">Shen Mo Left-Hand Lighter Grip</text>
 			<rect x="8" y="8" width="245" height="30" rx="4" fill="#0f172a" opacity="0.92"/>
-			<text x="16" y="28" font-size="16" font-weight="700" fill="#38bdf8">PiP · 左撇子调表刮痕铁证</text>
+			<text x="16" y="28" font-size="16" font-weight="700" fill="#38bdf8">PiP · Left-Handed Scratch Proof</text>
 		</g>
 	`
 	return { viewBox: '0 0 1000 1000', markup }
@@ -757,15 +757,15 @@ export function characterSheetSvg(tag: string): string {
 	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 150">
 		<rect width="360" height="150" fill="#f7f6f2"/>
 		${draw('front', 60)}${draw('side', 180)}${draw('back', 300)}
-		<text x="60" y="146" text-anchor="middle" font-size="11" fill="#5c6b76">正视图</text>
-		<text x="180" y="146" text-anchor="middle" font-size="11" fill="#5c6b76">侧视图</text>
-		<text x="300" y="146" text-anchor="middle" font-size="11" fill="#5c6b76">背视图</text>
+		<text x="60" y="146" text-anchor="middle" font-size="11" fill="#5c6b76">Front View</text>
+		<text x="180" y="146" text-anchor="middle" font-size="11" fill="#5c6b76">Side View</text>
+		<text x="300" y="146" text-anchor="middle" font-size="11" fill="#5c6b76">Back View</text>
 	</svg>`
 }
 
 export function referenceCardSvg(tag: string, title: string, seed: string): string {
-	const isRoof = tag.includes('rooftop') || title.includes('屋顶') || title.includes('夕照')
-	const isNeon = tag.includes('neon') || title.includes('雨') || title.includes('霓虹')
+	const isRoof = tag.includes('rooftop') || title.includes('rooftop') || title.includes('sunset')
+	const isNeon = tag.includes('neon') || title.includes('rain') || title.includes('neon')
 	const env = isRoof ? 'rooftop' : isNeon ? 'neon-rain' : 'boardwalk'
 	const light = isRoof ? 'golden-dusk' : isNeon ? 'neon-bounce' : 'hard-noon'
 	const who = tag.includes('boss') ? ['boss', 'kanta'] : isRoof ? ['kanta', 'mei', 'boss'] : ['kanta', 'mei']
