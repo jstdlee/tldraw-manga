@@ -564,6 +564,11 @@ body,
 	border-color: transparent !important;
 }
 
+.link-btn:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
 .sidebar textarea,
 .sidebar input[type='text'],
 .sidebar input[type='password'],
@@ -3101,6 +3106,7 @@ body,
 @media (prefers-reduced-motion: reduce) {
 	.hud-toast { animation: none; }
 	.stage-flash { animation: none; }
+	.cmdk-backdrop { animation: none; }
 }
 
 /* Keyboard shortcuts sheet. */
@@ -3834,6 +3840,10 @@ body,
 	background: var(--st-accent);
 	border-color: var(--st-accent);
 }
+.check-box:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
 
 /* Master action buttons. */
 .master-actions {
@@ -4129,9 +4139,13 @@ button.master-row.selectable.active {
 	font-weight: 600;
 	cursor: pointer;
 }
-.constraint-toggle:hover {
+.constraint-toggle:hover:not(:disabled) {
 	border-color: var(--st-border-strong);
 	color: var(--st-text-1);
+}
+.constraint-toggle:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
 }
 .constraint-toggle.on {
 	background: var(--st-accent-soft);
@@ -4175,6 +4189,14 @@ button.master-row.selectable.active {
 /* Unobtrusive model-status dot (opens settings on click) */
 .model-status {
 	width: 26px !important;
+	padding: 0 !important;
+	justify-content: center;
+}
+
+/* Icon-only appearance toggle, sized to match the drawer-toggle icon buttons
+   either side of it in the top bar's right action cluster. */
+.theme-toggle-btn {
+	width: 28px !important;
 	padding: 0 !important;
 	justify-content: center;
 }
