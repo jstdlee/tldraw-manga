@@ -12,7 +12,7 @@ import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { rankCommands, type Command, type CommandGroup } from './commandRegistry'
 import { APP_STAGES, STAGE_META, hasStaleStage, type StageStatus } from './stageStatus'
 import type { AppStage } from '../library/productionStages'
-import type { SidebarTab } from './chrome'
+import type { InspectorTab } from './inspectorModel'
 import { IconBubble, IconCamera, IconFileText, IconGrid, IconSettings, IconSparkles } from './icons'
 
 // -----------------------------------------------------------------------------
@@ -37,8 +37,11 @@ export interface CommandContext {
 	hasEditor: boolean
 	focusPage: (id: string) => void
 	extendPage: () => void
-	switchTab: (tab: SidebarTab) => void
+	switchTab: (tab: InspectorTab) => void
+	/** Toggle the right Inspector panel (Cmd-2). */
 	toggleDrawer: () => void
+	/** Toggle the left source-list sidebar (Cmd-1). */
+	toggleSidebar?: () => void
 	toggleTheme: () => void
 	openReader: () => void
 	openCompare: () => void
@@ -51,12 +54,12 @@ export interface CommandContext {
 }
 
 /** Inspector-tab labels used by Stage commands, aligned with the 5-stage model. */
-const STAGE_TAB: Record<AppStage, { tab: SidebarTab; label: string }> = {
+const STAGE_TAB: Record<AppStage, { tab: InspectorTab; label: string }> = {
 	1: { tab: 'cards', label: 'Stage 1 · Context & Assets' },
-	2: { tab: 'story', label: 'Stage 2 · Content & Storyboard' },
+	2: { tab: 'layout', label: 'Stage 2 · Content & Storyboard' },
 	3: { tab: 'layout', label: 'Stage 3 · Layout' },
 	4: { tab: 'camera', label: 'Stage 4 · Art' },
-	5: { tab: 'llm', label: 'Stage 5 · Lettering & Nodes' },
+	5: { tab: 'story', label: 'Stage 5 · Lettering & Balloons' },
 }
 
 /**
@@ -130,13 +133,23 @@ export function buildCommands(ctx: CommandContext): Command[] {
 		})
 	}
 
+	if (ctx.toggleSidebar) {
+		commands.push({
+			id: 'view:sourcelist',
+			title: 'Toggle Source List',
+			group: 'View',
+			shortcut: '⌘1',
+			keywords: ['pages', 'pipeline', 'assets', 'library', 'left', 'hide', 'show'],
+			run: ctx.toggleSidebar,
+		})
+	}
 	commands.push(
 		{
 			id: 'view:inspector',
 			title: 'Toggle Inspector',
 			group: 'View',
-			shortcut: '⌘1',
-			keywords: ['panel', 'drawer', 'sidebar', 'hide', 'show'],
+			shortcut: '⌘2',
+			keywords: ['panel', 'drawer', 'right', 'hide', 'show'],
 			run: ctx.toggleDrawer,
 		},
 		{
@@ -397,7 +410,8 @@ const SHORTCUT_SECTIONS: Array<{ title: string; rows: Array<{ keys: string; labe
 		rows: [
 			{ keys: '⌘K', label: 'Command palette' },
 			{ keys: '⌘/', label: 'Keyboard shortcuts' },
-			{ keys: '⌘1', label: 'Toggle Inspector' },
+			{ keys: '⌘1', label: 'Toggle source list' },
+			{ keys: '⌘2', label: 'Toggle Inspector' },
 		],
 	},
 	{

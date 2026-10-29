@@ -6,6 +6,7 @@
 
 import { FACTOR_DEFS, type FactorId } from '../pipeline/factorGraph'
 import type { AppStage } from '../library/productionStages'
+import type { InspectorTab } from './inspectorModel'
 
 export type StageStatus = 'idle' | 'done' | 'stale' | 'running'
 
@@ -15,16 +16,16 @@ export interface StageMeta {
 	stage: AppStage
 	title: string
 	/** Inspector tab to focus when the chip is clicked. */
-	inspectorTab: 'cards' | 'layout' | 'story' | 'camera' | 'llm'
+	inspectorTab: InspectorTab
 }
 
 /** Labels + the Inspector tab each stage focuses, per the V2 architecture. */
 export const STAGE_META: readonly StageMeta[] = [
 	{ stage: 1, title: 'Context & Assets', inspectorTab: 'cards' },
-	{ stage: 2, title: 'Content & Storyboard', inspectorTab: 'story' },
+	{ stage: 2, title: 'Content & Storyboard', inspectorTab: 'layout' },
 	{ stage: 3, title: 'Layout', inspectorTab: 'layout' },
 	{ stage: 4, title: 'Art', inspectorTab: 'camera' },
-	{ stage: 5, title: 'Lettering', inspectorTab: 'llm' },
+	{ stage: 5, title: 'Lettering', inspectorTab: 'story' },
 ]
 
 export interface StageStatusInput {

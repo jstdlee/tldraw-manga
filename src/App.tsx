@@ -21,48 +21,34 @@ import { MangaContainerUtil } from './studio/shapes/MangaContainerUtil'
 import { MangaPromptUtil } from './studio/shapes/MangaPromptUtil'
 import { BUBBLE, CARD, CONTAINER, type MangaCard, type MangaContainer } from './studio/shapes/schema'
 import { compileBook, type CompiledBook } from './studio/spec/compile'
-import { CompareModal, FloatingBar, LeftLibrary, ReaderModal, SettingsModal, TopBar, type SidebarTab } from './studio/ui/chrome'
+import { CompareModal, FloatingBar, ReaderModal, SettingsModal, TopBar } from './studio/ui/chrome'
 import {
 	CanvasContextMenu,
 	detectCanvasContextMenuTarget,
 	PageContextModal,
 	type ContextMenuTarget,
 } from './studio/ui/contextMenu'
-import { resolveInspectorTab, type CanvasSelectionKind } from './studio/ui/inspectorModel'
+import { Inspector } from './studio/ui/inspector/Inspector'
+import { resolveInspectorTab, type CanvasSelectionKind, type InspectorTab } from './studio/ui/inspectorModel'
+import { SourceList } from './studio/ui/sourceList'
 import { buildCommands, CommandPalette, ShortcutsSheet, StageBar, type PagePick } from './studio/ui/shell'
-import { completedStagesFrom, deriveStageStatuses, type StageEvidence } from './studio/ui/stageStatus'
-import type { AppStage } from './studio/library/productionStages'
-import './studio/studio.css'
-
-const TAB_FOR_STAGE: Record<AppStage, SidebarTab> = {
-	1: 'cards',
-	2: 'story',
-	3: 'layout',
-	4: 'camera',
-	5: 'llm',
-}
-const STAGE_FOR_TAB: Record<SidebarTab, AppStage> = {
-	cards: 1,
-	story: 2,
-	layout: 3,
-	camera: 4,
-	llm: 5,
-}
+import { completedStagesFrom, deriveStageStatuses, STAGE_META, type StageEvidence } from './studio/ui/stageStatus'
 
 const shapeUtils = [MangaContainerUtil, MangaCardUtil, MangaPromptUtil, MangaBubbleUtil]
 
 export function App() {
 	const [editor, setEditor] = useState<Editor | null>(null)
 	const [story, setStory] = useState(SEAGULL_STORY)
-	const [status, setStatus] = useState('Ready · right-click any panel, bubble, page or the canvas for the context menu · use the pipeline strip or Extend Page to grow the pipeline with inherited context')
+	const [status, setStatus] = useState('Ready · right-click any panel, bubble, page or the canvas for the context menu · use the source list or the Inspector to drive the pipeline')
 	const [compareOpen, setCompareOpen] = useState(false)
 	const [readerBook, setReaderBook] = useState<CompiledBook | null>(null)
 	const [settingsOpen, setSettingsOpen] = useState(false)
-	const [activeTab, setActiveTab] = useState<SidebarTab>('cards')
+	const [activeTab, setActiveTab] = useState<InspectorTab>('layout')
 	const [theme, setTheme] = useState<'light' | 'dark'>('light')
-	// Page-first workspace: start with the Inspector drawer collapsed so the canvas
-	// opens wide and uncluttered. The user expands it from the TopBar Inspector toggle.
-	const [drawerOpen, setDrawerOpen] = useState(false)
+	// Page-first workspace: the left source list opens by default; the right
+	// Inspector stays collapsed so the canvas opens wide (Cmd-1 / Cmd-2 toggle).
+	const [leftOpen, setLeftOpen] = useState(true)
+	const [rightOpen, setRightOpen] = useState(false)
 	const [contextMenuTarget, setContextMenuTarget] = useState<ContextMenuTarget | null>(null)
 	const [contextModalPageId, setContextModalPageId] = useState<TLShapeId | null>(null)
 	const [paletteOpen, setPaletteOpen] = useState(false)
@@ -110,6 +96,23 @@ export function App() {
 		[editor],
 	)
 
+	// The page the Inspector operates on: the selected page, else the first page.
+	const activePage = useValue<MangaContainer | null>(
+		'active-page',
+		() => {
+			if (!editor) return null
+			const selected = selectedPages(editor)[0]
+			if (selected) return selected
+			return (
+				editor
+					.getCurrentPageShapes()
+					.filter((s): s is MangaContainer => s.type === CONTAINER && s.props.role === 'page')
+					.sort((a, b) => (a.props.pageIndex || 0) - (b.props.pageIndex || 0))[0] ?? null
+			)
+		},
+		[editor],
+	)
+
 	// Contextual Inspector: a single-shape selection re-drives the active tab.
 	const selectionKind = useValue<CanvasSelectionKind>(
 		'selection-kind',
@@ -127,20 +130,15 @@ export function App() {
 	)
 
 	useEffect(() => {
-		if (!drawerOpen || selectionKind === 'none') return
-		const next = resolveInspectorTab(selectionKind)
-		// resolveInspectorTab only yields reference tabs for pseudo-selections,
-		// which never arise from a shape selection, so this is always a SidebarTab.
-		if (next === 'cards' || next === 'story' || next === 'layout' || next === 'camera' || next === 'llm') {
-			setActiveTab(next)
-		}
-	}, [selectionKind, drawerOpen])
+		if (!rightOpen || selectionKind === 'none') return
+		setActiveTab(resolveInspectorTab(selectionKind))
+	}, [selectionKind, rightOpen])
 
 	const stageStatuses = useMemo(
 		() => deriveStageStatuses({ dirty: [], completed: completedStagesFrom(canvasModel.evidence) }),
 		[canvasModel.evidence],
 	)
-	const activeStage = STAGE_FOR_TAB[activeTab]
+	const activeStage = rightOpen ? STAGE_META.find((m) => m.inspectorTab === activeTab)?.stage ?? null : null
 
 	const focusPage = (id: string) => {
 		if (!editor) return
@@ -157,9 +155,10 @@ export function App() {
 		downloadText(`${book.spec.title}.html`, readerHtml(book), 'text/html;charset=utf-8')
 		setStatus('Exported standalone HTML reader')
 	}
-	const switchTab = (tab: SidebarTab) => {
+	// Opening a tab reveals the Inspector so the controls are visible.
+	const switchTab = (tab: InspectorTab) => {
 		setActiveTab(tab)
-		setDrawerOpen(true)
+		setRightOpen(true)
 	}
 	const extendPage = () => {
 		if (!editor) return
@@ -177,7 +176,8 @@ export function App() {
 			focusPage,
 			extendPage,
 			switchTab,
-			toggleDrawer: () => setDrawerOpen((prev) => !prev),
+			toggleDrawer: () => setRightOpen((prev) => !prev),
+			toggleSidebar: () => setLeftOpen((prev) => !prev),
 			toggleTheme: () => setTheme((prev) => (prev === 'light' ? 'dark' : 'light')),
 			openReader,
 			openCompare: () => setCompareOpen(true),
@@ -226,22 +226,12 @@ export function App() {
 			if (detail.kind === 'page') {
 				const shape = editor.getShape<MangaContainer>(detail.shapeId)
 				if (shape && shape.type === CONTAINER) {
-					setContextMenuTarget({
-						kind: 'page',
-						x: detail.clientX,
-						y: detail.clientY,
-						pageId: shape.id,
-					})
+					setContextMenuTarget({ kind: 'page', x: detail.clientX, y: detail.clientY, pageId: shape.id })
 				}
 			} else if (detail.kind === 'card') {
 				const shape = editor.getShape<MangaCard>(detail.shapeId)
 				if (shape && shape.type === CARD) {
-					setContextMenuTarget({
-						kind: 'card',
-						x: detail.clientX,
-						y: detail.clientY,
-						cardId: shape.id,
-					})
+					setContextMenuTarget({ kind: 'card', x: detail.clientX, y: detail.clientY, cardId: shape.id })
 				}
 			}
 		}
@@ -284,7 +274,10 @@ export function App() {
 				setShortcutsOpen((prev) => !prev)
 			} else if (key === '1') {
 				event.preventDefault()
-				setDrawerOpen((prev) => !prev)
+				setLeftOpen((prev) => !prev)
+			} else if (key === '2') {
+				event.preventDefault()
+				setRightOpen((prev) => !prev)
 			} else if (key === 'e' && event.shiftKey) {
 				event.preventDefault()
 				exportHtml()
@@ -309,34 +302,21 @@ export function App() {
 		<div className={`studio-shell theme-${theme}`} data-theme={theme}>
 			<TopBar
 				editor={editor}
-				story={story}
 				status={status}
 				setStatus={setStatus}
-				onOpenCompare={() => setCompareOpen(true)}
-				onOpenReader={() => { if (editor) setReaderBook(compileBook(editor)) }}
-				onOpenSettings={() => setSettingsOpen(true)}
-				onSwitchTab={(tab) => {
-					setActiveTab(tab)
-					setDrawerOpen(true)
-				}}
 				theme={theme}
 				onToggleTheme={toggleTheme}
-				drawerOpen={drawerOpen}
-				onToggleDrawer={() => setDrawerOpen((prev) => !prev)}
+				leftOpen={leftOpen}
+				onToggleLeft={() => setLeftOpen((prev) => !prev)}
+				rightOpen={rightOpen}
+				onToggleRight={() => setRightOpen((prev) => !prev)}
+				onOpenReader={openReader}
+				onExport={exportHtml}
+				onOpenSettings={() => setSettingsOpen(true)}
 				onOpenPalette={() => setPaletteOpen(true)}
 			/>
-			<div className={`studio-main ${drawerOpen ? '' : 'drawer-closed'}`}>
-				{drawerOpen ? (
-					<LeftLibrary
-						editor={editor}
-						story={story}
-						setStory={setStory}
-						setStatus={setStatus}
-						activeTab={activeTab}
-						setActiveTab={setActiveTab}
-						onOpenCompare={() => setCompareOpen(true)}
-					/>
-				) : null}
+			<div className={`studio-main ${leftOpen ? 'has-left' : ''} ${rightOpen ? 'has-right' : ''}`}>
+				{leftOpen ? <SourceList editor={editor} focusPage={focusPage} openTab={switchTab} setStatus={setStatus} /> : null}
 				<main
 					className="canvas-wrap"
 					onContextMenuCapture={(event) => {
@@ -353,7 +333,7 @@ export function App() {
 						persistenceKey="tldraw-manga-v6"
 						shapeUtils={shapeUtils}
 						components={{
-							InFrontOfTheCanvas: () => <FloatingBar onSwitchTab={(tab) => setActiveTab(tab)} />,
+							InFrontOfTheCanvas: () => <FloatingBar />,
 						}}
 						onMount={(mounted) => {
 							;(window as unknown as { __MANGA_EDITOR__?: Editor }).__MANGA_EDITOR__ = mounted
@@ -363,12 +343,27 @@ export function App() {
 						}}
 					/>
 				</main>
+				{rightOpen ? (
+					<Inspector
+						editor={editor}
+						page={activePage}
+						activeTab={activeTab}
+						setActiveTab={setActiveTab}
+						story={story}
+						setStory={setStory}
+						setStatus={setStatus}
+						onOpenCompare={() => setCompareOpen(true)}
+					/>
+				) : null}
 			</div>
 
 			<StageBar
 				statuses={stageStatuses}
-				activeStage={drawerOpen ? activeStage : null}
-				onFocusStage={(stage) => switchTab(TAB_FOR_STAGE[stage])}
+				activeStage={activeStage}
+				onFocusStage={(stage) => {
+					const meta = STAGE_META.find((m) => m.stage === stage)
+					if (meta) switchTab(meta.inspectorTab)
+				}}
 				onRepropagate={() => {
 					if (editor) setStatus(runJevFiveStageCompile(editor))
 				}}
