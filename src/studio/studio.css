@@ -4349,3 +4349,53 @@ button.master-row.selectable.active {
 	border: 1px solid var(--st-border);
 	background: var(--st-bg-subtle);
 }
+
+/* Welcome sheet: override generic .modal-box header/button rules. */
+.modal-box.welcome-sheet {
+	width: min(560px, 92vw);
+	overflow: auto;
+}
+.modal-box.welcome-sheet > header.welcome-head {
+	display: block;
+	padding: 0 32px 0 0;
+	border-bottom: none;
+	background: none;
+}
+.modal-box.welcome-sheet .welcome-card {
+	height: auto;
+	min-height: 58px;
+	padding: 10px 12px;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	justify-content: flex-start;
+	gap: 3px;
+	text-align: left;
+	white-space: normal;
+}
+.modal-box.welcome-sheet .welcome-card strong,
+.modal-box.welcome-sheet .welcome-card span {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+	overflow: hidden;
+	width: 100%;
+}
+.modal-box.welcome-sheet .welcome-blank {
+	height: auto;
+	min-height: 38px;
+	justify-content: flex-start;
+}
+.modal-box.welcome-sheet .welcome-close {
+	width: 26px;
+	height: 26px;
+	padding: 0;
+	border: none;
+	background: none;
+}
+.modal-box.welcome-sheet .welcome-recent-row {
+	height: auto;
+	justify-content: flex-start;
+	border-color: transparent;
+	background: none;
+}
