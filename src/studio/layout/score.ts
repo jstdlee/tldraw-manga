@@ -30,6 +30,20 @@ export type Scenario = 'establishing' | 'tension' | 'intimacy' | 'action' | 'rev
 
 export const SCENARIOS: Scenario[] = ['establishing', 'tension', 'intimacy', 'action', 'reveal', 'climax']
 
+/**
+ * Optional additive deltas on a scenario's layout-scoring weights. Produced by the
+ * style-master blend layer (see src/studio/library/blend.ts). When omitted, layout
+ * scoring is byte-identical to the unbiased path, so existing output never changes.
+ */
+export interface ScenarioWeightBias {
+	big?: number
+	diag?: number
+	bleed?: number
+	cv?: number
+	rhythm?: number
+	aspect?: number
+}
+
 export interface EditorialAxes {
 	narrative: number
 	pacing: number
@@ -262,8 +276,27 @@ export function layoutFeatures(layout: Omit<Layout, 'seed'>): LayoutFeatures {
 	}
 }
 
-export function layoutScore(features: LayoutFeatures, targetPanels: number, scenario: Scenario): EditorialScoreResult {
-	const w = WEIGHTS[scenario] ?? WEIGHTS.establishing
+export function layoutScore(
+	features: LayoutFeatures,
+	targetPanels: number,
+	scenario: Scenario,
+	styleBias?: ScenarioWeightBias,
+): EditorialScoreResult {
+	const baseW = WEIGHTS[scenario] ?? WEIGHTS.establishing
+	// Applying a style bias only ever adds deltas to the numeric weights; the hero
+	// placement rule is untouched. With no bias the object is the base weights
+	// verbatim, preserving identical scoring.
+	const w = styleBias
+		? {
+				...baseW,
+				big: baseW.big + (styleBias.big ?? 0),
+				diag: baseW.diag + (styleBias.diag ?? 0),
+				bleed: baseW.bleed + (styleBias.bleed ?? 0),
+				cv: baseW.cv + (styleBias.cv ?? 0),
+				rhythm: baseW.rhythm + (styleBias.rhythm ?? 0),
+				aspect: baseW.aspect + (styleBias.aspect ?? 0),
+			}
+		: baseW
 	const reasons: string[] = []
 	const deficits: string[] = []
 	const mutations: string[] = []
@@ -512,6 +545,7 @@ export function pickTopLayouts(
 	targetPanels: number,
 	scenario: Scenario,
 	count = 36,
+	styleBias?: ScenarioWeightBias,
 ): { top: ScoredLayout[]; ms: number } {
 	const t0 = performance.now()
 	const candidates: ScoredLayout[] = []
@@ -519,7 +553,7 @@ export function pickTopLayouts(
 		const candidateSeed = i === 0 ? baseSeed : `${baseSeed}~${i}`
 		const layout = generate(candidateSeed, config)
 		const features = layoutFeatures(layout)
-		const judged = layoutScore(features, targetPanels, scenario)
+		const judged = layoutScore(features, targetPanels, scenario, styleBias)
 		candidates.push({ seed: candidateSeed, layout, features, ...judged })
 	}
 	candidates.sort((a, b) => b.score - a.score)

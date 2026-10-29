@@ -25,7 +25,7 @@ import {
 	type Pt,
 	type RowGene,
 } from '../layout/engine'
-import { layoutFeatures, layoutScore, pickTopLayouts, type Scenario } from '../layout/score'
+import { layoutFeatures, layoutScore, pickTopLayouts, type Scenario, type ScenarioWeightBias } from '../layout/score'
 import { auditCameraAxis, computeOptics, defaultOpticsForMeta, type OpticalReadout } from '../optics/shotLab'
 import type { Beat, BubbleLine, CharacterDraft, BookDraft, PanelMeta, Shot } from '../model'
 
@@ -785,6 +785,7 @@ export function compileTensionCoupledLayout(
 	beats: Beat[],
 	scenario: Scenario,
 	preset = 'std',
+	styleBias?: ScenarioWeightBias,
 ): {
 	genome: Genome
 	layout: Layout
@@ -799,9 +800,9 @@ export function compileTensionCoupledLayout(
 	const programmatic = compileProgrammaticLayoutGenome(beats, scenario, seed)
 	const realized = realize(programmatic.genome, config)
 	const layout: Layout = { ...realized, seed: `${seed}-jev-locked` }
-	const scored = layoutScore(layoutFeatures(layout), targetPanels, scenario)
+	const scored = layoutScore(layoutFeatures(layout), targetPanels, scenario, styleBias)
 	// Also sample stochastic candidates so we can report comparative ranking while keeping programmatic genome authoritative.
-	const picked = pickTopLayouts(seed, config, targetPanels, scenario, 12)
+	const picked = pickTopLayouts(seed, config, targetPanels, scenario, 12, styleBias)
 	const bestScore = Math.max(scored.score, picked.top[0]?.score ?? scored.score)
 	const panelCount = layout.panels.length
 	const fitted = fitBeatsToCount(beats, panelCount)
