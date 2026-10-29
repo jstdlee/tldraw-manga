@@ -16,6 +16,9 @@
 //   ?master=<id>            open the Masters tab with that master pre-selected
 //   ?select=first-panel     preselect the first page's first panel on mount
 //   ?welcome=1              force the first-run welcome sheet open (screenshots)
+//   ?demo=repropagate       after load, mark the first page stale and re-propagate
+//                           once so the completion toast can be screenshotted
+//   ?hold=1                 keep the transient toast visible far longer (screenshots)
 // =============================================================================
 
 import type { InspectorTab } from './inspectorModel'
@@ -37,6 +40,10 @@ export interface DeepLinkConfig {
 	selectFirstPanel: boolean
 	/** Force the welcome sheet open regardless of stored document / preference. */
 	forceWelcome: boolean
+	/** Trigger one re-propagate of the first page after load (toast screenshots). */
+	demoRepropagate: boolean
+	/** Hold transient HUD toasts open far longer than usual (screenshots). */
+	hold: boolean
 }
 
 /** Map the user-facing `?inspector=` values to internal Inspector tab ids. */
@@ -89,6 +96,8 @@ export function parseDeepLink(search: string, presetIds: readonly string[]): Dee
 	const masterId = params.get('master')
 	const selectFirstPanel = params.get('select') === 'first-panel'
 	const forceWelcome = params.get('welcome') === '1' || params.get('welcome') === 'true'
+	const demoRepropagate = params.get('demo') === 'repropagate'
+	const hold = params.get('hold') === '1' || params.get('hold') === 'true'
 
 	return {
 		ephemeral,
@@ -98,5 +107,7 @@ export function parseDeepLink(search: string, presetIds: readonly string[]): Dee
 		masterId: masterId || null,
 		selectFirstPanel,
 		forceWelcome,
+		demoRepropagate,
+		hold,
 	}
 }

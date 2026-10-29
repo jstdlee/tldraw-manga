@@ -14,7 +14,7 @@ import { APP_STAGES, STAGE_META, hasStaleStage, type StageStatus } from './stage
 import type { AppStage } from '../library/productionStages'
 import type { InspectorTab } from './inspectorModel'
 import { STAGE_OPS } from '../editor/stageOps'
-import { IconBubble, IconCamera, IconClose, IconFileText, IconGrid, IconPlus, IconSettings, IconSparkles } from './icons'
+import { IconBubble, IconCamera, IconCheck, IconClose, IconFileText, IconGrid, IconPlus, IconSettings, IconSparkles } from './icons'
 import type { RecentEntry } from './welcome'
 
 // -----------------------------------------------------------------------------
@@ -428,25 +428,30 @@ const STATUS_LABEL: Record<StageStatus, string> = {
 export function StageBar({
 	statuses,
 	activeStage,
+	flashStages,
 	onFocusStage,
 	onRepropagate,
 }: {
 	statuses: Record<AppStage, StageStatus>
 	activeStage: AppStage | null
+	/** Stages to briefly flash a checkmark on after a completed re-propagate. */
+	flashStages?: readonly AppStage[]
 	onFocusStage: (stage: AppStage) => void
 	onRepropagate: () => void
 }) {
 	const stale = hasStaleStage(statuses)
+	const flashing = new Set<AppStage>(flashStages ?? [])
 	return (
 		<footer className="stagebar" role="toolbar" aria-label="Pipeline stages">
 			<div className="stagebar-chips">
 				{STAGE_META.map((meta) => {
 					const status = statuses[meta.stage]
+					const isFlashing = flashing.has(meta.stage)
 					return (
 						<button
 							key={meta.stage}
 							type="button"
-							className={`stage-chip status-${status} ${activeStage === meta.stage ? 'focused' : ''}`}
+							className={`stage-chip status-${status} ${activeStage === meta.stage ? 'focused' : ''} ${isFlashing ? 'flashing' : ''}`}
 							title={`Stage ${meta.stage} · ${meta.title} — ${STATUS_LABEL[status]}`}
 							aria-label={`Stage ${meta.stage} ${meta.title}, ${STATUS_LABEL[status]}`}
 							onClick={() => onFocusStage(meta.stage)}
@@ -456,7 +461,13 @@ export function StageBar({
 							</span>
 							<span className="stage-num">{meta.stage}</span>
 							<span className="stage-title">{meta.title}</span>
-							<span className={`stage-dot dot-${status}`} aria-hidden="true" />
+							{isFlashing ? (
+								<span className="stage-flash" aria-hidden="true">
+									<IconCheck />
+								</span>
+							) : (
+								<span className={`stage-dot dot-${status}`} aria-hidden="true" />
+							)}
 						</button>
 					)
 				})}

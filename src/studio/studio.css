@@ -525,6 +525,13 @@ body,
 	gap: 4px;
 	cursor: pointer;
 	transition: background 0.12s ease, border-color 0.12s ease;
+	/* Labels never wrap inside a button; an over-long label is clipped (and
+	   ellipsized for plain-text buttons) rather than forced onto a second line.
+	   Button rows that cannot fit wrap as whole buttons, not as text. */
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	min-width: 0;
 }
 
 .sidebar button:hover,
@@ -602,6 +609,10 @@ body,
 	text-align: left;
 	gap: 3px !important;
 	background: var(--st-bg-subtle) !important;
+	/* Multi-line card button: its description is meant to wrap, so opt back out of
+	   the single-line clipping the generic button rule applies. */
+	white-space: normal;
+	overflow: visible;
 }
 
 .spawn-card-btn strong {
@@ -3007,6 +3018,89 @@ body,
 .stagebar-repropagate:hover {
 	background: var(--st-accent);
 	color: #fff;
+}
+
+/* Brief checkmark flash on a stage chip just after it re-propagated. */
+.stage-chip.flashing {
+	background: rgba(52, 199, 89, 0.12);
+	color: var(--st-text-1);
+}
+.stage-flash {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 12px;
+	height: 12px;
+	color: #34c759;
+	flex-shrink: 0;
+	animation: stage-flash-in var(--st-motion) var(--st-ease);
+}
+.stage-flash svg {
+	width: 12px;
+	height: 12px;
+}
+@keyframes stage-flash-in {
+	from { opacity: 0; transform: scale(0.6); }
+	to { opacity: 1; transform: scale(1); }
+}
+
+/* ==========================================================================
+   TRANSIENT HUD TOAST (bottom-center completion feedback)
+   ========================================================================== */
+
+.hud-region {
+	position: fixed;
+	left: 50%;
+	bottom: 92px;
+	transform: translateX(-50%);
+	z-index: 600;
+	display: flex;
+	justify-content: center;
+	pointer-events: none;
+}
+.hud-toast {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	max-width: min(440px, 80vw);
+	height: 32px;
+	padding: 0 14px;
+	border: 1px solid var(--st-border);
+	border-radius: 16px;
+	background: var(--st-bg-glass);
+	backdrop-filter: blur(16px);
+	-webkit-backdrop-filter: blur(16px);
+	box-shadow: var(--st-shadow-lg);
+	color: var(--st-text-1);
+	font-size: var(--st-fs-control);
+	font-weight: 500;
+	white-space: nowrap;
+	animation: hud-in var(--st-motion) var(--st-ease);
+}
+.hud-check {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 15px;
+	height: 15px;
+	color: #34c759;
+	flex-shrink: 0;
+}
+.hud-check svg {
+	width: 15px;
+	height: 15px;
+}
+.hud-msg {
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+@keyframes hud-in {
+	from { opacity: 0; transform: translateY(6px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+	.hud-toast { animation: none; }
+	.stage-flash { animation: none; }
 }
 
 /* Keyboard shortcuts sheet. */

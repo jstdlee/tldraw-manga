@@ -8,11 +8,15 @@
 
 import type { McCloudTransition, WordPictureMode } from '../jev/fiveStageEngine'
 import type { ScenarioWeightBias } from '../layout/score'
+import type { Focal } from '../model'
 import { MASTERS, getMaster, type Master, type MasterId } from './masters'
 import { getPanelLayout, type PanelLayoutId } from './panelLayouts'
 import type { PacingId } from './pacing'
 import type { ShotAngleId, ShotSizeId } from './shots'
 import { THEORY_ITEMS, type TheoryChecklistItem } from './theory'
+
+/** The four Beat-holdable focal lengths, widest first. */
+export const FOCAL_IDS: Focal[] = ['18mm', '35mm', '50mm', '85mm']
 
 // -----------------------------------------------------------------------------
 // Style profile
@@ -100,6 +104,31 @@ function inferAngleMap(master: Master): WeightMap<ShotAngleId> {
 	return { eye, high, low, dutch, worm, bird }
 }
 
+/**
+ * Infer a focal-length preference from a master's existing data. Dynamic,
+ * foreshortening masters (positive diagonal/bleed bias, wide shot vocabulary) lean
+ * to the 18mm ultra-wide; intimate masters that live in close framings lean to the
+ * 85mm portrait. The 35mm / 50mm normals are the always-present middle. An explicit
+ * `lensPreference` on the master overrides the whole derivation. Pure, data-derived.
+ */
+function inferLensMap(master: Master): WeightMap<Focal> {
+	if (master.lensPreference && Object.keys(master.lensPreference).length) {
+		return { ...master.lensPreference }
+	}
+	const diag = master.jevBias.diag ?? 0
+	const bleed = master.jevBias.bleed ?? 0
+	const energy = diag + bleed
+	const vocab = master.shotVocabulary
+	const share = (ids: ShotSizeId[]): number => (vocab.length ? vocab.filter((s) => ids.includes(s)).length / vocab.length : 0)
+	const wideShare = share(['EWS', 'WS'])
+	const closeShare = share(['MCU', 'CU', 'ECU'])
+	const w18 = 0.5 + Math.max(0, energy) * 6 + wideShare * 0.8
+	const w35 = 1
+	const w50 = 0.9
+	const w85 = 0.5 + closeShare * 1.3 + Math.max(0, -diag) * 3
+	return { '18mm': w18, '35mm': w35, '50mm': w50, '85mm': w85 }
+}
+
 /** Derive a pacing preference from the pacing affinities of preferred layouts. */
 function masterPacingMap(master: Master): WeightMap<PacingId> {
 	const map: Record<string, number> = {}
@@ -168,6 +197,7 @@ export interface FactorVectors {
 	wordPicture: Record<WordPictureMode, number>
 	shots: Record<ShotSizeId, number>
 	angles: Record<ShotAngleId, number>
+	lenses: Record<Focal, number>
 	layouts: Record<PanelLayoutId, number>
 	pacing: Record<PacingId, number>
 }
@@ -180,6 +210,7 @@ export function blendFactorVectors(profile: StyleProfile): FactorVectors {
 		wordPicture: blendWeightMaps<WordPictureMode>(weighted.map((w) => ({ map: w.master.mccloud.wordPicture, weight: w.weight }))),
 		shots: blendWeightMaps<ShotSizeId>(weighted.map((w) => ({ map: listToWeightMap(w.master.shotVocabulary), weight: w.weight }))),
 		angles: blendWeightMaps<ShotAngleId>(weighted.map((w) => ({ map: inferAngleMap(w.master), weight: w.weight }))),
+		lenses: blendWeightMaps<Focal>(weighted.map((w) => ({ map: inferLensMap(w.master), weight: w.weight }))),
 		layouts: blendWeightMaps<PanelLayoutId>(weighted.map((w) => ({ map: listToWeightMap(w.master.preferredLayouts), weight: w.weight }))),
 		pacing: blendWeightMaps<PacingId>(weighted.map((w) => ({ map: masterPacingMap(w.master), weight: w.weight }))),
 	}

@@ -17,7 +17,8 @@ import {
 import { runStageOpForPage, runStagesFromForPage } from './studio/editor/stageOps'
 import type { AppStage } from './studio/library/productionStages'
 import { EMPTY_DIRTY_STATE, hasPageDirty } from './studio/pipeline/dirtyStore'
-import { readPageDirty, repropagatePageAsync } from './studio/pipeline/pageMeta'
+import { markPageFactorsStale, readPageDirty, repropagatePageAsync } from './studio/pipeline/pageMeta'
+import type { StageRunners } from './studio/pipeline/repropagate'
 import { listUniversalPresets } from './studio/jev/fiveStageEngine'
 import { readerHtml } from './studio/export/htmlReader'
 import { downloadText } from './studio/export/ora'
@@ -39,7 +40,8 @@ import { Inspector } from './studio/ui/inspector/Inspector'
 import { resolveInspectorTab, type CanvasSelectionKind, type InspectorTab } from './studio/ui/inspectorModel'
 import { SourceList } from './studio/ui/sourceList'
 import { buildCommands, CommandPalette, ShortcutsSheet, StageBar, WelcomeSheet, type PagePick } from './studio/ui/shell'
-import { completedStagesFrom, deriveStageStatuses, STAGE_META, type StageEvidence } from './studio/ui/stageStatus'
+import { completedStagesFrom, deriveStageStatuses, refreshedStagesLabel, STAGE_META, type StageEvidence } from './studio/ui/stageStatus'
+import { Hud, useHud } from './studio/ui/hud'
 import { parseDeepLink } from './studio/ui/deepLink'
 import {
 	loadRecent,
@@ -94,6 +96,11 @@ export function App() {
 	const [contextModalPageId, setContextModalPageId] = useState<TLShapeId | null>(null)
 	const [paletteOpen, setPaletteOpen] = useState(false)
 	const [shortcutsOpen, setShortcutsOpen] = useState(false)
+	// Transient completion feedback: a bottom-center HUD toast plus a brief
+	// checkmark flash on each refreshed stage chip.
+	const { toast, showToast } = useHud()
+	const [flashStages, setFlashStages] = useState<AppStage[]>([])
+	const flashTimer = useRef<number | null>(null)
 
 	// One reactive sweep over canvas shapes feeds the pipeline list and the
 	// bottom stage bar: which pages exist and which stages show observable output.
@@ -215,6 +222,25 @@ export function App() {
 			window.setTimeout(resolve, ms)
 		})
 
+	// The real Stage 3-5 recompute closures for one page (never regenerates art).
+	const repropagateRunners = (ed: Editor, pageId: TLShapeId): StageRunners => ({
+		3: () => relayoutPageStage3(ed, pageId),
+		4: () => recompilePromptsStage4(ed, pageId),
+		5: () => relayoutLetteringStage5(ed, pageId),
+	})
+
+	// Flash a checkmark on each refreshed stage chip for a short, visible beat,
+	// then return the chips to their normal state. Skipped under reduced motion.
+	const flashRefreshedStages = (stages: AppStage[]) => {
+		if (flashTimer.current !== null) window.clearTimeout(flashTimer.current)
+		if (!stages.length || prefersReducedMotion()) {
+			setFlashStages([])
+			return
+		}
+		setFlashStages(stages)
+		flashTimer.current = window.setTimeout(() => setFlashStages([]), 1200)
+	}
+
 	const repropagatingRef = useRef(false)
 	const repropagate = () => {
 		if (!editor) {
@@ -235,17 +261,14 @@ export function App() {
 		}
 		const pageId = page.id
 		repropagatingRef.current = true
-		void repropagatePageAsync(
-			editor,
-			page,
-			{
-				3: () => relayoutPageStage3(editor, pageId),
-				4: () => recompilePromptsStage4(editor, pageId),
-				5: () => relayoutLetteringStage5(editor, pageId),
-			},
-			{ minVisibleMs: 350, delay: stageHoldDelay },
-		)
-			.then((outcome) => setStatus(outcome ? outcome.message : 'Nothing stale to re-propagate'))
+		void repropagatePageAsync(editor, page, repropagateRunners(editor, pageId), { minVisibleMs: 350, delay: stageHoldDelay })
+			.then((outcome) => {
+				setStatus(outcome ? outcome.message : 'Nothing stale to re-propagate')
+				if (outcome && outcome.run.ran.length) {
+					showToast(refreshedStagesLabel(outcome.run.ran))
+					flashRefreshedStages(outcome.run.ran)
+				}
+			})
 			.finally(() => {
 				repropagatingRef.current = false
 			})
@@ -265,6 +288,7 @@ export function App() {
 		const book = compileBook(editor)
 		downloadText(`${book.spec.title}.html`, readerHtml(book), 'text/html;charset=utf-8')
 		setStatus('Exported standalone HTML reader')
+		showToast('Exported HTML reader')
 	}
 	// Opening a tab reveals the Inspector so the controls are visible.
 	const switchTab = (tab: InspectorTab) => {
@@ -285,7 +309,10 @@ export function App() {
 		const msg = applyUniversalFiveStagePreset(editor, id)
 		if (typeof msg === 'string') setStatus(msg)
 		const preset = presetList.find((p) => p.id === id)
-		if (preset) setRecent(pushRecent({ id: preset.id, title: preset.title }))
+		if (preset) {
+			setRecent(pushRecent({ id: preset.id, title: preset.title }))
+			showToast(`Loaded ${preset.title}`)
+		}
 	}
 
 	const openWelcome = () => setWelcomeOpen(true)
@@ -351,6 +378,37 @@ export function App() {
 				}
 			}
 			trySelectFirstPanel(0)
+		}
+		if (deepLink.demoRepropagate) {
+			// Screenshot aid: once the first page materializes, mark a Stage-3 factor
+			// stale (cascading to Art + Lettering) and run one re-propagate so the
+			// completion toast and the chip flashes can be captured. ?hold=1 keeps the
+			// toast visible far longer for a clean still.
+			const tryDemoRepropagate = (attempt: number): void => {
+				const firstPage = mounted
+					.getCurrentPageShapes()
+					.filter((s): s is MangaContainer => s.type === CONTAINER && (s as MangaContainer).props.role === 'page')
+					.sort((a, b) => (a.props.pageIndex || 0) - (b.props.pageIndex || 0))[0]
+				if (firstPage) {
+					markPageFactorsStale(mounted, firstPage, ['panelLayout'])
+					const fresh = mounted.getShape<MangaContainer>(firstPage.id) ?? firstPage
+					void repropagatePageAsync(mounted, fresh, repropagateRunners(mounted, fresh.id), {
+						minVisibleMs: 350,
+						delay: stageHoldDelay,
+					}).then((outcome) => {
+						if (outcome && outcome.run.ran.length) {
+							showToast(refreshedStagesLabel(outcome.run.ran), { hold: deepLink.hold })
+							flashRefreshedStages(outcome.run.ran)
+						}
+					})
+					return
+				}
+				if (attempt < 40) {
+					if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => tryDemoRepropagate(attempt + 1))
+					else window.setTimeout(() => tryDemoRepropagate(attempt + 1), 16)
+				}
+			}
+			tryDemoRepropagate(0)
 		}
 	}
 
@@ -570,12 +628,15 @@ export function App() {
 			<StageBar
 				statuses={stageStatuses}
 				activeStage={activeStage}
+				flashStages={flashStages}
 				onFocusStage={(stage) => {
 					const meta = STAGE_META.find((m) => m.stage === stage)
 					if (meta) switchTab(meta.inspectorTab)
 				}}
 				onRepropagate={repropagate}
 			/>
+
+			<Hud toast={toast} />
 
 			{paletteOpen ? <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} /> : null}
 			{shortcutsOpen ? <ShortcutsSheet onClose={() => setShortcutsOpen(false)} /> : null}

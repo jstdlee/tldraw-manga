@@ -25,7 +25,6 @@ import {
 } from './dirtyStore'
 import { FACTOR_DEFS, type FactorId } from './factorGraph'
 import {
-	executeRepropagation,
 	executeRepropagationAsync,
 	type AsyncRepropagationHooks,
 	type RepropagationRun,
@@ -111,45 +110,6 @@ export interface RepropagationOutcome {
 	factors: FactorId[]
 }
 
-/**
- * Run a page's pending re-propagation: plan the stale factors topologically, flag
- * the touched stages as running, execute the supplied per-stage runners in order,
- * then clear the dirty set and the running flags. Returns null when nothing is
- * stale. Image regeneration is never part of this — only derivable Stage 3-5
- * recompute runners are expected in `runners`.
- */
-export function repropagatePage(editor: Editor, page: MangaContainer, runners: StageRunners): RepropagationOutcome | null {
-	const state = readDirtyStateFromMeta(page.meta)
-	if (!state.dirty.length) return null
-	const plan = planPageRepropagation(state)
-
-	// Flag running first so the stage bar can reflect it, then execute.
-	applyMeta(editor, page, writeDirtyStateToMeta(page.meta, markPageStagesRunning(state, plan.stages)))
-
-	let ok = false
-	let run: RepropagationRun = { order: [], ran: [], skipped: [] }
-	try {
-		run = executeRepropagation(plan, runners)
-		ok = true
-	} finally {
-		// Always clear the running flags; clear the dirty set only on a completed
-		// pass, so a runner that throws leaves the page marked stale for a retry.
-		const latest = editor.getShape<MangaContainer>(page.id)
-		const meta = latest?.meta ?? page.meta
-		const base = readDirtyStateFromMeta(meta)
-		const cleaned = clearPageRunning(ok ? markPageFactorsClean(base, plan.factors) : base)
-		applyMeta(editor, page, writeDirtyStateToMeta(meta, cleaned))
-	}
-
-	const ranLabel = run.ran.length ? `Stage ${run.ran.join(' → ')}` : 'inputs only'
-	return {
-		message: `Re-propagated ${ranLabel} · cleared ${plan.factors.length} stale factor${plan.factors.length === 1 ? '' : 's'} · images untouched`,
-		run,
-		stages: plan.stages,
-		factors: plan.factors,
-	}
-}
-
 export interface AsyncRepropagationOptions {
 	/** Minimum visible running duration per stage (ms); 0 disables the hold. */
 	minVisibleMs?: number
@@ -158,8 +118,8 @@ export interface AsyncRepropagationOptions {
 }
 
 /**
- * Async sibling of {@link repropagatePage}: it runs each stale stage one at a
- * time so the stage bar can show a live, per-stage `running` indicator. Each
+ * Run a page's pending re-propagation one stale stage at a time so the stage bar
+ * can show a live, per-stage `running` indicator. Each
  * stage is flagged running (and only that stage), held for a minimum visible
  * duration, executed, then flipped to done by clearing its factors. If a stage
  * runner throws, the pass stops, running flags clear, and the remaining factors

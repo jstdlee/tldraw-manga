@@ -15,7 +15,17 @@ describe('parseDeepLink', () => {
 			masterId: null,
 			selectFirstPanel: false,
 			forceWelcome: false,
+			demoRepropagate: false,
+			hold: false,
 		})
+	})
+
+	it('reads the re-propagate demo and hold flags', () => {
+		const cfg = parseDeepLink('?demo=repropagate&hold=1', PRESETS)
+		expect(cfg.demoRepropagate).toBe(true)
+		expect(cfg.hold).toBe(true)
+		expect(parseDeepLink('?demo=other', PRESETS).demoRepropagate).toBe(false)
+		expect(parseDeepLink('', PRESETS).hold).toBe(false)
 	})
 
 	it('reads the welcome force flag', () => {

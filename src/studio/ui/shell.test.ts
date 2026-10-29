@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { resolveInspectorTab, resolveTheoryScope, shouldAutoSwitchTab } from './inspectorModel'
 import { fuzzyScore, rankCommands, scoreCommand, type Command } from './commandRegistry'
-import { completedStagesFrom, deriveStageStatuses, hasStaleStage, STAGE_META } from './stageStatus'
+import { completedStagesFrom, deriveStageStatuses, hasStaleStage, refreshedStagesLabel, STAGE_META } from './stageStatus'
 import { buildCommands, type CommandContext } from './shell'
 
 describe('resolveInspectorTab', () => {
@@ -154,6 +154,18 @@ describe('completedStagesFrom', () => {
 				hasLettering: true,
 			}),
 		).toEqual([1, 3, 5])
+	})
+})
+
+describe('refreshedStagesLabel', () => {
+	it('names the refreshed stages in ascending order', () => {
+		expect(refreshedStagesLabel([3, 4, 5])).toBe('Refreshed Layout, Art, Lettering')
+		// Out-of-order, duplicated input is normalized.
+		expect(refreshedStagesLabel([5, 3, 3])).toBe('Refreshed Layout, Lettering')
+	})
+
+	it('returns a neutral message for an empty set', () => {
+		expect(refreshedStagesLabel([])).toBe('Nothing to refresh')
 	})
 })
 

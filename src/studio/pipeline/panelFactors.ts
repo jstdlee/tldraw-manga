@@ -51,6 +51,7 @@ export const MASTER_GOVERNED_FACTORS: ReadonlySet<PanelFactorKey> = new Set<Pane
 	'transition',
 	'shot',
 	'angle',
+	'lens',
 	'wordPicture',
 ])
 

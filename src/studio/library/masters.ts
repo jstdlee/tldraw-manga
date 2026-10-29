@@ -11,6 +11,7 @@
 
 import type { McCloudTransition, WordPictureMode } from '../jev/fiveStageEngine'
 import type { ScenarioWeightBias } from '../layout/score'
+import type { Focal } from '../model'
 import type { PanelLayoutId } from './panelLayouts'
 import type { ShotSizeId } from './shots'
 
@@ -64,6 +65,12 @@ export interface Master {
 	pacingHabits: string[]
 	preferredLayouts: PanelLayoutId[]
 	shotVocabulary: ShotSizeId[]
+	/**
+	 * Optional explicit focal-length (lens) preference as relative weights over the
+	 * four Beat-holdable focal lengths. When omitted, blend.ts derives one from the
+	 * master's dynamism bias and shot vocabulary. Pure style data, never a name.
+	 */
+	lensPreference?: Partial<Record<Focal, number>>
 	mccloud: MasterMcCloudMapping
 	promptStyleTokens: string[]
 	/** Additive layout-score weight deltas this master biases the engine toward. */
@@ -188,6 +195,7 @@ export const MASTERS: Master[] = [
 		pacingHabits: ['Decompressed build to an explosive bleed', 'Precise action geography'],
 		preferredLayouts: ['double-page-spread', 'diagonal-action-cut', 'borderless-bleed', 'three-tier-grid'],
 		shotVocabulary: ['EWS', 'WS', 'MS', 'ECU'],
+		lensPreference: { '18mm': 1, '35mm': 0.6, '50mm': 0.4, '85mm': 0.25 },
 		mccloud: {
 			transitions: { action_to_action: 0.4, moment_to_moment: 0.3, scene_to_scene: 0.2, aspect_to_aspect: 0.1 },
 			wordPicture: { picture_specific: 0.4, interdependent: 0.3, additive: 0.2, parallel: 0.1 },
@@ -221,6 +229,7 @@ export const MASTERS: Master[] = [
 		pacingHabits: ['Slow-burn decompression', 'Page-turn reveals on quiet discoveries'],
 		preferredLayouts: ['three-tier-grid', 'inset-panel', 'widescreen-strip'],
 		shotVocabulary: ['MS', 'MCU', 'CU', 'WS'],
+		lensPreference: { '18mm': 0.2, '35mm': 0.7, '50mm': 1, '85mm': 0.9 },
 		mccloud: {
 			transitions: { subject_to_subject: 0.4, action_to_action: 0.3, scene_to_scene: 0.2, moment_to_moment: 0.1 },
 			wordPicture: { interdependent: 0.4, duo_specific: 0.3, additive: 0.2, word_specific: 0.1 },
@@ -650,6 +659,7 @@ export const MASTERS: Master[] = [
 		pacingHabits: ['Silent decompressed exploration', 'Sudden brutal action'],
 		preferredLayouts: ['splash', 'double-page-spread', 'borderless-bleed', 'three-tier-grid'],
 		shotVocabulary: ['EWS', 'WS', 'MS', 'ECU'],
+		lensPreference: { '18mm': 1, '35mm': 0.55, '50mm': 0.35, '85mm': 0.2 },
 		mccloud: {
 			transitions: { aspect_to_aspect: 0.4, scene_to_scene: 0.3, moment_to_moment: 0.2, action_to_action: 0.1 },
 			wordPicture: { picture_specific: 0.5, parallel: 0.2, interdependent: 0.2, montage: 0.1 },

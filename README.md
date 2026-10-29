@@ -92,6 +92,8 @@ Deep links open the studio in a precise state — used by automated snapshots, s
 | `master` | `<id>` | Open the Masters tab with that master pre-selected. |
 | `select` | `first-panel` | Preselect the first page's first panel. |
 | `welcome` | `1` / `true` | Force the welcome sheet open (for screenshots). |
+| `demo` | `repropagate` | After load, mark the first page stale and run one re-propagate so the completion toast can be captured. |
+| `hold` | `1` / `true` | Keep the transient HUD toast visible far longer (for a clean still). |
 
 ---
 

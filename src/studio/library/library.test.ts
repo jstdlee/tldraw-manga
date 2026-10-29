@@ -250,7 +250,7 @@ describe('blend — master weighting', () => {
 describe('blend — factor vectors', () => {
 	it('produces normalized vectors for all six factor kinds', () => {
 		const vectors = blendFactorVectors(PROFILE_BLEND)
-		for (const kind of ['transitions', 'wordPicture', 'shots', 'angles', 'layouts', 'pacing'] as const) {
+		for (const kind of ['transitions', 'wordPicture', 'shots', 'angles', 'lenses', 'layouts', 'pacing'] as const) {
 			const values = Object.values(vectors[kind]) as number[]
 			expect(values.length).toBeGreaterThan(0)
 			expect(values.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 5)

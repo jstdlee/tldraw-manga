@@ -47,28 +47,6 @@ export interface RepropagationRun {
 	skipped: AppStage[]
 }
 
-/**
- * Execute the supplied runners for every stale stage in `plan`, honouring the
- * topological order. Returns which stages ran and which were skipped. A stage
- * without a runner is skipped silently — its factors are still considered
- * satisfied by the edit that produced them (the caller clears the dirty set).
- */
-export function executeRepropagation(plan: RepropagationPlan, runners: StageRunners): RepropagationRun {
-	const order = stageOrderFromFactors(plan.factors)
-	const ran: AppStage[] = []
-	const skipped: AppStage[] = []
-	for (const stage of order) {
-		const runner = runners[stage]
-		if (runner) {
-			runner()
-			ran.push(stage)
-		} else {
-			skipped.push(stage)
-		}
-	}
-	return { order, ran, skipped }
-}
-
 /** An injectable delay (ms) → Promise. Lets the UI pulse each chip for a
  * minimum visible duration while tests pass a zero-delay stub. */
 export type DelayFn = (ms: number) => Promise<void>

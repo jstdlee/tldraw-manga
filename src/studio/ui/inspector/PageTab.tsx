@@ -237,8 +237,8 @@ function PageSettings({
 					))}
 				</div>
 				<div className="quick-ai-grid" style={{ marginTop: 6 }}>
-					<button type="button" className="primary-full" onClick={() => setStatus(runJevFiveStageCompile(editor))}>
-						<IconSparkles /> Run JEV Layout
+					<button type="button" className="primary-full" title="Run JEV 5-stage layout compile" onClick={() => setStatus(runJevFiveStageCompile(editor))}>
+						<IconSparkles /> Run Layout
 					</button>
 					<button type="button" onClick={() => setStatus(fillRealInterrogationArtworkOnPage(editor, page))}>
 						<IconImage /> Fill Panel Art

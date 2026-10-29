@@ -68,6 +68,22 @@ export function hasStaleStage(statuses: Record<AppStage, StageStatus>): boolean 
 	return APP_STAGES.some((stage) => statuses[stage] === 'stale')
 }
 
+/** Lookup a stage's human title (empty string for an unknown stage). */
+export function stageTitle(stage: AppStage): string {
+	return STAGE_META.find((meta) => meta.stage === stage)?.title ?? ''
+}
+
+/**
+ * Build the completion-toast headline for a set of refreshed stages, e.g.
+ * `Refreshed Layout, Art, Lettering`. Stages are de-duplicated and ordered by
+ * number; an empty set yields a neutral "nothing refreshed" message.
+ */
+export function refreshedStagesLabel(stages: Iterable<AppStage>): string {
+	const unique = new Set<AppStage>(stages)
+	const titles = APP_STAGES.filter((stage) => unique.has(stage)).map(stageTitle).filter(Boolean)
+	return titles.length ? `Refreshed ${titles.join(', ')}` : 'Nothing to refresh'
+}
+
 /**
  * Observable evidence that each pipeline stage has produced output on the
  * canvas. Kept as plain booleans so the UI can collect them from tldraw shapes

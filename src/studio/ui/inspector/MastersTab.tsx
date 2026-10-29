@@ -60,6 +60,7 @@ const FACTOR_KIND_LABEL: Record<FactorKind, string> = {
 	wordPicture: 'Word-Picture',
 	shots: 'Shots',
 	angles: 'Angles',
+	lenses: 'Lens',
 	layouts: 'Layout',
 	pacing: 'Pacing',
 }

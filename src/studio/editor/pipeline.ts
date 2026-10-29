@@ -217,7 +217,7 @@ export function runJevFiveStageCompile(editor: Editor): string {
 //
 // These recompute a single downstream stage for a page without regenerating any
 // artwork. They are the real work behind the stage-bar "Re-propagate" button and
-// are driven by the pure `executeRepropagation` executor (pipeline/repropagate).
+// are driven by the pure `executeRepropagationAsync` executor (pipeline/repropagate).
 // Each re-reads the latest page shape by id so a chain (Stage 3 → 4 → 5) sees the
 // previous runner's output.
 // -----------------------------------------------------------------------------

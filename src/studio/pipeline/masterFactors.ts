@@ -23,7 +23,7 @@ import type { MasterId } from '../library/masters'
 import type { PageStyleState } from '../library/pageStyle'
 import { SHOT_SIZES, type ShotSizeId } from '../library/shots'
 import { strHash } from '../layout/engine'
-import type { Angle, Beat, Shot } from '../model'
+import type { Angle, Beat, Focal, Shot } from '../model'
 import type { McCloudTransition, WordPictureMode } from '../jev/fiveStageEngine'
 import { isLocked, isManual, type PanelFactorKey, type PanelFactorsState } from './panelFactors'
 
@@ -34,6 +34,7 @@ import { isLocked, isManual, type PanelFactorKey, type PanelFactorsState } from 
 
 const VALID_SHOTS = new Set<Shot>(['EWS', 'WS', 'MS', 'MCU', 'CU', 'ECU'])
 const VALID_ANGLES = new Set<Angle>(['low', 'high', 'eye', 'bird', 'dutch'])
+const VALID_FOCALS = new Set<Focal>(['18mm', '35mm', '50mm', '85mm'])
 
 /** One governed factor: how it reads from the vectors and writes back to a Beat. */
 interface GovernedFactor {
@@ -48,6 +49,7 @@ interface GovernedFactor {
 const GOVERNED_FACTORS: GovernedFactor[] = [
 	{ panelKey: 'shot', factorKind: 'shots', seedTag: 'shot' },
 	{ panelKey: 'angle', factorKind: 'angles', seedTag: 'angle' },
+	{ panelKey: 'lens', factorKind: 'lenses', seedTag: 'lens' },
 	{ panelKey: 'transition', factorKind: 'transitions', seedTag: 'transition' },
 	{ panelKey: 'wordPicture', factorKind: 'wordPicture', seedTag: 'wordpicture' },
 ]
@@ -221,6 +223,10 @@ export function applyMasterFactorsToBeats(beats: Beat[], input: ApplyMasterFacto
 				)
 				const chosen = seededPick<Angle>(weights, r)
 				if (chosen && chosen !== beat.angle) setValue({ angle: chosen })
+			} else if (factor.panelKey === 'lens') {
+				const weights = filterByValidKeys(vectors.lenses as Partial<Record<Focal, number>>, VALID_FOCALS)
+				const chosen = seededPick<Focal>(weights, r)
+				if (chosen && chosen !== beat.focal) setValue({ focal: chosen })
 			} else if (factor.panelKey === 'transition') {
 				const chosen = seededPick<McCloudTransition>(vectors.transitions, r)
 				if (chosen && chosen !== beat.mccloudTransition) setValue({ mccloudTransition: chosen })

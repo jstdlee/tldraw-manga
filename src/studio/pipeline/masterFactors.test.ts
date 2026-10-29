@@ -94,6 +94,34 @@ describe('applyMasterFactorsToBeats', () => {
 		expect(out[1].shot).toBe('MS')
 	})
 
+	it('a master changes the chosen per-panel lens (focal length)', () => {
+		const beats = makeBeats(8)
+		// Otomo carries an explicit wide-angle lensPreference, pulling panels off the
+		// uniform 50mm baseline toward the 18mm ultra-wide.
+		const pageStyle = style({ profile: { masterWeights: { otomo: 1 } } })
+		const out = applyMasterFactorsToBeats(beats, { pageStyle, panelFactors: createPanelFactorsState(), seed: SEED })
+		expect(out).not.toBe(beats)
+		// At least one panel's lens moved away from the baseline 50mm...
+		expect(out.some((b) => b.focal !== '50mm')).toBe(true)
+		// ...and every chosen focal is a valid Beat focal length.
+		const valid = new Set(['18mm', '35mm', '50mm', '85mm'])
+		expect(out.every((b) => valid.has(b.focal))).toBe(true)
+		// A wide-biased master lands the 18mm somewhere across the page.
+		expect(out.some((b) => b.focal === '18mm')).toBe(true)
+	})
+
+	it('a manual lens override and an explicit lens lock both win over the master', () => {
+		const beats = makeBeats(6)
+		// Panel 0 pinned manually; panel 1 pinned via an explicit lock.
+		let factors = setManual(createPanelFactorsState(), 0, 'lens', true)
+		factors = setLocked(factors, 1, 'lens', true)
+		const pageStyle = style({ profile: { masterWeights: { otomo: 1 } } })
+		const out = applyMasterFactorsToBeats(beats, { pageStyle, panelFactors: factors, seed: SEED })
+		// Both pinned panels keep the baseline 50mm the master would otherwise change.
+		expect(out[0].focal).toBe('50mm')
+		expect(out[1].focal).toBe('50mm')
+	})
+
 	it('resolves the blended shot vector deterministically from blend.ts', () => {
 		// Sanity: the module reads the same vectors blend.ts produces.
 		const vectors = blendFactorVectors({ masterWeights: { 'junji-ito': 1 } })
