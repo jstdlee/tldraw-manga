@@ -20,7 +20,6 @@ import { EMPTY_DIRTY_STATE, hasPageDirty } from './studio/pipeline/dirtyStore'
 import { markPageFactorsStale, readPageDirty, repropagatePageAsync } from './studio/pipeline/pageMeta'
 import type { StageRunners } from './studio/pipeline/repropagate'
 import { listUniversalPresets } from './studio/jev/fiveStageEngine'
-import { readerHtml } from './studio/export/htmlReader'
 import { downloadText } from './studio/export/ora'
 import { readJson, type PanelMeta } from './studio/model'
 import { MangaBubbleUtil } from './studio/shapes/MangaBubbleUtil'
@@ -44,9 +43,13 @@ import { completedStagesFrom, deriveStageStatuses, refreshedStagesLabel, STAGE_M
 import { Hud, useHud } from './studio/ui/hud'
 import { parseDeepLink } from './studio/ui/deepLink'
 import {
+	clearRecent,
 	loadRecent,
 	loadShowAtLaunch,
+	MAX_THUMBNAIL_BYTES,
 	pushRecent,
+	removeRecent,
+	saveRecent,
 	saveShowAtLaunch,
 	shouldShowWelcome,
 	type RecentEntry,
@@ -62,6 +65,39 @@ function prefersReducedMotion(): boolean {
 		typeof window.matchMedia === 'function' &&
 		window.matchMedia('(prefers-reduced-motion: reduce)').matches
 	)
+}
+
+/** Page containers on the current canvas, ordered by page index. */
+function orderedPages(editor: Editor): MangaContainer[] {
+	return editor
+		.getCurrentPageShapes()
+		.filter((s): s is MangaContainer => s.type === CONTAINER && s.props.role === 'page')
+		.sort((a, b) => (a.props.pageIndex || 0) - (b.props.pageIndex || 0))
+}
+
+/**
+ * Best-effort first-page preview as a tiny JPEG data URL for the Recent list.
+ * Deliberately downscaled and low-quality so the result stays well under the
+ * {@link MAX_THUMBNAIL_BYTES} cap; anything larger (or any failure) is skipped
+ * silently by returning undefined. Never throws.
+ */
+async function captureFirstPageThumbnail(editor: Editor): Promise<string | undefined> {
+	try {
+		const first = orderedPages(editor)[0]
+		if (!first) return undefined
+		const result = await editor.toImageDataUrl([first.id], {
+			format: 'jpeg',
+			quality: 0.55,
+			scale: 0.18,
+			background: true,
+			padding: 0,
+		})
+		const url = result?.url
+		if (!url || url.length > MAX_THUMBNAIL_BYTES) return undefined
+		return url
+	} catch {
+		return undefined
+	}
 }
 
 export function App() {
@@ -101,6 +137,11 @@ export function App() {
 	const { toast, showToast } = useHud()
 	const [flashStages, setFlashStages] = useState<AppStage[]>([])
 	const flashTimer = useRef<number | null>(null)
+	// Identity of the document currently on the canvas, so Recent entries can be
+	// kept in sync (page count, thumbnail). Set when a preset / blank is opened.
+	const currentDocIdRef = useRef<string | null>(null)
+	// A first-page thumbnail is captured at most once per session (cost guard).
+	const thumbCapturedRef = useRef(false)
 
 	// One reactive sweep over canvas shapes feeds the pipeline list and the
 	// bottom stage bar: which pages exist and which stages show observable output.
@@ -286,9 +327,14 @@ export function App() {
 	const exportHtml = () => {
 		if (!editor) return
 		const book = compileBook(editor)
-		downloadText(`${book.spec.title}.html`, readerHtml(book), 'text/html;charset=utf-8')
-		setStatus('Exported standalone HTML reader')
-		showToast('Exported HTML reader')
+		// Pull the reader renderer on demand so it stays out of the initial bundle
+		// until the user actually exports. (downloadText rides in the shared export
+		// module already pulled by the canvas context menu, so it stays static.)
+		void import('./studio/export/htmlReader').then(({ readerHtml }) => {
+			downloadText(`${book.spec.title}.html`, readerHtml(book), 'text/html;charset=utf-8')
+			setStatus('Exported standalone HTML reader')
+			showToast('Exported HTML reader')
+		})
 	}
 	// Opening a tab reveals the Inspector so the controls are visible.
 	const switchTab = (tab: InspectorTab) => {
@@ -310,9 +356,68 @@ export function App() {
 		if (typeof msg === 'string') setStatus(msg)
 		const preset = presetList.find((p) => p.id === id)
 		if (preset) {
-			setRecent(pushRecent({ id: preset.id, title: preset.title }))
+			currentDocIdRef.current = preset.id
+			setRecent(
+				pushRecent({
+					id: preset.id,
+					title: preset.title,
+					kind: 'preset',
+					lastOpened: Date.now(),
+					pageCount: orderedPages(editor).length,
+				}),
+			)
 			showToast(`Loaded ${preset.title}`)
 		}
+	}
+
+	// Record a fresh blank document in the recent list. The live persisted store
+	// is the single reopenable document, so its id is the persistence key (or a
+	// stable session id when the store is ephemeral).
+	const recordBlankRecent = () => {
+		if (!editor) return
+		const docId = persistenceKey ?? 'blank-session'
+		currentDocIdRef.current = docId
+		setRecent(
+			pushRecent({
+				id: docId,
+				title: 'Untitled Story',
+				kind: 'blank',
+				lastOpened: Date.now(),
+				pageCount: Math.max(1, orderedPages(editor).length),
+			}),
+		)
+	}
+
+	// Reopen a recent entry: presets reload deterministically; the single
+	// persisted document is refocused when it is still the live store, otherwise
+	// the entry is forgotten with a restrained message (we hold no older snapshot).
+	const openRecent = (id: string) => {
+		const entry = recent.find((e) => e.id === id)
+		if (!entry) return
+		if (entry.kind === 'preset') {
+			if (presetList.some((p) => p.id === id)) {
+				loadPreset(id)
+			} else {
+				setRecent(removeRecent(id))
+				setStatus('That preset is no longer available — removed from Recent')
+			}
+			return
+		}
+		const live = editor && !deepLink.ephemeral && persistenceKey && id === persistenceKey && orderedPages(editor).length > 0
+		if (live && editor) {
+			const first = orderedPages(editor)[0]
+			if (first) focusPage(first.id)
+			setRecent(pushRecent({ ...entry, lastOpened: Date.now(), pageCount: orderedPages(editor).length }))
+			setStatus(`Reopened ${entry.title}`)
+		} else {
+			setRecent(removeRecent(id))
+			setStatus('That document is no longer available — removed from Recent')
+		}
+	}
+
+	const clearRecents = () => {
+		setRecent(clearRecent())
+		setStatus('Cleared recent documents')
 	}
 
 	const openWelcome = () => setWelcomeOpen(true)
@@ -423,6 +528,9 @@ export function App() {
 			runStage,
 			runPipeline: () => runStagesFrom(1),
 			openWelcome,
+			recent,
+			openRecent,
+			clearRecent: clearRecents,
 			focusPage,
 			extendPage,
 			switchTab,
@@ -448,7 +556,42 @@ export function App() {
 		}
 		return buildCommands(ctx)
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [canvasModel.pages, editor, resolvedTheme, pageDirty, activePage])
+	}, [canvasModel.pages, editor, resolvedTheme, pageDirty, activePage, recent])
+
+	// Keep the active document's recent entry page count in step as pages are
+	// added or removed, so the welcome sheet and palette never show a stale hint.
+	useEffect(() => {
+		const docId = currentDocIdRef.current
+		if (!docId) return
+		setRecent((prev) => {
+			const target = prev.find((e) => e.id === docId)
+			if (!target || target.pageCount === canvasModel.pages.length) return prev
+			return saveRecent(prev.map((e) => (e.id === docId ? { ...e, pageCount: canvasModel.pages.length } : e)))
+		})
+	}, [canvasModel.pages.length])
+
+	// Capture a small first-page preview for the active document's recent entry the
+	// first time the tab is hidden — a cheap, once-per-session "on close/switch"
+	// hook. Failures (or an over-cap image) are swallowed inside the capture helper.
+	useEffect(() => {
+		if (!editor || typeof document === 'undefined') return
+		const onVisibility = () => {
+			if (document.visibilityState !== 'hidden' || thumbCapturedRef.current) return
+			const docId = currentDocIdRef.current
+			if (!docId) return
+			thumbCapturedRef.current = true
+			void captureFirstPageThumbnail(editor).then((thumb) => {
+				if (!thumb) return
+				setRecent((prev) => {
+					const target = prev.find((e) => e.id === docId)
+					if (!target) return prev
+					return saveRecent(prev.map((e) => (e.id === docId ? { ...e, thumbnail: thumb } : e)))
+				})
+			})
+		}
+		document.addEventListener('visibilitychange', onVisibility)
+		return () => document.removeEventListener('visibilitychange', onVisibility)
+	}, [editor])
 
 	// Resolve the preference to a concrete theme. In Auto mode, track the OS
 	// appearance live so the canvas and chrome follow a system theme switch.
@@ -680,12 +823,13 @@ export function App() {
 						setWelcomeOpen(false)
 					}}
 					onPickRecent={(id) => {
-						loadPreset(id)
+						openRecent(id)
 						setWelcomeOpen(false)
 					}}
 					onBlank={() => {
 						if (editor) {
 							spawnBlankPageAtPoint(editor)
+							recordBlankRecent()
 							setStatus('Started a blank project · right-click the page to build the pipeline')
 						}
 						setWelcomeOpen(false)

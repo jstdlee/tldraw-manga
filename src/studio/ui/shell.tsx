@@ -15,7 +15,7 @@ import type { AppStage } from '../library/productionStages'
 import type { InspectorTab } from './inspectorModel'
 import { STAGE_OPS } from '../editor/stageOps'
 import { IconBubble, IconCamera, IconCheck, IconClose, IconFileText, IconGrid, IconPlus, IconSettings, IconSparkles } from './icons'
-import type { RecentEntry } from './welcome'
+import { relativeTime, type RecentEntry } from './welcome'
 
 // -----------------------------------------------------------------------------
 // Command builder
@@ -46,6 +46,12 @@ export interface CommandContext {
 	runPipeline?: () => void
 	/** Open the welcome sheet (preset browser / blank / recent). */
 	openWelcome?: () => void
+	/** Recently opened presets / documents, most recent first. */
+	recent?: RecentEntry[]
+	/** Reopen a recent entry by id (preset reload or document restore). */
+	openRecent?: (id: string) => void
+	/** Forget every recent entry. */
+	clearRecent?: () => void
 	focusPage: (id: string) => void
 	extendPage: () => void
 	switchTab: (tab: InspectorTab) => void
@@ -272,6 +278,31 @@ export function buildCommands(ctx: CommandContext): Command[] {
 		})
 	}
 
+	if (ctx.openRecent && ctx.recent) {
+		for (const entry of ctx.recent) {
+			const pages = entry.pageCount ? `${entry.pageCount} ${entry.pageCount === 1 ? 'page' : 'pages'}` : ''
+			const kindLabel = entry.kind === 'preset' ? 'Preset' : entry.kind === 'blank' ? 'Blank story' : 'Document'
+			commands.push({
+				id: `recent:${entry.id}`,
+				title: entry.title,
+				subtitle: [kindLabel, pages].filter(Boolean).join(' · '),
+				group: 'Open Recent',
+				keywords: ['recent', 'reopen', 'history', 'last', entry.kind],
+				run: () => ctx.openRecent?.(entry.id),
+			})
+		}
+	}
+	if (ctx.clearRecent && ctx.recent && ctx.recent.length) {
+		commands.push({
+			id: 'recent:clear',
+			title: 'Clear Recents',
+			subtitle: 'Forget every recently opened preset and document',
+			group: 'Open Recent',
+			keywords: ['clear', 'forget', 'recent', 'history', 'reset'],
+			run: ctx.clearRecent,
+		})
+	}
+
 	return commands
 }
 
@@ -279,7 +310,7 @@ export function buildCommands(ctx: CommandContext): Command[] {
 // Command palette (Cmd-K)
 // -----------------------------------------------------------------------------
 
-const GROUP_ORDER: CommandGroup[] = ['Pipeline', 'Stage', 'Create', 'Masters', 'View', 'Export', 'Page', 'Panel', 'Theory']
+const GROUP_ORDER: CommandGroup[] = ['Pipeline', 'Stage', 'Create', 'Masters', 'View', 'Export', 'Open Recent', 'Page', 'Panel', 'Theory']
 
 export function CommandPalette({ commands, onClose }: { commands: Command[]; onClose: () => void }) {
 	const [query, setQuery] = useState('')
@@ -567,6 +598,8 @@ export function WelcomeSheet({
 
 	const [active, setActive] = useState(0)
 	const panelRef = useRef<HTMLDivElement>(null)
+	// Captured once per open so every Recent row reads from the same clock.
+	const now = useMemo(() => Date.now(), [])
 
 	useEffect(() => {
 		panelRef.current?.focus()
@@ -649,6 +682,9 @@ export function WelcomeSheet({
 						<div className="welcome-recent">
 							{recent.map((entry) => {
 								const index = indexOf(`recent:${entry.id}`)
+								const meta = [entry.pageCount ? `${entry.pageCount} ${entry.pageCount === 1 ? 'page' : 'pages'}` : null, entry.lastOpened ? relativeTime(entry.lastOpened, now) : null]
+									.filter(Boolean)
+									.join(' · ')
 								return (
 									<button
 										key={entry.id}
@@ -657,7 +693,13 @@ export function WelcomeSheet({
 										onMouseEnter={() => setActive(index)}
 										onClick={() => onPickRecent(entry.id)}
 									>
-										{entry.title}
+										<span className="welcome-recent-thumb" aria-hidden="true">
+											{entry.thumbnail ? <img src={entry.thumbnail} alt="" /> : <IconFileText />}
+										</span>
+										<span className="welcome-recent-text">
+											<span className="welcome-recent-title">{entry.title}</span>
+											{meta ? <span className="welcome-recent-meta">{meta}</span> : null}
+										</span>
 									</button>
 								)
 							})}

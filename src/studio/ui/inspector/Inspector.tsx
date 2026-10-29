@@ -6,15 +6,31 @@
 // the user opens explicitly. The Inspector never stacks panels.
 // =============================================================================
 
+import { lazy, Suspense } from 'react'
 import { type Editor } from 'tldraw'
 import { type CanvasSelectionKind, type InspectorTab } from '../inspectorModel'
 import { type MangaContainer } from '../../shapes/schema'
 import { AssetTab } from './AssetTab'
 import { BalloonTab } from './BalloonTab'
-import { MastersTab } from './MastersTab'
 import { PageTab, type PipelineInspectorOps } from './PageTab'
 import { PanelTab } from './PanelTab'
-import { TheoryTab } from './TheoryTab'
+
+// Masters and Theory are reference tabs the user opens explicitly, and they pull
+// in the large style-master / comics-theory data libraries. Load them (and their
+// data) on demand so the first paint never pays for them. A restrained skeleton
+// bridges the one-frame import gap.
+const MastersTab = lazy(() => import('./MastersTab').then((m) => ({ default: m.MastersTab })))
+const TheoryTab = lazy(() => import('./TheoryTab').then((m) => ({ default: m.TheoryTab })))
+
+function TabSkeleton() {
+	return (
+		<div className="inspector-skeleton" aria-busy="true" aria-live="polite">
+			<span className="inspector-skeleton-line" />
+			<span className="inspector-skeleton-line" />
+			<span className="inspector-skeleton-line short" />
+		</div>
+	)
+}
 
 /** The six Inspector tabs, mapped to their internal selection-resolution ids. */
 export const INSPECTOR_TABS: ReadonlyArray<{ id: InspectorTab; label: string }> = [
@@ -79,9 +95,13 @@ export function Inspector({
 			) : activeTab === 'cards' ? (
 				<AssetTab editor={editor} setStatus={setStatus} />
 			) : activeTab === 'masters' ? (
-				<MastersTab editor={editor} page={page} setStatus={setStatus} initialMaster={initialMaster} />
+				<Suspense fallback={<TabSkeleton />}>
+					<MastersTab editor={editor} page={page} setStatus={setStatus} initialMaster={initialMaster} />
+				</Suspense>
 			) : (
-				<TheoryTab editor={editor} page={page} setStatus={setStatus} selectionKind={selectionKind} />
+				<Suspense fallback={<TabSkeleton />}>
+					<TheoryTab editor={editor} page={page} setStatus={setStatus} selectionKind={selectionKind} />
+				</Suspense>
 			)}
 		</aside>
 	)

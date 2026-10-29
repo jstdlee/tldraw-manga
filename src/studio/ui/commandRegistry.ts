@@ -5,7 +5,7 @@
 // the ranking is deterministic and unit-testable with no React or editor.
 // =============================================================================
 
-export type CommandGroup = 'Pipeline' | 'Stage' | 'Page' | 'Panel' | 'Masters' | 'Theory' | 'View' | 'Export' | 'Create'
+export type CommandGroup = 'Pipeline' | 'Stage' | 'Page' | 'Panel' | 'Masters' | 'Theory' | 'View' | 'Export' | 'Create' | 'Open Recent'
 
 export interface Command {
 	id: string

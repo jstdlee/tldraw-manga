@@ -235,6 +235,37 @@ describe('buildCommands', () => {
 		expect(commands.some((c) => c.id === 'masters:open-preset')).toBe(false)
 	})
 
+	it('registers one Open Recent command per entry plus Clear Recents when wired', () => {
+		const opened: string[] = []
+		let cleared = false
+		const commands = buildCommands({
+			...baseCtx(),
+			recent: [
+				{ id: 'noir', title: 'Rainy Interrogation', kind: 'preset', lastOpened: 0, pageCount: 3 },
+				{ id: 'tldraw-manga-v6', title: 'Untitled Story', kind: 'blank', lastOpened: 0, pageCount: 1 },
+			],
+			openRecent: (id) => opened.push(id),
+			clearRecent: () => (cleared = true),
+		})
+		const recentCmds = commands.filter((c) => c.id.startsWith('recent:') && c.id !== 'recent:clear')
+		expect(recentCmds).toHaveLength(2)
+		expect(recentCmds[0].group).toBe('Open Recent')
+		expect(recentCmds[0].subtitle).toBe('Preset · 3 pages')
+		expect(recentCmds[1].subtitle).toBe('Blank story · 1 page')
+		commands.find((c) => c.id === 'recent:noir')?.run?.()
+		expect(opened).toEqual(['noir'])
+		const clear = commands.find((c) => c.id === 'recent:clear')
+		expect(clear).toBeDefined()
+		clear?.run?.()
+		expect(cleared).toBe(true)
+	})
+
+	it('omits Clear Recents when the recent list is empty', () => {
+		const commands = buildCommands({ ...baseCtx(), recent: [], openRecent: () => {}, clearRecent: () => {} })
+		expect(commands.some((c) => c.id === 'recent:clear')).toBe(false)
+		expect(commands.some((c) => c.id.startsWith('recent:'))).toBe(false)
+	})
+
 	it('registers one run command per stage plus full-compile and welcome when wired', () => {
 		const ran: number[] = []
 		const commands = buildCommands({
