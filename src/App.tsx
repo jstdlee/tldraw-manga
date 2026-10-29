@@ -446,6 +446,22 @@ export function App() {
 		if (deepLink.presetId) {
 			const msg = applyUniversalFiveStagePreset(mounted, deepLink.presetId)
 			setStatus(msg)
+			// A deep-linked preset is a real open: remember it in Recents too.
+			const linked =
+				presetList.find((p) => p.id === deepLink.presetId) ??
+				(deepLink.presetId === 'default' ? presetList[0] : undefined)
+			if (linked) {
+				currentDocIdRef.current = linked.id
+				setRecent(
+					pushRecent({
+						id: linked.id,
+						title: linked.title,
+						kind: 'preset',
+						lastOpened: Date.now(),
+						pageCount: orderedPages(mounted).length,
+					}),
+				)
+			}
 		}
 		if (
 			shouldShowWelcome({
