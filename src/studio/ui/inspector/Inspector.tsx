@@ -70,9 +70,9 @@ export function Inspector({
 			) : activeTab === 'cards' ? (
 				<AssetTab editor={editor} setStatus={setStatus} />
 			) : activeTab === 'masters' ? (
-				<MastersTab />
+				<MastersTab editor={editor} page={page} setStatus={setStatus} />
 			) : (
-				<TheoryTab />
+				<TheoryTab editor={editor} page={page} setStatus={setStatus} />
 			)}
 		</aside>
 	)

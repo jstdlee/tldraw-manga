@@ -35,6 +35,9 @@ export interface CommandContext {
 	presets: PresetPick[]
 	theme: 'light' | 'dark'
 	hasEditor: boolean
+	/** True when the active page has stale factors that can be re-propagated. */
+	canRepropagate?: boolean
+	repropagate?: () => void
 	focusPage: (id: string) => void
 	extendPage: () => void
 	switchTab: (tab: InspectorTab) => void
@@ -90,6 +93,18 @@ export function buildCommands(ctx: CommandContext): Command[] {
 		disabled: !ctx.hasEditor,
 		run: ctx.extendPage,
 	})
+	if (ctx.repropagate) {
+		commands.push({
+			id: 'pipeline:repropagate',
+			title: 'Re-propagate Stale Stages',
+			subtitle: 'Recompute downstream stages · never regenerates images',
+			group: 'Pipeline',
+			shortcut: '⌘⇧R',
+			keywords: ['stale', 'propagate', 'recompute', 'refresh', 'downstream', 'dirty'],
+			disabled: !ctx.canRepropagate,
+			run: ctx.repropagate,
+		})
+	}
 
 	for (const stage of APP_STAGES) {
 		const info = STAGE_TAB[stage]
@@ -418,6 +433,7 @@ const SHORTCUT_SECTIONS: Array<{ title: string; rows: Array<{ keys: string; labe
 		title: 'Pipeline',
 		rows: [
 			{ keys: '⌘E', label: 'Extend next page' },
+			{ keys: '⌘⇧R', label: 'Re-propagate stale stages' },
 			{ keys: '⌘R', label: 'Open reader' },
 			{ keys: '⌘⇧E', label: 'Export HTML reader' },
 		],

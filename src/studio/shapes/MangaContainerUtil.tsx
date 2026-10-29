@@ -17,6 +17,7 @@ import {
 import { asScenario, layoutFeatures, layoutScore } from '../layout/score'
 import { renderGazeFocalTrajectorySvg, solvePageGazeFocalTrajectory } from '../jev/fiveStageEngine'
 import { readJson, readPageParams, refreshAspects, type PagePipelineContext, type PanelMeta } from '../model'
+import { pageStaleStages, readDirtyStateFromMeta } from '../pipeline/dirtyStore'
 import { openCustomContextMenu, openPageContextInspector, triggerExtendNextPage } from '../ui/contextMenu'
 import { renderPageSvg, type PageRenderModel } from '../render/pageSvg'
 import { IconBook, IconFrame } from '../ui/icons'
@@ -335,6 +336,18 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 				<span className="badge score" title={reasons.join(' · ')}>
 					JEV {Math.round(shape.props.score * 100)}
 				</span>
+				{(() => {
+					const staleStages = pageStaleStages(readDirtyStateFromMeta(shape.meta))
+					if (!staleStages.length) return null
+					return (
+						<span
+							className="badge stale-badge"
+							title={`Downstream stale on stage ${staleStages.join(', ')} — re-propagate to refresh`}
+						>
+							Stale {staleStages.join('·')}
+						</span>
+					)
+				})()}
 				<div className="page-mini-actions" onPointerDown={stopEvent}>
 					<button
 						type="button"

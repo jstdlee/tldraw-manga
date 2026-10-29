@@ -13,9 +13,12 @@
 // =============================================================================
 
 import type { ScenarioWeightBias } from '../layout/score'
-import { styleProfileToLayoutBias, type StyleProfile } from './blend'
+import { styleProfileToLayoutBias, type FactorKind, type StyleProfile } from './blend'
 import { MASTER_IDS, type MasterId } from './masters'
 import { THEORY_ITEMS } from './theory'
+
+/** The six blendable factor families that can be pinned to the dominant master. */
+export const FACTOR_KINDS: FactorKind[] = ['transitions', 'wordPicture', 'shots', 'angles', 'layouts', 'pacing']
 
 export interface PageStyleState {
 	/** Page-level master blend (normalized downstream in blend.ts). */
@@ -24,14 +27,18 @@ export interface PageStyleState {
 	panelProfiles: Record<number, StyleProfile>
 	/** Theory checklist ids promoted to active engine constraints. */
 	constraints: string[]
-	/** Manual pass/fail tick state keyed by checklist id. */
+	/** Manual pass/fail tick state keyed by theory checklist id. */
 	ticks: Record<string, boolean>
+	/** Factor families pinned (locked) to the dominant master in the blend. */
+	factorLocks: FactorKind[]
+	/** Manual tick state for master decision-checklist items (keyed `masterId:index`). */
+	masterTicks: Record<string, boolean>
 }
 
 export const PAGE_STYLE_META_KEY = 'pageStyle'
 
 export function createPageStyleState(): PageStyleState {
-	return { profile: { masterWeights: {} }, panelProfiles: {}, constraints: [], ticks: {} }
+	return { profile: { masterWeights: {} }, panelProfiles: {}, constraints: [], ticks: {}, factorLocks: [], masterTicks: {} }
 }
 
 export const EMPTY_PAGE_STYLE: PageStyleState = createPageStyleState()
@@ -110,6 +117,45 @@ export function clearPanelMaster(state: PageStyleState, panelIndex: number): Pag
 	const panelProfiles = { ...state.panelProfiles }
 	delete panelProfiles[panelIndex]
 	return { ...state, panelProfiles }
+}
+
+// -----------------------------------------------------------------------------
+// Per-factor locks (pin a factor family to the dominant master in the blend).
+// -----------------------------------------------------------------------------
+
+const FACTOR_KIND_SET = new Set<string>(FACTOR_KINDS)
+
+export function isFactorLocked(state: PageStyleState, kind: FactorKind): boolean {
+	return state.factorLocks.includes(kind)
+}
+
+export function toggleFactorLock(state: PageStyleState, kind: FactorKind): PageStyleState {
+	if (!FACTOR_KIND_SET.has(kind)) return state
+	const has = state.factorLocks.includes(kind)
+	const factorLocks = has ? state.factorLocks.filter((k) => k !== kind) : [...state.factorLocks, kind]
+	return { ...state, factorLocks }
+}
+
+/** Build the persistence key for a master decision-checklist item. */
+export function masterTickKey(masterId: MasterId, index: number): string {
+	return `${masterId}:${index}`
+}
+
+export function isMasterChecklistTicked(state: PageStyleState, masterId: MasterId, index: number): boolean {
+	return Boolean(state.masterTicks[masterTickKey(masterId, index)])
+}
+
+export function setMasterChecklistTick(
+	state: PageStyleState,
+	masterId: MasterId,
+	index: number,
+	ticked: boolean,
+): PageStyleState {
+	const key = masterTickKey(masterId, index)
+	const masterTicks = { ...state.masterTicks }
+	if (ticked) masterTicks[key] = true
+	else delete masterTicks[key]
+	return { ...state, masterTicks }
 }
 
 // -----------------------------------------------------------------------------
@@ -205,7 +251,9 @@ export function isEmptyPageStyle(state: PageStyleState): boolean {
 		Object.keys(state.profile.masterWeights).length === 0 &&
 		Object.keys(state.panelProfiles).length === 0 &&
 		state.constraints.length === 0 &&
-		Object.keys(state.ticks).length === 0
+		Object.keys(state.ticks).length === 0 &&
+		state.factorLocks.length === 0 &&
+		Object.keys(state.masterTicks).length === 0
 	)
 }
 
@@ -258,7 +306,18 @@ export function readPageStyleFromMeta(meta: unknown): PageStyleState {
 		}
 	}
 
-	return { profile: sanitizeProfile(record.profile), panelProfiles, constraints, ticks }
+	const factorLocks = Array.isArray(record.factorLocks)
+		? FACTOR_KINDS.filter((kind) => (record.factorLocks as unknown[]).includes(kind))
+		: []
+
+	const masterTicks: Record<string, boolean> = {}
+	if (record.masterTicks && typeof record.masterTicks === 'object') {
+		for (const [key, val] of Object.entries(record.masterTicks as Record<string, unknown>)) {
+			if (val === true && MASTER_ID_SET.has(key.split(':')[0])) masterTicks[key] = true
+		}
+	}
+
+	return { profile: sanitizeProfile(record.profile), panelProfiles, constraints, ticks, factorLocks, masterTicks }
 }
 
 /** Merge a page's style state into a shape `meta` object, preserving other keys. */
@@ -271,6 +330,8 @@ export function writePageStyleToMeta(meta: unknown, state: PageStyleState): Reco
 		),
 		constraints: [...state.constraints],
 		ticks: { ...state.ticks },
+		factorLocks: [...state.factorLocks],
+		masterTicks: { ...state.masterTicks },
 	}
 	return base
 }

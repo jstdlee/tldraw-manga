@@ -1,11 +1,16 @@
 // =============================================================================
-// PanelTab.tsx — Inspector "Panel" tab (Stage 2 beats + Stage 4 optics).
-// Per-panel action beat, silent-Ma toggle, the optical lens lab (sensor, angle,
-// focal length, aperture, subject distance), panel framing (zoom / pan /
-// rotation), per-edge bleed, subsplit and the composition / axis guides.
-// Moved out of the legacy left drawer's Optics and Script sections.
+// PanelTab.tsx — Inspector "Panel" tab (Stage 2 beats + factor-level editing +
+// Stage 4 optics). The JEV Factors block exposes every per-panel decision inline
+// (McCloud transition, shot size, angle, lens, word-picture mode, tension, eyeline
+// side, silent Ma, bound asset refs, master override), each with its resolved
+// source (auto / master / manual) and a lock toggle; locked factors survive
+// re-runs. Editing a factor writes through both the beat and the meta (so the
+// value survives a layout recompute) and marks only the dependent downstream
+// stages stale via the dirty store. Below it sit the optical lens lab and the
+// framing / bleed controls.
 // =============================================================================
 
+import { type ReactNode } from 'react'
 import { useValue, type Editor } from 'tldraw'
 import { ANGLE_LABELS } from '../../demo/book'
 import {
@@ -16,12 +21,49 @@ import {
 	toggleSilentPanelOnPage,
 	updatePageParametric,
 } from '../../editor/pipeline'
+import type { McCloudTransition, WordPictureMode } from '../../jev/fiveStageEngine'
 import { configFor, generate, locatePanelGene, sanitize, type Genome } from '../../layout/engine'
-import { readJson, readPageParams, type PanelMeta } from '../../model'
+import { resolveWeightedMasters } from '../../library/blend'
+import { MASTERS } from '../../library/masters'
+import { applyMasterToPanel, clearPanelMaster, readPageStyleFromMeta } from '../../library/pageStyle'
+import { beatsFromMetas, readJson, readPageParams, type Beat, type PanelMeta, type Shot } from '../../model'
 import { auditCameraAxis, computeOptics, defaultOpticsForMeta, SENSORS, type SensorId } from '../../optics/shotLab'
+import {
+	PANEL_FACTOR_TO_GRAPH,
+	isLocked,
+	readPanelFactorsFromMeta,
+	resolvePanelFactorSource,
+	setManual,
+	toggleLocked,
+	type PanelFactorKey,
+} from '../../pipeline/panelFactors'
+import { readPageDirty, writePageStyleAndMarkStale, writePanelFactorsAndMarkStale, writePanelFactorsOnly } from '../../pipeline/pageMeta'
 import { ANGLES } from '../../prompts/library'
-import { CONTAINER, type MangaContainer } from '../../shapes/schema'
-import { IconImage, IconSparkles } from '../icons'
+import { LENS_PRESETS } from '../../library/shots'
+import { CARD, CONTAINER, type MangaCard, type MangaContainer } from '../../shapes/schema'
+import { IconClose, IconImage, IconSparkles } from '../icons'
+import { LockToggle, SourceBadge } from './factorWidgets'
+
+const TRANSITIONS: Array<{ id: McCloudTransition; label: string }> = [
+	{ id: 'moment_to_moment', label: 'Moment → Moment' },
+	{ id: 'action_to_action', label: 'Action → Action' },
+	{ id: 'subject_to_subject', label: 'Subject → Subject' },
+	{ id: 'scene_to_scene', label: 'Scene → Scene' },
+	{ id: 'aspect_to_aspect', label: 'Aspect → Aspect' },
+	{ id: 'non_sequitur', label: 'Non-sequitur' },
+]
+
+const WORD_PICTURE: Array<{ id: WordPictureMode; label: string }> = [
+	{ id: 'word_specific', label: 'Word-specific' },
+	{ id: 'picture_specific', label: 'Picture-specific' },
+	{ id: 'duo_specific', label: 'Duo-specific' },
+	{ id: 'additive', label: 'Additive' },
+	{ id: 'parallel', label: 'Parallel' },
+	{ id: 'montage', label: 'Montage' },
+	{ id: 'interdependent', label: 'Interdependent' },
+]
+
+const SHOTS: Shot[] = ['EWS', 'WS', 'MS', 'MCU', 'CU', 'ECU']
 
 export function PanelTab({
 	editor,
@@ -32,11 +74,22 @@ export function PanelTab({
 	page: MangaContainer | null
 	setStatus: (value: string) => void
 }) {
-	// Re-read the selected panel reactively so the lab follows the canvas.
 	const panelIdx = useValue(
 		'inspector-panel-idx',
 		() => (page ? (page.props.selectedPanel >= 0 ? page.props.selectedPanel : 0) : 0),
 		[page],
+	)
+	const cardTags = useValue<string[]>(
+		'inspector-card-tags',
+		() =>
+			editor
+				? editor
+						.getCurrentPageShapes()
+						.filter((s): s is MangaCard => s.type === CARD && Boolean(s.props.tag))
+						.map((c) => c.props.tag.trim())
+						.filter(Boolean)
+				: [],
+		[editor],
 	)
 
 	if (!editor || !page) {
@@ -44,10 +97,10 @@ export function PanelTab({
 			<div className="inspector-body">
 				<section className="side-section">
 					<div className="sec-head">
-						<h3>Panel Optics & Framing</h3>
+						<h3>Panel Factors & Optics</h3>
 						<span>Select a panel</span>
 					</div>
-					<p className="side-hint">Select any panel cell on a page to adjust its beat, focal length, aperture, framing and edge bleed.</p>
+					<p className="side-hint">Select any panel cell on a page to adjust its JEV factors, focal length, aperture, framing and edge bleed.</p>
 				</section>
 			</div>
 		)
@@ -63,7 +116,7 @@ export function PanelTab({
 			<div className="inspector-body">
 				<section className="side-section">
 					<div className="sec-head">
-						<h3>Panel Optics & Framing</h3>
+						<h3>Panel Factors & Optics</h3>
 						<span>No panels</span>
 					</div>
 					<p className="side-hint">This page has no storyboard panels yet. Run the layout stage from the Page tab first.</p>
@@ -76,11 +129,62 @@ export function PanelTab({
 	const computed = computeOptics(optParams)
 	const geneHit = locatePanelGene(genome, panelIdx)
 	const axisAudit = auditCameraAxis(metas)
+	const style = readPageStyleFromMeta(page.meta)
+	const pf = readPanelFactorsFromMeta(page.meta)
+	const panelProfile = style.panelProfiles[panelIdx]
+	const panelMasterId = panelProfile ? Object.keys(panelProfile.masterWeights)[0] ?? '' : ''
+	const panelHasMaster = resolveWeightedMasters(style.profile).length > 0 || Boolean(panelProfile)
+	const dirty = readPageDirty(page)
+	const currentRefs = meta.assetRefs ?? []
+	const ctx = readJson<{ lockedAssetTags?: string[] }>(page.props.contextJson ?? '{}', {})
+	const availableTags = Array.from(new Set([...(ctx.lockedAssetTags ?? []), ...cardTags]))
+		.map((t) => (t.startsWith('@') || t.startsWith('#') ? t : `@${t}`))
+		.filter((t) => !currentRefs.includes(t))
 
 	const selectPanel = (idx: number) => editor.updateShape<MangaContainer>({ id: page.id, type: CONTAINER, props: { selectedPanel: idx } })
+
 	const updateMeta = (patch: Partial<PanelMeta>) => {
 		const next = metas.map((item, idx) => (idx === panelIdx ? { ...item, ...patch } : item))
 		editor.updateShape<MangaContainer>({ id: page.id, type: CONTAINER, props: { panelsJson: JSON.stringify(next) } })
+	}
+
+	// Commit a factor edit through BOTH the beat and the meta so it survives a
+	// layout recompute, then mark it manual and flag only the dependent stages.
+	const commitFactor = (key: PanelFactorKey, patch: { beat?: Partial<Beat>; meta?: Partial<PanelMeta> }, message?: string) => {
+		const rawBeats = readJson<Beat[]>(page.props.scriptJson, [])
+		const base = rawBeats.length === metas.length ? rawBeats : beatsFromMetas(metas)
+		const nextBeats = base.map((b, idx) => (idx === panelIdx ? { ...b, ...(patch.beat ?? {}) } : b))
+		const nextMetas = metas.map((m, idx) => (idx === panelIdx ? { ...m, ...(patch.meta ?? {}) } : m))
+		editor.updateShape<MangaContainer>({
+			id: page.id,
+			type: CONTAINER,
+			props: { scriptJson: JSON.stringify(nextBeats), panelsJson: JSON.stringify(nextMetas) },
+		})
+		const result = writePanelFactorsAndMarkStale(editor, page, setManual(pf, panelIdx, key, true), [PANEL_FACTOR_TO_GRAPH[key]])
+		if (message) setStatus(`${message} · ${result.staleFactors.length} downstream factor(s) stale`)
+	}
+
+	const factorRow = (key: PanelFactorKey, label: string, control: ReactNode) => {
+		const source = resolvePanelFactorSource(pf, panelIdx, key, panelHasMaster)
+		const locked = isLocked(pf, panelIdx, key)
+		return (
+			<div className="factor-row" key={key}>
+				<div className="factor-row-head">
+					<span className="factor-label">{label}</span>
+					<SourceBadge source={source} />
+					<LockToggle locked={locked} label={label} onToggle={() => writePanelFactorsOnly(editor, page, toggleLocked(pf, panelIdx, key))} />
+				</div>
+				<div className="factor-control">{control}</div>
+			</div>
+		)
+	}
+
+	const eyelineX = meta.eyeline?.[0] ?? 0
+	const eyelineSide = eyelineX < -5 ? 'left' : eyelineX > 5 ? 'right' : 'neutral'
+	const setEyelineSide = (side: 'left' | 'neutral' | 'right') => {
+		const y = meta.eyeline?.[1] ?? 0
+		const x = side === 'left' ? -22 : side === 'right' ? 22 : 0
+		commitFactor('eyeline', { beat: { eyeline: [x, y] }, meta: { eyeline: [x, y] } }, `Set eyeline ${side}`)
 	}
 
 	return (
@@ -88,9 +192,9 @@ export function PanelTab({
 			<section className="side-section">
 				<div className="sec-head">
 					<h3>Panel #{panelIdx + 1} · {page.props.title}</h3>
-					<span>{meta.silent ? 'Silent Ma' : 'Dialogue'}</span>
+					{dirty.dirty.length ? <span className="stale-chip">{dirty.dirty.length} stale</span> : <span>{meta.silent ? 'Silent Ma' : 'Dialogue'}</span>}
 				</div>
-				<div className="panel-pill-selector">
+				<div className={dirty.dirty.length ? 'panel-pill-selector stale' : 'panel-pill-selector'}>
 					{metas.map((m, idx) => (
 						<button
 							key={idx}
@@ -108,20 +212,205 @@ export function PanelTab({
 						rows={2}
 						aria-label="Panel staging and action beat"
 						value={meta.beat}
-						onChange={(event) => updateMeta({ beat: event.target.value })}
+						onChange={(event) => commitFactor('transition', { beat: { beat: event.target.value }, meta: { beat: event.target.value } })}
 					/>
 				</div>
-				<div className="quick-ai-grid">
+			</section>
+
+			<section className="side-section">
+				<div className="sec-head">
+					<h3>JEV Factors</h3>
+					{dirty.dirty.length ? <span className="stale-chip">downstream stale</span> : <span>Source · Lock</span>}
+				</div>
+
+				{factorRow(
+					'transition',
+					'McCloud Transition',
+					<select
+						aria-label="Panel-to-panel transition"
+						value={meta.mccloudTransition ?? ''}
+						onChange={(event) => commitFactor('transition', { beat: { mccloudTransition: event.target.value as McCloudTransition }, meta: { mccloudTransition: event.target.value as McCloudTransition } }, 'Set transition')}
+					>
+						<option value="">Auto</option>
+						{TRANSITIONS.map((t) => (
+							<option key={t.id} value={t.id}>{t.label}</option>
+						))}
+					</select>,
+				)}
+
+				<div className="factor-pair">
+					{factorRow(
+						'shot',
+						'Shot Size',
+						<select
+							aria-label="Shot size"
+							value={meta.shot}
+							onChange={(event) => commitFactor('shot', { beat: { shot: event.target.value as Shot }, meta: { shot: event.target.value as Shot } }, 'Set shot size')}
+						>
+							{SHOTS.map((s) => (
+								<option key={s} value={s}>{s}</option>
+							))}
+						</select>,
+					)}
+					{factorRow(
+						'angle',
+						'Camera Angle',
+						<select
+							aria-label="Camera angle"
+							value={meta.angle}
+							onChange={(event) => {
+								applyOpticsToPanel(editor, page, panelIdx, { angle: event.target.value as PanelMeta['angle'] })
+								commitFactor('angle', { beat: { angle: event.target.value as PanelMeta['angle'] }, meta: { angle: event.target.value as PanelMeta['angle'] } }, 'Set camera angle')
+							}}
+						>
+							{ANGLES.map((a) => (
+								<option key={a} value={a}>{ANGLE_LABELS[a] ?? a}</option>
+							))}
+						</select>,
+					)}
+				</div>
+
+				{factorRow(
+					'lens',
+					'Lens',
+					<select
+						aria-label="Lens preset"
+						value={LENS_PRESETS.find((l) => l.focalMm === (meta.focalMm ?? 50))?.id ?? ''}
+						onChange={(event) => {
+							const lens = LENS_PRESETS.find((l) => l.id === event.target.value)
+							if (!lens) return
+							applyOpticsToPanel(editor, page, panelIdx, { focalMm: lens.focalMm })
+							commitFactor('lens', { beat: { focalMm: lens.focalMm }, meta: { focalMm: lens.focalMm } }, `Set ${lens.name}`)
+						}}
+					>
+						<option value="">Custom {meta.focalMm ?? 50}mm</option>
+						{LENS_PRESETS.map((l) => (
+							<option key={l.id} value={l.id}>{l.name}</option>
+						))}
+					</select>,
+				)}
+
+				{factorRow(
+					'wordPicture',
+					'Word-Picture',
+					<select
+						aria-label="Word-picture combination"
+						value={meta.wordPictureMode ?? ''}
+						onChange={(event) => commitFactor('wordPicture', { beat: { wordPictureMode: event.target.value as WordPictureMode }, meta: { wordPictureMode: event.target.value as WordPictureMode } }, 'Set word-picture mode')}
+					>
+						<option value="">Auto</option>
+						{WORD_PICTURE.map((w) => (
+							<option key={w.id} value={w.id}>{w.label}</option>
+						))}
+					</select>,
+				)}
+
+				{factorRow(
+					'tension',
+					'Tension',
+					<label className="slider-row inline">
+						<input
+							type="range"
+							aria-label="Panel tension"
+							min={0}
+							max={100}
+							step={1}
+							value={Math.round((meta.tension ?? 0.5) * 100)}
+							onChange={(event) => {
+								const value = Number(event.target.value) / 100
+								commitFactor('tension', { beat: { tension: value }, meta: { tension: value } })
+							}}
+						/>
+						<code>{Math.round((meta.tension ?? 0.5) * 100)}</code>
+					</label>,
+				)}
+
+				{factorRow(
+					'eyeline',
+					'Eyeline / 180° Side',
+					<div className="segmented compact">
+						{(['left', 'neutral', 'right'] as const).map((side) => (
+							<button key={side} type="button" className={eyelineSide === side ? 'active' : ''} onClick={() => setEyelineSide(side)}>
+								{side === 'left' ? 'Left' : side === 'right' ? 'Right' : 'Neutral'}
+							</button>
+						))}
+					</div>,
+				)}
+
+				{factorRow(
+					'silent',
+					'Silent Ma Beat',
 					<button
 						type="button"
-						className={meta.silent ? 'active-toggle-btn' : ''}
-						onClick={() => setStatus(toggleSilentPanelOnPage(editor, page, panelIdx))}
+						className={meta.silent ? 'inspector-toggle active' : 'inspector-toggle'}
+						onClick={() => {
+							toggleSilentPanelOnPage(editor, page, panelIdx)
+							const result = writePanelFactorsAndMarkStale(editor, page, setManual(pf, panelIdx, 'silent', true), [PANEL_FACTOR_TO_GRAPH.silent])
+							setStatus(`${meta.silent ? 'Cleared' : 'Set'} silent Ma on panel #${panelIdx + 1} · ${result.staleFactors.length} downstream factor(s) stale`)
+						}}
 					>
-						{meta.silent ? 'Silent Ma Active' : 'Set Silent Ma'}
-					</button>
-					<button type="button" onClick={() => setStatus(fillRealInterrogationArtworkOnPage(editor, page))}>
-						<IconImage /> Fill Panel Art
-					</button>
+						{meta.silent ? 'Silent (no balloon)' : 'Set Silent Ma'}
+					</button>,
+				)}
+
+				{factorRow(
+					'masterStyle',
+					'Master Override',
+					<select
+						aria-label="Panel master style override"
+						value={panelMasterId}
+						onChange={(event) => {
+							const nextStyle = event.target.value
+								? applyMasterToPanel(style, panelIdx, event.target.value as (typeof MASTERS)[number]['id'])
+								: clearPanelMaster(style, panelIdx)
+							writePageStyleAndMarkStale(editor, page, nextStyle, ['styleBible', 'panelLayout'])
+							setStatus(event.target.value ? `Panel #${panelIdx + 1} overridden to a master style` : `Panel #${panelIdx + 1} inherits the page style`)
+						}}
+					>
+						<option value="">Inherit page</option>
+						{MASTERS.map((m) => (
+							<option key={m.id} value={m.id}>{m.name}</option>
+						))}
+					</select>,
+				)}
+
+				<div className="factor-row">
+					<div className="factor-row-head">
+						<span className="factor-label">Bound Asset Refs</span>
+						<SourceBadge source={resolvePanelFactorSource(pf, panelIdx, 'assetRefs', panelHasMaster)} />
+						<LockToggle locked={isLocked(pf, panelIdx, 'assetRefs')} label="Bound Asset Refs" onToggle={() => writePanelFactorsOnly(editor, page, toggleLocked(pf, panelIdx, 'assetRefs'))} />
+					</div>
+					<div className="token-chip-row">
+						{currentRefs.length === 0 ? <span className="side-hint inline">No bound refs</span> : null}
+						{currentRefs.map((tag) => (
+							<span key={tag} className="token-chip">
+								{tag}
+								<button
+									type="button"
+									aria-label={`Remove ${tag}`}
+									onClick={() => commitFactor('assetRefs', { beat: { assetRefs: currentRefs.filter((t) => t !== tag) }, meta: { assetRefs: currentRefs.filter((t) => t !== tag) } }, `Unbound ${tag}`)}
+								>
+									<IconClose />
+								</button>
+							</span>
+						))}
+					</div>
+					{availableTags.length ? (
+						<select
+							aria-label="Bind an asset reference"
+							value=""
+							onChange={(event) => {
+								if (!event.target.value) return
+								const next = Array.from(new Set([...currentRefs, event.target.value]))
+								commitFactor('assetRefs', { beat: { assetRefs: next }, meta: { assetRefs: next } }, `Bound ${event.target.value}`)
+							}}
+						>
+							<option value="">Bind asset…</option>
+							{availableTags.map((tag) => (
+								<option key={tag} value={tag}>{tag}</option>
+							))}
+						</select>
+					) : null}
 				</div>
 			</section>
 
@@ -163,19 +452,9 @@ export function PanelTab({
 							))}
 						</select>
 					</label>
-					<label>
+					<label className="optics-angle-readout">
 						Angle
-						<select
-							aria-label="Camera Angle"
-							value={meta.angle}
-							onChange={(event) => setStatus(applyOpticsToPanel(editor, page, panelIdx, { angle: event.target.value as PanelMeta['angle'] }))}
-						>
-							{ANGLES.map((a) => (
-								<option key={a} value={a}>
-									{ANGLE_LABELS[a] ?? a}
-								</option>
-							))}
-						</select>
+						<code>{ANGLE_LABELS[meta.angle] ?? meta.angle}</code>
 					</label>
 				</div>
 				<div className="slider-stack" style={{ marginTop: 8 }}>

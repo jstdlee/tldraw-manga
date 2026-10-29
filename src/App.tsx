@@ -7,10 +7,14 @@ import {
 	createImageCardOnCanvas,
 	createTextCardOnCanvas,
 	extendNextPageFromPage,
-	runJevFiveStageCompile,
+	recompilePromptsStage4,
+	relayoutLetteringStage5,
+	relayoutPageStage3,
 	seedDefaultIfEmpty,
 	selectedPages,
 } from './studio/editor/pipeline'
+import { EMPTY_DIRTY_STATE, hasPageDirty } from './studio/pipeline/dirtyStore'
+import { readPageDirty, repropagatePage } from './studio/pipeline/pageMeta'
 import { listUniversalPresets } from './studio/jev/fiveStageEngine'
 import { readerHtml } from './studio/export/htmlReader'
 import { downloadText } from './studio/export/ora'
@@ -134,11 +138,49 @@ export function App() {
 		setActiveTab(resolveInspectorTab(selectionKind))
 	}, [selectionKind, rightOpen])
 
+	// The active page's stale/running state drives the bottom stage bar. activePage
+	// is reactive to shape (and meta) changes, so this recomputes on every edit.
+	const pageDirty = useMemo(() => (activePage ? readPageDirty(activePage) : EMPTY_DIRTY_STATE), [activePage])
+
 	const stageStatuses = useMemo(
-		() => deriveStageStatuses({ dirty: [], completed: completedStagesFrom(canvasModel.evidence) }),
-		[canvasModel.evidence],
+		() =>
+			deriveStageStatuses({
+				dirty: pageDirty.dirty,
+				running: pageDirty.running,
+				completed: completedStagesFrom(canvasModel.evidence),
+			}),
+		[canvasModel.evidence, pageDirty],
 	)
 	const activeStage = rightOpen ? STAGE_META.find((m) => m.inspectorTab === activeTab)?.stage ?? null : null
+
+	// Re-propagate the active page's stale stages using the pure executor over the
+	// real Stage 3-5 runners. Image regeneration is never part of this. The page is
+	// re-fetched from the editor at call time so a keyboard-shortcut invocation is
+	// never driven by a stale closure.
+	const repropagate = () => {
+		if (!editor) {
+			setStatus('Select a page to re-propagate')
+			return
+		}
+		const page =
+			selectedPages(editor)[0] ??
+			editor
+				.getCurrentPageShapes()
+				.filter((s): s is MangaContainer => s.type === CONTAINER && s.props.role === 'page')
+				.sort((a, b) => (a.props.pageIndex || 0) - (b.props.pageIndex || 0))[0] ??
+			null
+		if (!page) {
+			setStatus('Select a page to re-propagate')
+			return
+		}
+		const pageId = page.id
+		const outcome = repropagatePage(editor, page, {
+			3: () => relayoutPageStage3(editor, pageId),
+			4: () => recompilePromptsStage4(editor, pageId),
+			5: () => relayoutLetteringStage5(editor, pageId),
+		})
+		setStatus(outcome ? outcome.message : 'Nothing stale to re-propagate')
+	}
 
 	const focusPage = (id: string) => {
 		if (!editor) return
@@ -173,6 +215,8 @@ export function App() {
 			presets: listUniversalPresets().map((p) => ({ id: p.id, title: p.title })),
 			theme,
 			hasEditor: Boolean(editor),
+			canRepropagate: hasPageDirty(pageDirty),
+			repropagate,
 			focusPage,
 			extendPage,
 			switchTab,
@@ -203,7 +247,7 @@ export function App() {
 		}
 		return buildCommands(ctx)
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [canvasModel.pages, editor, theme])
+	}, [canvasModel.pages, editor, theme, pageDirty, activePage])
 
 	useEffect(() => {
 		document.documentElement.setAttribute('data-theme', theme)
@@ -284,6 +328,9 @@ export function App() {
 			} else if (key === 'e') {
 				event.preventDefault()
 				extendPage()
+			} else if (key === 'r' && event.shiftKey) {
+				event.preventDefault()
+				repropagate()
 			} else if (key === 'r') {
 				event.preventDefault()
 				openReader()
@@ -364,9 +411,7 @@ export function App() {
 					const meta = STAGE_META.find((m) => m.stage === stage)
 					if (meta) switchTab(meta.inspectorTab)
 				}}
-				onRepropagate={() => {
-					if (editor) setStatus(runJevFiveStageCompile(editor))
-				}}
+				onRepropagate={repropagate}
 			/>
 
 			{paletteOpen ? <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} /> : null}

@@ -113,6 +113,8 @@ export interface PanelMeta {
 	subjectDistM?: number
 	bgDistM?: number
 	prevBeat?: string
+	/** Stage 4 asset-locked pure-art prompt, recompiled by re-propagation (no image regen). */
+	artPrompt?: string
 	// Universal (story-agnostic) JEV 5-stage fields mirrored from Beat.
 	assetRefs?: string[]
 	mccloudChoice?: McCloudChoice
@@ -240,6 +242,41 @@ export function metaFromBeat(beat: Beat, panel: RealizedPanel, seed: string, ind
 		hasBubbleGate: beat.hasBubbleGate,
 		hasSfxGate: beat.hasSfxGate,
 	}
+}
+
+/**
+ * Reconstruct a minimal Beat array from realized panel metas. Used when a page's
+ * `scriptJson` is empty (e.g. a freshly seeded page) but the user edits a panel
+ * factor: writing the edit back through the beats keeps manual values from being
+ * discarded the next time the layout stage recomputes metas from beats.
+ */
+export function beatsFromMetas(metas: PanelMeta[]): Beat[] {
+	return metas.map((meta) => ({
+		shot: meta.shot,
+		angle: meta.angle,
+		focal: meta.focal,
+		beat: meta.beat,
+		who: meta.who ?? [],
+		fries: meta.fries ?? 'none',
+		lines: [],
+		eyeline: meta.eyeline,
+		silent: meta.silent,
+		sensor: meta.sensor,
+		focalMm: meta.focalMm,
+		fStop: meta.fStop,
+		subjectDistM: meta.subjectDistM,
+		bgDistM: meta.bgDistM,
+		assetRefs: meta.assetRefs,
+		mccloudChoice: meta.mccloudChoice,
+		mccloudTransition: meta.mccloudTransition,
+		wordPictureMode: meta.wordPictureMode,
+		tension: meta.tension,
+		focalPointRel: meta.focalPointRel,
+		subjectBoxesRel: meta.subjectBoxesRel,
+		subsplitInset: meta.subsplitInset,
+		hasBubbleGate: meta.hasBubbleGate,
+		hasSfxGate: meta.hasSfxGate,
+	}))
 }
 
 export function fitBeats(script: Beat[], count: number): Beat[] {

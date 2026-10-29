@@ -201,6 +201,115 @@ export function runJevFiveStageCompile(editor: Editor): string {
 	return `JEV 5-Stage compilation complete: ${pages.length} pages / ${totalPanels} panels · Score ${Math.round(minScore * 100)}`
 }
 
+// -----------------------------------------------------------------------------
+// Stage-scoped re-propagation runners.
+//
+// These recompute a single downstream stage for a page without regenerating any
+// artwork. They are the real work behind the stage-bar "Re-propagate" button and
+// are driven by the pure `executeRepropagation` executor (pipeline/repropagate).
+// Each re-reads the latest page shape by id so a chain (Stage 3 → 4 → 5) sees the
+// previous runner's output.
+// -----------------------------------------------------------------------------
+
+/** Recompute the tension-coupled layout + panel metas while preserving artwork. */
+function recomputeLayoutForPage(page: MangaContainer) {
+	const rawBeats = readJson<Beat[]>(page.props.scriptJson, [])
+	const prevMetas = readJson<PanelMeta[]>(page.props.panelsJson, [])
+	const targetCount = Math.max(1, rawBeats.length || page.props.targetPanels || 4)
+	const beats = fitBeats(rawBeats, targetCount)
+	const pageStyle = readPageStyleFromMeta(page.meta)
+	const styleBias = isEmptyPageStyle(pageStyle) ? undefined : pageStyleToLayoutBias(pageStyle)
+	const stage3 = compileTensionCoupledLayout(
+		page.props.seed,
+		beats,
+		asScenario(page.props.scenario),
+		page.props.layoutPreset,
+		styleBias,
+	)
+	const metas = stage3.layout.panels.map((panel, index) => {
+		const fresh = metaFromBeat(beats[index] ?? beats[0], panel, page.props.seed, index)
+		const prev = prevMetas[index]
+		if (!prev) return fresh
+		// Preserve all user-owned artwork transforms; never regenerate an image.
+		return {
+			...fresh,
+			imageDataUrl: prev.imageDataUrl || fresh.imageDataUrl,
+			imageOffsetX: prev.imageOffsetX ?? fresh.imageOffsetX,
+			imageOffsetY: prev.imageOffsetY ?? fresh.imageOffsetY,
+			imageScale: prev.imageScale ?? fresh.imageScale,
+			imageRotation: prev.imageRotation ?? fresh.imageRotation,
+			artPrompt: prev.artPrompt,
+		}
+	})
+	return { stage3, layout: stage3.layout, beats, metas }
+}
+
+/** Stage 3: recompute the panel layout genome + rectangles from the current beats. */
+export function relayoutPageStage3(editor: Editor, pageId: TLShapeId): void {
+	const page = editor.getShape<MangaContainer>(pageId)
+	if (!page || page.type !== CONTAINER) return
+	const { stage3, layout, metas } = recomputeLayoutForPage(page)
+	editor.updateShape<MangaContainer>({
+		id: page.id,
+		type: CONTAINER,
+		props: {
+			targetPanels: layout.panels.length,
+			genomeJson: JSON.stringify(stage3.genome),
+			panelsJson: JSON.stringify(metas),
+			score: Number(stage3.score.toFixed(3)),
+			reasonsJson: JSON.stringify(stage3.reasons),
+		},
+	})
+}
+
+/** Stage 4: recompile the asset-locked pure-art prompt per panel (no image regen). */
+export function recompilePromptsStage4(editor: Editor, pageId: TLShapeId): void {
+	const page = editor.getShape<MangaContainer>(pageId)
+	if (!page || page.type !== CONTAINER) return
+	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
+	if (!metas.length) return
+	const beats = readJson<Beat[]>(page.props.scriptJson, [])
+	const ctx = readPageContext(editor, page)
+	const registry = buildCanvasAssetRegistryForPage(editor, page, ctx)
+	const next = metas.map((meta, idx) => {
+		const beat: Beat = beats[idx] ?? {
+			shot: meta.shot,
+			angle: meta.angle,
+			focal: meta.focal,
+			beat: meta.beat,
+			who: meta.who,
+			assetRefs: meta.assetRefs?.length ? meta.assetRefs : ctx.lockedAssetTags.slice(0, 3),
+			silent: meta.silent,
+			lines: [],
+		}
+		const stage4 = compileStage4PureArtSpec({
+			panelIndex: idx,
+			beat,
+			meta,
+			panelPts: [
+				[0, 0],
+				[320, 0],
+				[320, 220],
+				[0, 220],
+			],
+			registry,
+			environment: meta.environment || page.props.environment,
+			lighting: page.props.lighting,
+		})
+		// Store the recompiled prompt + resolved asset tags; leave imageDataUrl alone.
+		return { ...meta, assetRefs: stage4.assetTags, artPrompt: stage4.pureCameraPrompt }
+	})
+	editor.updateShape<MangaContainer>({ id: page.id, type: CONTAINER, props: { panelsJson: JSON.stringify(next) } })
+}
+
+/** Stage 5: re-place balloons / lettering for the current layout (no image regen). */
+export function relayoutLetteringStage5(editor: Editor, pageId: TLShapeId): void {
+	const page = editor.getShape<MangaContainer>(pageId)
+	if (!page || page.type !== CONTAINER) return
+	const { layout, beats, metas } = recomputeLayoutForPage(page)
+	spawnPageBubbles(editor, page.id, layout, beats, metas)
+}
+
 export function spawnBook(editor: Editor, book: BookDraft): void {
 	const existing = [...editor.getCurrentPageShapeIds()]
 	if (existing.length) editor.deleteShapes(existing)
