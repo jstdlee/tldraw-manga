@@ -1,13 +1,13 @@
 // =============================================================================
 // chrome.tsx — the app-level chrome that is not the left source list or the
-// right Inspector: the unified TopBar, the in-canvas hint pill, and the modal
-// surfaces (Compare, Reader, model Settings). The page pipeline now lives in the
-// left source list and every per-selection control lives in the Inspector
-// (src/studio/ui/inspector/*), so this file no longer hosts the drawer.
+// right Inspector: the unified TopBar, the tldraw canvas chrome overrides, and
+// the modal surfaces (Compare, Reader, model Settings). The page pipeline now
+// lives in the left source list and every per-selection control lives in the
+// Inspector (src/studio/ui/inspector/*), so this file no longer hosts the drawer.
 // =============================================================================
 
 import { useEffect, useState } from 'react'
-import { type Editor } from 'tldraw'
+import { DefaultStylePanel, useEditor, useValue, type Editor } from 'tldraw'
 import { applyProviderPreset, loadSettings, PROVIDER_PRESETS, saveSettings, type ApiSettings, type ProviderId } from '../ai/settings'
 import { ANGLE_LABELS, SCENARIO_LABELS, SHOT_LABELS } from '../demo/book'
 import { applyLayoutChoice, applyUniversalFiveStagePreset, selectedPages } from '../editor/pipeline'
@@ -17,9 +17,31 @@ import { configFor, generate, sanitize, type Genome } from '../layout/engine'
 import { asScenario, pickLayoutBundle } from '../layout/score'
 import { readJson, readPageParams, type PanelMeta } from '../model'
 import { renderPageSvg, type PageRenderModel } from '../render/pageSvg'
+import { CARD, CONTAINER, BUBBLE, PROMPT } from '../shapes/schema'
 import { type CompiledBook } from '../spec/compile'
 import { IconAuto, IconBook, IconClose, IconDownload, IconGrid, IconMoon, IconSettings, IconSliders, IconSun } from './icons'
 import { themeLabel, type ThemePref } from './theme'
+
+// Our own shape types never expose tldraw style props (color/fill/etc.), so the
+// default Style Panel has nothing useful to show for them. Keep it hidden unless
+// the selection (or active tool) is a native tldraw shape/tool, e.g. draw or geo.
+const MANGA_SHAPE_TYPES = new Set<string>([CONTAINER, CARD, BUBBLE, PROMPT])
+
+export function ConditionalStylePanel() {
+	const editor = useEditor()
+	const showStylePanel = useValue(
+		'show-style-panel',
+		() => {
+			const selected = editor.getSelectedShapes()
+			if (selected.length > 0) return selected.some((shape) => !MANGA_SHAPE_TYPES.has(shape.type))
+			const toolId = editor.getCurrentToolId()
+			return toolId !== 'select' && !MANGA_SHAPE_TYPES.has(toolId)
+		},
+		[editor],
+	)
+	if (!showStylePanel) return null
+	return <DefaultStylePanel />
+}
 
 // Display labels for the story-agnostic universal 5-stage presets.
 const UNIVERSAL_PRESET_LABELS: Record<string, string> = {
@@ -146,22 +168,6 @@ export function TopBar({
 				</button>
 			</div>
 		</header>
-	)
-}
-
-export function FloatingBar() {
-	const [dismissed, setDismissed] = useState(false)
-	if (dismissed) return null
-	return (
-		<div className="canvas-context-hint-pill" onPointerDown={(e) => e.stopPropagation()}>
-			<span className="hint-dot" />
-			<span>
-				Right-click any panel, bubble, page or the canvas for grouped actions · click a page's right edge to extend the pipeline with inherited context
-			</span>
-			<button type="button" onClick={() => setDismissed(true)} title="Dismiss hint">
-				×
-			</button>
-		</div>
 	)
 }
 

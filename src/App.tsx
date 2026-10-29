@@ -25,7 +25,7 @@ import { MangaContainerUtil } from './studio/shapes/MangaContainerUtil'
 import { MangaPromptUtil } from './studio/shapes/MangaPromptUtil'
 import { BUBBLE, CARD, CONTAINER, type MangaCard, type MangaContainer } from './studio/shapes/schema'
 import { compileBook, type CompiledBook } from './studio/spec/compile'
-import { CompareModal, FloatingBar, ReaderModal, SettingsModal, TopBar } from './studio/ui/chrome'
+import { CompareModal, ConditionalStylePanel, ReaderModal, SettingsModal, TopBar } from './studio/ui/chrome'
 import {
 	CanvasContextMenu,
 	detectCanvasContextMenuTarget,
@@ -442,7 +442,9 @@ export function App() {
 						persistenceKey={persistenceKey}
 						shapeUtils={shapeUtils}
 						components={{
-							InFrontOfTheCanvas: () => <FloatingBar />,
+							StylePanel: ConditionalStylePanel,
+							PageMenu: null,
+							QuickActions: null,
 						}}
 						onMount={(mounted) => {
 							;(window as unknown as { __MANGA_EDITOR__?: Editor }).__MANGA_EDITOR__ = mounted

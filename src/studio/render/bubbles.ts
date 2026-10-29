@@ -18,6 +18,8 @@ export interface BubbleDraw {
 	fillColor?: string
 	fontWeight?: number
 	hideProsody?: boolean
+	/** True while the live canvas shape is the active selection (never set by static/export renders). */
+	selected?: boolean
 }
 
 export interface ProsodyBadgeAnchor {
@@ -230,8 +232,14 @@ export function renderProsodyBadgeSvg(bubble: BubbleDraw): string {
 		return `<g class="prosody-independent-layer" data-prosody-style="minimal" data-cx="${cx.toFixed(1)}" data-cy="${cy.toFixed(1)}"><text x="${cx.toFixed(1)}" y="${(cy + 3.8 * scale).toFixed(1)}" text-anchor="middle" font-size="${(11 * scale).toFixed(1)}" font-weight="800" fill="${color}" stroke="#fffefb" stroke-width="3.6" paint-order="stroke" font-family="Hiragino Sans, PingFang SC, Noto Sans SC, sans-serif">[${escapeXml(rawText)}]</text></g>`
 	}
 
-	// Default: 'pill'
-	return `<g class="prosody-independent-layer" data-prosody-style="pill" data-cx="${cx.toFixed(1)}" data-cy="${cy.toFixed(1)}"><rect x="${(cx - bw / 2).toFixed(1)}" y="${(cy - bh / 2).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="${(bh / 2).toFixed(1)}" fill="${color}" stroke="#fffefb" stroke-width="1.4"/><text x="${cx.toFixed(1)}" y="${(cy + 3.8 * scale).toFixed(1)}" text-anchor="middle" font-size="${fs}" font-weight="700" fill="#fffefb" font-family="Hiragino Sans, PingFang SC, Noto Sans SC, sans-serif">[${escapeXml(rawText)}]</text></g>`
+	// Default: 'pill'. A custom user color always wins (deliberate choice). Otherwise it's a
+	// calm monochrome hairline chip, and only lights up with the app accent while the bubble
+	// is the active canvas selection — never in exported/static art, which never sets `selected`.
+	const hasCustomColor = Boolean(bubble.prosodyColor && bubble.prosodyColor.trim())
+	const pillFill = hasCustomColor ? color : bubble.selected ? '#0066cc' : '#fbfbfd'
+	const pillStroke = hasCustomColor ? '#fffefb' : bubble.selected ? '#0066cc' : '#d2d2d7'
+	const pillTextFill = hasCustomColor || bubble.selected ? '#fffefb' : '#1d1d1f'
+	return `<g class="prosody-independent-layer" data-prosody-style="pill" data-cx="${cx.toFixed(1)}" data-cy="${cy.toFixed(1)}"><rect x="${(cx - bw / 2).toFixed(1)}" y="${(cy - bh / 2).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="${(bh / 2).toFixed(1)}" fill="${pillFill}" stroke="${pillStroke}" stroke-width="1.2"/><text x="${cx.toFixed(1)}" y="${(cy + 3.8 * scale).toFixed(1)}" text-anchor="middle" font-size="${fs}" font-weight="700" fill="${pillTextFill}" font-family="Hiragino Sans, PingFang SC, Noto Sans SC, sans-serif">[${escapeXml(rawText)}]</text></g>`
 }
 
 export function bubbleMarkup(bubble: BubbleDraw): string {

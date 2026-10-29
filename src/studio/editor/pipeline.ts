@@ -1474,6 +1474,19 @@ export function parseScriptTextToBeats(
 	})
 }
 
+/**
+ * Page titles are authored as "Ch.N · PN · Scene" (see createPageShape calls above).
+ * UI surfaces that already show the page index separately (the source list row, the
+ * on-canvas page header) only need the scene label plus the chapter number, not the
+ * redundant "Ch.N · PN ·" prefix repeated on top of their own index badge.
+ */
+export function splitPageTitle(title: string): { chapter: number | null; label: string } {
+	const match = /^ch\.?\s*(\d+)\s*(?:·|-|:)\s*p\.?\s*\d+\s*(?:·|-|:)?\s*(.*)$/i.exec(title.trim())
+	if (!match) return { chapter: null, label: title }
+	const label = match[2].trim()
+	return { chapter: Number(match[1]), label: label || title }
+}
+
 export function readPageContext(editor: Editor | null, page: MangaContainer): PagePipelineContext {
 	const parsed = readJson<Partial<PagePipelineContext>>(page.props.contextJson || '{}', {})
 	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
@@ -2458,14 +2471,18 @@ export function buildCanvasAssetRegistryForPage(
 	page: MangaContainer,
 	ctx: PagePipelineContext,
 ): AssetRegistry {
+	const activeStylePreset = ctx.stylePreset || page.props.stylePreset || 'shanshui_ink'
 	const registry = createAssetRegistry(`canvas-${page.id}`, {
-		preset: ctx.stylePreset || page.props.stylePreset || 'shanshui_ink',
+		preset: activeStylePreset,
 		lighting: `${ctx.lighting || page.props.lighting} · ${ctx.worldRules || page.props.worldRules || 'Consistent lighting'}`,
 	})
 
-	// 1. Seed baseline assets from all universal presets so built-in tags resolve their canonical sheets
-	for (const preset of Object.values(UNIVERSAL_STORY_PRESETS)) {
-		const presetReg = registryForPreset(preset)
+	// 1. Seed baseline assets from the one universal preset whose style matches this page, so
+	// built-in tags resolve their canonical sheets without leaking unrelated stories' assets
+	// into a document that never loaded them (the registry stays scoped to this page's story).
+	const matchingPreset = Object.values(UNIVERSAL_STORY_PRESETS).find((preset) => preset.stylePreset === activeStylePreset)
+	if (matchingPreset) {
+		const presetReg = registryForPreset(matchingPreset)
 		for (const [tag, asset] of Object.entries(presetReg.assets)) {
 			registry.assets[tag] = { ...asset }
 		}

@@ -2,6 +2,7 @@ import { useMemo, useRef } from 'react'
 import { BaseBoxShapeUtil, HTMLContainer, resizeBox, useEditor, useValue, type TLResizeInfo } from 'tldraw'
 import { ENV_LABELS, LIGHT_LABELS, SCENARIO_LABELS } from '../demo/book'
 import { energyFor } from '../editor/placement'
+import { splitPageTitle } from '../editor/pipeline'
 import {
 	clamp,
 	configFor,
@@ -299,6 +300,7 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 	const contextPillLabel = inheritedIdx
 		? `Inherited from P${inheritedIdx} · ${lockedTagCount} Assets · 180° Axis OK`
 		: `Context · ${lockedTagCount} Locked Assets · ${styleShort}`
+	const pageTitleLabel = splitPageTitle(shape.props.title).label
 
 	void [_fileInputRef, _scenarioLabel]
 	return (
@@ -319,39 +321,42 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 			</button>
 			<header className="container-bar page-bar">
 				<span className="role-pill">
-					<IconFrame /> {shape.props.title}
+					<IconFrame /> <span className="role-pill-text">{pageTitleLabel}</span>
 				</span>
-				<button
-					type="button"
-					className={`page-context-pill ${inheritedIdx ? 'inherited' : ''}`}
-					onPointerDown={stopEvent}
-					onClick={(e) => {
-						stopEvent(e)
-						openPageContextInspector(shape.id)
-					}}
-					title="Inspect and edit inherited assets, 180-deg camera axis, and page script beats"
-				>
-					{contextPillLabel}
-				</button>
-				<span className="badge score" title={reasons.join(' · ')}>
-					JEV {Math.round(shape.props.score * 100)}
-				</span>
-				{(() => {
-					const staleStages = pageStaleStages(readDirtyStateFromMeta(shape.meta))
-					if (!staleStages.length) return null
-					return (
-						<span
-							className="badge stale-badge"
-							title={`Downstream stale on stage ${staleStages.join(', ')} — re-propagate to refresh`}
-						>
-							Stale {staleStages.join('·')}
-						</span>
-					)
-				})()}
+				<div className="page-bar-badges">
+					<button
+						type="button"
+						className={`page-context-pill ${inheritedIdx ? 'inherited' : ''}`}
+						onPointerDown={stopEvent}
+						onClick={(e) => {
+							stopEvent(e)
+							openPageContextInspector(shape.id)
+						}}
+						title="Inspect and edit inherited assets, 180-deg camera axis, and page script beats"
+					>
+						<span className="page-context-pill-text">{contextPillLabel}</span>
+					</button>
+					<span className="badge score" title={reasons.join(' · ')}>
+						JEV {Math.round(shape.props.score * 100)}
+					</span>
+					{(() => {
+						const staleStages = pageStaleStages(readDirtyStateFromMeta(shape.meta))
+						if (!staleStages.length) return null
+						return (
+							<span
+								className="badge stale-badge"
+								title={`Downstream stale on stage ${staleStages.join(', ')} — re-propagate to refresh`}
+							>
+								Stale {staleStages.join('·')}
+							</span>
+						)
+					})()}
+				</div>
 				<div className="page-mini-actions" onPointerDown={stopEvent}>
 					<button
 						type="button"
 						className="mini-icon-btn page-more-btn"
+						aria-label="Open page and pipeline menu"
 						title="Open Page & Pipeline Menu (or right-click any panel/page)"
 						onClick={(e) => {
 							stopEvent(e)

@@ -8,7 +8,7 @@
 
 import { useState, type ReactElement } from 'react'
 import { useValue, type Editor, type TLShapeId } from 'tldraw'
-import { buildCanvasAssetRegistryForPage, readPageContext, selectedPages } from '../editor/pipeline'
+import { buildCanvasAssetRegistryForPage, readPageContext, selectedPages, splitPageTitle } from '../editor/pipeline'
 import type { DiscreteAssetCategory } from '../jev/fiveStageEngine'
 import { readJson, type PanelMeta } from '../model'
 import { CARD, CONTAINER, type MangaCard, type MangaContainer } from '../shapes/schema'
@@ -131,21 +131,25 @@ export function SourceList({
 						<p className="sl-empty">No pages yet.</p>
 					) : (
 						<div className="sl-pages">
-							{pages.map((page, idx) => (
-								<button
-									key={page.id}
-									type="button"
-									className={`sl-page-row ${page.id === selectedPageId ? 'active' : ''}`}
-									onClick={() => focusPage(page.id)}
-									title={page.title}
-								>
-									<span className={`sl-dot dot-${page.status}`} aria-hidden="true" />
-									<span className="sl-page-main">
-										<span className="sl-page-title">P{page.index} · {page.title}</span>
-										{idx > 0 ? <span className="sl-page-caption">inherits from P{pages[idx - 1].index}</span> : <span className="sl-page-caption">origin page</span>}
-									</span>
-								</button>
-							))}
+							{pages.map((page, idx) => {
+								const { chapter, label } = splitPageTitle(page.title)
+								const inherits = idx > 0 ? `inherits from P${pages[idx - 1].index}` : 'origin page'
+								return (
+									<button
+										key={page.id}
+										type="button"
+										className={`sl-page-row ${page.id === selectedPageId ? 'active' : ''}`}
+										onClick={() => focusPage(page.id)}
+										title={page.title}
+									>
+										<span className={`sl-dot dot-${page.status}`} aria-hidden="true" />
+										<span className="sl-page-main">
+											<span className="sl-page-title">P{page.index} · {label}</span>
+											<span className="sl-page-caption">{chapter ? `Chapter ${chapter} · ${inherits}` : inherits}</span>
+										</span>
+									</button>
+								)
+							})}
 						</div>
 					)}
 				</section>

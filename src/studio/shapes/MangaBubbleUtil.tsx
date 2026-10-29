@@ -88,6 +88,8 @@ function BubbleView({ shape }: { shape: MangaBubble }) {
 		[editor, shape.parentId],
 	)
 
+	const isSelected = useValue('bubble-selected', () => editor.getSelectedShapeIds().includes(shape.id), [editor, shape.id])
+
 	const hideSpeechLayer =
 		parentPage && parentPage.props.showBubblesLayer === false && shape.props.bubble !== 'sfx'
 	const hideSfxLayer =
@@ -116,6 +118,7 @@ function BubbleView({ shape }: { shape: MangaBubble }) {
 		fillColor: shape.props.fillColor,
 		fontWeight: shape.props.fontWeight,
 		hideProsody: hideProsodyLayer,
+		selected: isSelected,
 	}
 
 	const markup = bubbleMarkup(drawModel)
@@ -223,11 +226,11 @@ function BubbleView({ shape }: { shape: MangaBubble }) {
 					>
 						<polygon
 							points="0,-6.5 6.5,0 0,6.5 -6.5,0"
-							fill="#d97706"
+							fill={isSelected ? '#0066cc' : '#8e8e93'}
 							stroke="#ffffff"
 							strokeWidth={1.8}
 						/>
-						<title>Drag amber handle to reposition prosody badge (double-click to edit)</title>
+						<title>Drag handle to reposition prosody badge (double-click to edit)</title>
 					</g>
 				) : null}
 			</svg>
