@@ -9,7 +9,7 @@
 // stale.
 // =============================================================================
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { type Editor } from 'tldraw'
 import {
 	evaluateTheoryChecklists,
@@ -28,6 +28,7 @@ import { THEORY_ITEMS, type TheoryFramework, type TheoryScope } from '../../libr
 import { readJson, type PanelMeta } from '../../model'
 import { writePageStyleAndMarkStale, writePageStyleOnly } from '../../pipeline/pageMeta'
 import type { FactorId } from '../../pipeline/factorGraph'
+import { resolveTheoryScope, type CanvasSelectionKind } from '../inspectorModel'
 import { type MangaContainer } from '../../shapes/schema'
 import { IconCheck } from '../icons'
 import { TheoryStatusGlyph } from './factorWidgets'
@@ -76,12 +77,27 @@ export function TheoryTab({
 	editor,
 	page,
 	setStatus,
+	selectionKind = 'none',
 }: {
 	editor: Editor | null
 	page: MangaContainer | null
 	setStatus: (value: string) => void
+	/** The current canvas selection kind, so the scope follows the selection. */
+	selectionKind?: CanvasSelectionKind
 }) {
-	const [scope, setScope] = useState<TheoryScope>('page')
+	const selectedPanel = page?.props.selectedPanel ?? -1
+	const autoScope = resolveTheoryScope({ kind: selectionKind, selectedPanel })
+	const [scope, setScope] = useState<TheoryScope>(autoScope)
+	// Re-drive the scope only when the selection itself changes, so a manual scope
+	// pick sticks until the user selects something else on the canvas.
+	const selectionSig = `${selectionKind}:${selectedPanel >= 0 ? `p${selectedPanel}` : 'none'}`
+	const lastSig = useRef(selectionSig)
+	useEffect(() => {
+		if (lastSig.current !== selectionSig) {
+			lastSig.current = selectionSig
+			setScope(autoScope)
+		}
+	}, [selectionSig, autoScope])
 
 	const style = readPageStyleFromMeta(page?.meta)
 	const metas = page ? readJson<PanelMeta[]>(page.props.panelsJson, []) : []

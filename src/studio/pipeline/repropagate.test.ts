@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { executeRepropagation, stageOrderFromFactors } from './repropagate'
+import { executeRepropagation, executeRepropagationAsync, stageOrderFromFactors } from './repropagate'
 import { createPageDirtyState, markPageFactorDirty, planPageRepropagation } from './dirtyStore'
 import type { AppStage } from '../library/productionStages'
 
@@ -68,5 +68,56 @@ describe('repropagate — executor', () => {
 		expect(run.order).toEqual([])
 		expect(run.ran).toEqual([])
 		expect(run.skipped).toEqual([])
+	})
+})
+
+describe('repropagate — async executor', () => {
+	it('fires start/done hooks around each stage, in topological order, with an injected delay', async () => {
+		const dirty = markPageFactorDirty(createPageDirtyState(), 'panelLayout').state
+		const plan = planPageRepropagation(dirty)
+
+		const log: string[] = []
+		const delays: number[] = []
+		const run = await executeRepropagationAsync(
+			plan,
+			{
+				3: () => log.push('run:3'),
+				4: () => log.push('run:4'),
+				5: () => log.push('run:5'),
+			},
+			{
+				minVisibleMs: 350,
+				delay: (ms) => {
+					delays.push(ms)
+					return Promise.resolve()
+				},
+				onStageStart: (stage) => log.push(`start:${stage}`),
+				onStageDone: (stage) => log.push(`done:${stage}`),
+			},
+		)
+
+		expect(run.ran).toEqual([3, 4, 5])
+		// Each stage: start → (delay) → run → done, strictly before the next stage.
+		expect(log).toEqual([
+			'start:3', 'run:3', 'done:3',
+			'start:4', 'run:4', 'done:4',
+			'start:5', 'run:5', 'done:5',
+		])
+		// The minimum-visible delay is honoured once per stage.
+		expect(delays).toEqual([350, 350, 350])
+	})
+
+	it('skips stages with no runner but still brackets them with hooks', async () => {
+		const dirty = markPageFactorDirty(createPageDirtyState(), 'transition').state
+		const plan = planPageRepropagation(dirty)
+		const started: AppStage[] = []
+		const run = await executeRepropagationAsync(
+			plan,
+			{ 3: () => undefined, 4: () => undefined, 5: () => undefined },
+			{ delay: () => Promise.resolve(), onStageStart: (s) => started.push(s) },
+		)
+		expect(run.skipped).toContain(2)
+		expect(run.ran).toEqual([3, 4, 5])
+		expect(started).toContain(2)
 	})
 })

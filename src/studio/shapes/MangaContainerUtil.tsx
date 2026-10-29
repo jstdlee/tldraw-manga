@@ -1,7 +1,7 @@
 import { useMemo, useRef } from 'react'
 import { BaseBoxShapeUtil, HTMLContainer, resizeBox, useEditor, useValue, type TLResizeInfo } from 'tldraw'
 import { ENV_LABELS, LIGHT_LABELS, SCENARIO_LABELS } from '../demo/book'
-import { energyFor } from '../editor/placement'
+import { energyFor, PAGE_HEADER_H } from '../editor/placement'
 import { splitPageTitle } from '../editor/pipeline'
 import {
 	clamp,
@@ -243,7 +243,7 @@ function PageView({ shape, editor }: { shape: MangaContainer; editor: ReturnType
 	const toLocalLayout = (clientX: number, clientY: number) => {
 		const pagePoint = editor.screenToPage({ x: clientX, y: clientY })
 		const local = editor.getPointInShapeSpace(shape, pagePoint)
-		const headerH = 36
+		const headerH = PAGE_HEADER_H
 		const stageH = Math.max(1, shape.props.h - headerH - 24)
 		return {
 			x: (local.x / shape.props.w) * layout.width,

@@ -46,3 +46,28 @@ export function shouldAutoSwitchTab(current: InspectorTab, nextKind: CanvasSelec
 	// An explicit shape selection always re-drives, even away from a reference tab.
 	return resolveInspectorTab(nextKind) !== current
 }
+
+/** The scope the Theory tab checklists filter to: page / panel / balloon. */
+export type TheoryScopeKind = 'page' | 'panel' | 'balloon'
+
+export interface TheorySelection {
+	/** The resolved canvas selection kind. */
+	kind: CanvasSelectionKind
+	/** The page's active panel index (-1 / null when no panel is selected). */
+	selectedPanel?: number | null
+}
+
+/**
+ * Resolve the Theory tab scope from the canvas selection. A selected balloon →
+ * 'balloon'; a selected panel (either a dedicated panel selection or a page with
+ * an active panel index) → 'panel'; a page / card / empty selection → 'page'.
+ * This is the automatic scope; the TheoryTab lets the user override it until the
+ * selection changes again.
+ */
+export function resolveTheoryScope(selection: TheorySelection): TheoryScopeKind {
+	if (selection.kind === 'bubble') return 'balloon'
+	if (selection.kind === 'panel') return 'panel'
+	const panel = selection.selectedPanel
+	if (typeof panel === 'number' && panel >= 0) return 'panel'
+	return 'page'
+}

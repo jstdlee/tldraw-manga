@@ -7,7 +7,7 @@
 // =============================================================================
 
 import { type Editor } from 'tldraw'
-import { type InspectorTab } from '../inspectorModel'
+import { type CanvasSelectionKind, type InspectorTab } from '../inspectorModel'
 import { type MangaContainer } from '../../shapes/schema'
 import { AssetTab } from './AssetTab'
 import { BalloonTab } from './BalloonTab'
@@ -36,6 +36,7 @@ export function Inspector({
 	setStatus,
 	onOpenCompare,
 	initialMaster,
+	selectionKind = 'none',
 }: {
 	editor: Editor | null
 	page: MangaContainer | null
@@ -47,6 +48,8 @@ export function Inspector({
 	onOpenCompare?: () => void
 	/** Master id to pre-select when the Masters tab first opens (deep link). */
 	initialMaster?: string | null
+	/** Current canvas selection kind, so the Theory tab scope follows selection. */
+	selectionKind?: CanvasSelectionKind
 }) {
 	return (
 		<aside className="inspector">
@@ -75,7 +78,7 @@ export function Inspector({
 			) : activeTab === 'masters' ? (
 				<MastersTab editor={editor} page={page} setStatus={setStatus} initialMaster={initialMaster} />
 			) : (
-				<TheoryTab editor={editor} page={page} setStatus={setStatus} />
+				<TheoryTab editor={editor} page={page} setStatus={setStatus} selectionKind={selectionKind} />
 			)}
 		</aside>
 	)

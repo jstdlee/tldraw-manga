@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveInspectorTab, shouldAutoSwitchTab } from './inspectorModel'
+import { resolveInspectorTab, resolveTheoryScope, shouldAutoSwitchTab } from './inspectorModel'
 import { fuzzyScore, rankCommands, scoreCommand, type Command } from './commandRegistry'
 import { completedStagesFrom, deriveStageStatuses, hasStaleStage, STAGE_META } from './stageStatus'
 import { buildCommands, type CommandContext } from './shell'
@@ -20,6 +20,27 @@ describe('resolveInspectorTab', () => {
 	it('auto-switches when a shape selection resolves to a different tab', () => {
 		expect(shouldAutoSwitchTab('masters', 'bubble')).toBe(true)
 		expect(shouldAutoSwitchTab('story', 'bubble')).toBe(false)
+	})
+})
+
+describe('resolveTheoryScope', () => {
+	it('maps a balloon selection to the balloon scope', () => {
+		expect(resolveTheoryScope({ kind: 'bubble' })).toBe('balloon')
+		expect(resolveTheoryScope({ kind: 'bubble', selectedPanel: 2 })).toBe('balloon')
+	})
+
+	it('maps a panel selection (or a page with an active panel index) to panel', () => {
+		expect(resolveTheoryScope({ kind: 'panel' })).toBe('panel')
+		// ?select=first-panel selects the page shape and sets selectedPanel = 0.
+		expect(resolveTheoryScope({ kind: 'page', selectedPanel: 0 })).toBe('panel')
+		expect(resolveTheoryScope({ kind: 'page', selectedPanel: 3 })).toBe('panel')
+	})
+
+	it('maps a page / card / empty selection with no active panel to page', () => {
+		expect(resolveTheoryScope({ kind: 'page', selectedPanel: -1 })).toBe('page')
+		expect(resolveTheoryScope({ kind: 'page' })).toBe('page')
+		expect(resolveTheoryScope({ kind: 'card' })).toBe('page')
+		expect(resolveTheoryScope({ kind: 'none', selectedPanel: null })).toBe('page')
 	})
 })
 

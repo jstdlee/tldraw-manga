@@ -16,6 +16,29 @@ const ANCHORS: Record<string, [number, number]> = {
 	'bottom-right': [0.7, 0.74],
 }
 
+/**
+ * Canonical page header strip height in page-pixel space — the title + context /
+ * stale badges row drawn at the top of every page shape. The single source of
+ * truth for both the on-canvas header and the reserved balloon band below.
+ */
+export const PAGE_HEADER_H = 36
+
+/**
+ * Top band (page-pixel space) that balloons and narration captions must never
+ * cover: the header height plus a small breathing margin so a balloon never
+ * collides with the title or its badges. Derived from {@link PAGE_HEADER_H}.
+ */
+export const PAGE_HEADER_BAND_PX = PAGE_HEADER_H + 8
+
+/**
+ * Clamp a balloon's top-edge Y (page-pixel space) below the reserved header
+ * band. Pure and total: a balloon already clear of the band is returned as-is,
+ * one overlapping it is nudged straight down to the band's lower edge.
+ */
+export function clampBubbleBelowHeaderBand(y: number, bandPx: number = PAGE_HEADER_BAND_PX): number {
+	return Math.max(y, bandPx)
+}
+
 export interface PlannedBubble extends BubbleDraw {
 	panelIndex: number
 	x: number
@@ -67,7 +90,8 @@ export function planBubbles(layout: Layout, beats: Beat[], pageW = pagePixelSize
 			const cx = (box.minX + boxW * px) * sx
 			const cy = (box.minY + boxH * py) * sy
 			const x = cx - w / 2
-			const y = cy - h / 2
+			// Keep the balloon's top edge clear of the page header strip + badges.
+			const y = clampBubbleBelowHeaderBand(cy - h / 2)
 			const mouthX = (box.minX + boxW * focalRel[0]) * sx
 			const mouthY = (box.minY + boxH * focalRel[1]) * sy
 			let dx = mouthX - cx

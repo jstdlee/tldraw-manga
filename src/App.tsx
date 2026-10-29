@@ -14,7 +14,7 @@ import {
 	spawnBlankPageAtPoint,
 } from './studio/editor/pipeline'
 import { EMPTY_DIRTY_STATE, hasPageDirty } from './studio/pipeline/dirtyStore'
-import { readPageDirty, repropagatePage } from './studio/pipeline/pageMeta'
+import { readPageDirty, repropagatePageAsync } from './studio/pipeline/pageMeta'
 import { listUniversalPresets } from './studio/jev/fiveStageEngine'
 import { readerHtml } from './studio/export/htmlReader'
 import { downloadText } from './studio/export/ora'
@@ -41,6 +41,15 @@ import { parseDeepLink } from './studio/ui/deepLink'
 import { loadThemePref, nextThemePref, resolveTheme, saveThemePref, tldrawColorScheme, type ResolvedTheme, type ThemePref } from './studio/ui/theme'
 
 const shapeUtils = [MangaContainerUtil, MangaCardUtil, MangaPromptUtil, MangaBubbleUtil]
+
+/** True when the OS requests reduced motion, so animated holds are skipped. */
+function prefersReducedMotion(): boolean {
+	return (
+		typeof window !== 'undefined' &&
+		typeof window.matchMedia === 'function' &&
+		window.matchMedia('(prefers-reduced-motion: reduce)').matches
+	)
+}
 
 export function App() {
 	// Deep-link config is parsed once from the URL. It decides the store mode,
@@ -182,11 +191,24 @@ export function App() {
 	// real Stage 3-5 runners. Image regeneration is never part of this. The page is
 	// re-fetched from the editor at call time so a keyboard-shortcut invocation is
 	// never driven by a stale closure.
+	// Hold each stage's running indicator visible for a beat, unless the user
+	// prefers reduced motion (then stages flip through instantly).
+	const stageHoldDelay = (ms: number) =>
+		new Promise<void>((resolve) => {
+			if (ms <= 0 || prefersReducedMotion()) {
+				resolve()
+				return
+			}
+			window.setTimeout(resolve, ms)
+		})
+
+	const repropagatingRef = useRef(false)
 	const repropagate = () => {
 		if (!editor) {
 			setStatus('Select a page to re-propagate')
 			return
 		}
+		if (repropagatingRef.current) return
 		const page =
 			selectedPages(editor)[0] ??
 			editor
@@ -199,12 +221,21 @@ export function App() {
 			return
 		}
 		const pageId = page.id
-		const outcome = repropagatePage(editor, page, {
-			3: () => relayoutPageStage3(editor, pageId),
-			4: () => recompilePromptsStage4(editor, pageId),
-			5: () => relayoutLetteringStage5(editor, pageId),
-		})
-		setStatus(outcome ? outcome.message : 'Nothing stale to re-propagate')
+		repropagatingRef.current = true
+		void repropagatePageAsync(
+			editor,
+			page,
+			{
+				3: () => relayoutPageStage3(editor, pageId),
+				4: () => recompilePromptsStage4(editor, pageId),
+				5: () => relayoutLetteringStage5(editor, pageId),
+			},
+			{ minVisibleMs: 350, delay: stageHoldDelay },
+		)
+			.then((outcome) => setStatus(outcome ? outcome.message : 'Nothing stale to re-propagate'))
+			.finally(() => {
+				repropagatingRef.current = false
+			})
 	}
 
 	const focusPage = (id: string) => {
@@ -245,19 +276,31 @@ export function App() {
 			setWelcomeOpen(true)
 		}
 		if (deepLink.selectFirstPanel) {
-			const firstPage = mounted
-				.getCurrentPageShapes()
-				.filter((s): s is MangaContainer => s.type === CONTAINER && (s as MangaContainer).props.role === 'page')
-				.sort((a, b) => (a.props.pageIndex || 0) - (b.props.pageIndex || 0))[0]
-			if (firstPage) {
-				mounted.updateShape<MangaContainer>({ id: firstPage.id, type: CONTAINER, props: { selectedPanel: 0 } })
-				mounted.select(firstPage.id)
-				mounted.zoomToSelection({ animation: { duration: 200 } })
-				if (!deepLink.inspector && !deepLink.masterId) {
-					setActiveTab('camera')
-					setRightOpen(true)
+			// A preset may still be materializing its page shapes; poll a few frames
+			// until the first page exists, then select its first panel (selectedPanel
+			// 0 + the page shape), which drives the Panel inspector and Theory 'panel'
+			// scope. Gives up quietly after a short budget so we never busy-loop.
+			const trySelectFirstPanel = (attempt: number): void => {
+				const firstPage = mounted
+					.getCurrentPageShapes()
+					.filter((s): s is MangaContainer => s.type === CONTAINER && (s as MangaContainer).props.role === 'page')
+					.sort((a, b) => (a.props.pageIndex || 0) - (b.props.pageIndex || 0))[0]
+				if (firstPage) {
+					mounted.updateShape<MangaContainer>({ id: firstPage.id, type: CONTAINER, props: { selectedPanel: 0 } })
+					mounted.select(firstPage.id)
+					mounted.zoomToSelection({ animation: { duration: 200 } })
+					if (!deepLink.inspector && !deepLink.masterId) {
+						setActiveTab('camera')
+						setRightOpen(true)
+					}
+					return
+				}
+				if (attempt < 30) {
+					if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => trySelectFirstPanel(attempt + 1))
+					else window.setTimeout(() => trySelectFirstPanel(attempt + 1), 16)
 				}
 			}
+			trySelectFirstPanel(0)
 		}
 	}
 
@@ -465,6 +508,7 @@ export function App() {
 						setStatus={setStatus}
 						onOpenCompare={() => setCompareOpen(true)}
 						initialMaster={deepLink.masterId}
+						selectionKind={selectionKind}
 					/>
 				) : null}
 			</div>

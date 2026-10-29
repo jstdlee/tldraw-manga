@@ -1025,6 +1025,16 @@ body,
 
 .page-bar .role-pill {
 	color: var(--st-text-1);
+	/* The title holds a legible floor; the right-hand context pill + badges group
+	   shrinks and truncates first, so the pill can never collide with the title. */
+	min-width: 56px;
+}
+.page-bar .page-bar-badges {
+	flex-shrink: 2;
+}
+.page-bar .page-context-pill {
+	min-width: 0;
+	overflow: hidden;
 }
 
 .page-foot {
@@ -2965,9 +2975,19 @@ body,
 	background: var(--st-accent);
 	animation: stage-pulse 1s ease-in-out infinite;
 }
+/* The whole chip tints while its stage is mid-recompute, so the running stage
+   reads at a glance even away from the small dot. */
+.stage-chip.status-running {
+	background: var(--st-accent-soft);
+	color: var(--st-accent);
+	border-color: var(--st-accent-border);
+}
 @keyframes stage-pulse {
 	0%, 100% { opacity: 0.35; }
 	50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.dot-running { animation: none; opacity: 1; }
 }
 .stagebar-repropagate {
 	display: inline-flex;

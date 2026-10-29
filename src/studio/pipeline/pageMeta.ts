@@ -23,8 +23,14 @@ import {
 	type MarkPageDirtyResult,
 	type PageDirtyState,
 } from './dirtyStore'
-import type { FactorId } from './factorGraph'
-import { executeRepropagation, type RepropagationRun, type StageRunners } from './repropagate'
+import { FACTOR_DEFS, type FactorId } from './factorGraph'
+import {
+	executeRepropagation,
+	executeRepropagationAsync,
+	type AsyncRepropagationHooks,
+	type RepropagationRun,
+	type StageRunners,
+} from './repropagate'
 import { writePageStyleToMeta, type PageStyleState } from '../library/pageStyle'
 import { writePanelFactorsToMeta, type PanelFactorsState } from './panelFactors'
 
@@ -133,6 +139,73 @@ export function repropagatePage(editor: Editor, page: MangaContainer, runners: S
 		const base = readDirtyStateFromMeta(meta)
 		const cleaned = clearPageRunning(ok ? markPageFactorsClean(base, plan.factors) : base)
 		applyMeta(editor, page, writeDirtyStateToMeta(meta, cleaned))
+	}
+
+	const ranLabel = run.ran.length ? `Stage ${run.ran.join(' → ')}` : 'inputs only'
+	return {
+		message: `Re-propagated ${ranLabel} · cleared ${plan.factors.length} stale factor${plan.factors.length === 1 ? '' : 's'} · images untouched`,
+		run,
+		stages: plan.stages,
+		factors: plan.factors,
+	}
+}
+
+export interface AsyncRepropagationOptions {
+	/** Minimum visible running duration per stage (ms); 0 disables the hold. */
+	minVisibleMs?: number
+	/** Injectable delay so tests run instantly and reduced-motion can skip the hold. */
+	delay?: AsyncRepropagationHooks['delay']
+}
+
+/**
+ * Async sibling of {@link repropagatePage}: it runs each stale stage one at a
+ * time so the stage bar can show a live, per-stage `running` indicator. Each
+ * stage is flagged running (and only that stage), held for a minimum visible
+ * duration, executed, then flipped to done by clearing its factors. If a stage
+ * runner throws, the pass stops, running flags clear, and the remaining factors
+ * stay stale for a retry. Image regeneration is never part of this.
+ */
+export async function repropagatePageAsync(
+	editor: Editor,
+	page: MangaContainer,
+	runners: StageRunners,
+	options: AsyncRepropagationOptions = {},
+): Promise<RepropagationOutcome | null> {
+	const state = readDirtyStateFromMeta(page.meta)
+	if (!state.dirty.length) return null
+	const plan = planPageRepropagation(state)
+	const pageId = page.id
+
+	const current = (): MangaContainer | undefined => editor.getShape<MangaContainer>(pageId)
+	const writeDirty = (next: PageDirtyState): void => {
+		const latest = current()
+		if (!latest) return
+		applyMeta(editor, latest, writeDirtyStateToMeta(latest.meta, next))
+	}
+
+	let run: RepropagationRun = { order: [], ran: [], skipped: [] }
+	try {
+		run = await executeRepropagationAsync(plan, runners, {
+			minVisibleMs: options.minVisibleMs,
+			delay: options.delay,
+			// Flag only this stage running so its chip pulses in isolation.
+			onStageStart: (stage) => {
+				const base = readDirtyStateFromMeta(current()?.meta ?? page.meta)
+				writeDirty(markPageStagesRunning({ dirty: base.dirty, running: [] }, [stage]))
+			},
+			// Clear this stage's factors + its running flag → the chip flips to done.
+			onStageDone: (stage) => {
+				const base = readDirtyStateFromMeta(current()?.meta ?? page.meta)
+				const stageFactors = plan.factors.filter((id) => FACTOR_DEFS[id].stage === stage)
+				writeDirty(clearPageRunning(markPageFactorsClean(base, stageFactors)))
+			},
+		})
+	} finally {
+		// Belt-and-suspenders: never leave a running flag set, and clear any dirty
+		// factors whose stage actually ran (a thrown runner leaves the rest stale).
+		const base = readDirtyStateFromMeta(current()?.meta ?? page.meta)
+		const ranFactors = plan.factors.filter((id) => run.ran.includes(FACTOR_DEFS[id].stage))
+		writeDirty(clearPageRunning(markPageFactorsClean(base, ranFactors)))
 	}
 
 	const ranLabel = run.ran.length ? `Stage ${run.ran.join(' → ')}` : 'inputs only'

@@ -44,8 +44,10 @@ import { computeOptics, defaultOpticsForMeta } from '../optics/shotLab'
 import { categoryForTag, compileStage4PureArtSpec, compileTensionCoupledLayout, createAssetRegistry, registryForPreset, runIterativePolling4Pass, UNIVERSAL_STORY_PRESETS, universalPresetToBook, verifyAssetRegistryAndBackfill, type AssetRegistry } from '../jev/fiveStageEngine'
 import { blockTitle, defaultParams, type BlockId } from '../prompts/library'
 import { isEmptyPageStyle, pageStyleToLayoutBias, readPageStyleFromMeta } from '../library/pageStyle'
+import { applyMasterFactorsToBeats } from '../pipeline/masterFactors'
+import { readPanelFactorsFromMeta } from '../pipeline/panelFactors'
 import { BUBBLE, CARD, CONTAINER, PROMPT, type CardKind, type MangaBubble, type MangaCard, type MangaContainer } from '../shapes/schema'
-import { planBubbles } from './placement'
+import { clampBubbleBelowHeaderBand, planBubbles } from './placement'
 
 const PAGE_W = 460
 const PAGE_H = 650
@@ -139,7 +141,17 @@ export function runJevFiveStageCompile(editor: Editor): string {
 		const rawBeats = readJson<Beat[]>(page.props.scriptJson, [])
 		const prevMetas = readJson<PanelMeta[]>(page.props.panelsJson, [])
 		const targetCount = Math.max(1, rawBeats.length || page.props.targetPanels || 4)
-		const initialBeats = fitBeats(rawBeats, targetCount)
+		const fittedBeats = fitBeats(rawBeats, targetCount)
+
+		// Apply any master-style blend on the page to the per-panel JEV factor values
+		// (shot / angle / transition / word-picture) before Stage 2. Manual per-panel
+		// locks win; an unstyled page returns the beats unchanged (byte-identical).
+		const pageStyle = readPageStyleFromMeta(page.meta)
+		const initialBeats = applyMasterFactorsToBeats(fittedBeats, {
+			pageStyle,
+			panelFactors: readPanelFactorsFromMeta(page.meta),
+			seed: page.props.seed,
+		})
 
 		// Stage 2: 4-Pass Iterative Polling (14-factor camera/optics lock + McCloud gates + 180° axis repair)
 		const poll = runIterativePolling4Pass(initialBeats, 'rtl')
@@ -148,7 +160,6 @@ export function runJevFiveStageCompile(editor: Editor): string {
 		// Stage 3: Programmatic Tension-Coupled Layout Genome Solver. Any applied
 		// master blend or theory constraint on the page becomes an additive layout
 		// bias; an unstyled page passes `undefined`, keeping output byte-identical.
-		const pageStyle = readPageStyleFromMeta(page.meta)
 		const styleBias = isEmptyPageStyle(pageStyle) ? undefined : pageStyleToLayoutBias(pageStyle)
 		const stage3 = compileTensionCoupledLayout(
 			page.props.seed,
@@ -216,8 +227,13 @@ function recomputeLayoutForPage(page: MangaContainer) {
 	const rawBeats = readJson<Beat[]>(page.props.scriptJson, [])
 	const prevMetas = readJson<PanelMeta[]>(page.props.panelsJson, [])
 	const targetCount = Math.max(1, rawBeats.length || page.props.targetPanels || 4)
-	const beats = fitBeats(rawBeats, targetCount)
+	const fitted = fitBeats(rawBeats, targetCount)
 	const pageStyle = readPageStyleFromMeta(page.meta)
+	const beats = applyMasterFactorsToBeats(fitted, {
+		pageStyle,
+		panelFactors: readPanelFactorsFromMeta(page.meta),
+		seed: page.props.seed,
+	})
 	const styleBias = isEmptyPageStyle(pageStyle) ? undefined : pageStyleToLayoutBias(pageStyle)
 	const stage3 = compileTensionCoupledLayout(
 		page.props.seed,
@@ -268,7 +284,14 @@ export function recompilePromptsStage4(editor: Editor, pageId: TLShapeId): void 
 	if (!page || page.type !== CONTAINER) return
 	const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
 	if (!metas.length) return
-	const beats = readJson<Beat[]>(page.props.scriptJson, [])
+	// Fold any master-style blend into the per-panel factor values so the Stage 4
+	// prompt is asset-locked to the same shot/angle the layout used. Manual panel
+	// locks win; an unstyled page leaves the beats untouched (byte-identical).
+	const beats = applyMasterFactorsToBeats(readJson<Beat[]>(page.props.scriptJson, []), {
+		pageStyle: readPageStyleFromMeta(page.meta),
+		panelFactors: readPanelFactorsFromMeta(page.meta),
+		seed: page.props.seed,
+	})
 	const ctx = readPageContext(editor, page)
 	const registry = buildCanvasAssetRegistryForPage(editor, page, ctx)
 	const next = metas.map((meta, idx) => {
@@ -987,7 +1010,7 @@ export function addBubbleToPage(
 		type: BUBBLE,
 		parentId: page.id,
 		x: Math.max(12, Math.min(PAGE_W - 110, x)),
-		y: Math.max(40, Math.min(PAGE_H - 90, y)),
+		y: clampBubbleBelowHeaderBand(Math.min(PAGE_H - 90, y)),
 		props: {
 			w: 96,
 			h: 64,
