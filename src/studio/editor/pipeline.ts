@@ -43,6 +43,7 @@ import {
 import { computeOptics, defaultOpticsForMeta } from '../optics/shotLab'
 import { categoryForTag, compileStage4PureArtSpec, compileTensionCoupledLayout, createAssetRegistry, registryForPreset, runIterativePolling4Pass, UNIVERSAL_STORY_PRESETS, universalPresetToBook, verifyAssetRegistryAndBackfill, type AssetRegistry } from '../jev/fiveStageEngine'
 import { blockTitle, defaultParams, type BlockId } from '../prompts/library'
+import { isEmptyPageStyle, pageStyleToLayoutBias, readPageStyleFromMeta } from '../library/pageStyle'
 import { BUBBLE, CARD, CONTAINER, PROMPT, type CardKind, type MangaBubble, type MangaCard, type MangaContainer } from '../shapes/schema'
 import { planBubbles } from './placement'
 
@@ -144,12 +145,17 @@ export function runJevFiveStageCompile(editor: Editor): string {
 		const poll = runIterativePolling4Pass(initialBeats, 'rtl')
 		const repaired = poll.repairedBeats
 
-		// Stage 3: Programmatic Tension-Coupled Layout Genome Solver
+		// Stage 3: Programmatic Tension-Coupled Layout Genome Solver. Any applied
+		// master blend or theory constraint on the page becomes an additive layout
+		// bias; an unstyled page passes `undefined`, keeping output byte-identical.
+		const pageStyle = readPageStyleFromMeta(page.meta)
+		const styleBias = isEmptyPageStyle(pageStyle) ? undefined : pageStyleToLayoutBias(pageStyle)
 		const stage3 = compileTensionCoupledLayout(
 			page.props.seed,
 			repaired,
 			asScenario(page.props.scenario),
 			page.props.layoutPreset,
+			styleBias,
 		)
 		const layout = stage3.layout
 
