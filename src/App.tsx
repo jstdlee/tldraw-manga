@@ -1,13 +1,25 @@
-import { useEffect, useState } from 'react'
-import { Tldraw, type Editor, type TLShapeId } from 'tldraw'
+import { useEffect, useMemo, useState } from 'react'
+import { Tldraw, useValue, type Editor, type TLShapeId } from 'tldraw'
 import 'tldraw/tldraw.css'
 import { SEAGULL_STORY } from './studio/demo/book'
-import { extendNextPageFromPage, seedDefaultIfEmpty } from './studio/editor/pipeline'
+import {
+	applyUniversalFiveStagePreset,
+	createImageCardOnCanvas,
+	createTextCardOnCanvas,
+	extendNextPageFromPage,
+	runJevFiveStageCompile,
+	seedDefaultIfEmpty,
+	selectedPages,
+} from './studio/editor/pipeline'
+import { listUniversalPresets } from './studio/jev/fiveStageEngine'
+import { readerHtml } from './studio/export/htmlReader'
+import { downloadText } from './studio/export/ora'
+import { readJson, type PanelMeta } from './studio/model'
 import { MangaBubbleUtil } from './studio/shapes/MangaBubbleUtil'
 import { MangaCardUtil } from './studio/shapes/MangaCardUtil'
 import { MangaContainerUtil } from './studio/shapes/MangaContainerUtil'
 import { MangaPromptUtil } from './studio/shapes/MangaPromptUtil'
-import { CARD, CONTAINER, type MangaCard, type MangaContainer } from './studio/shapes/schema'
+import { BUBBLE, CARD, CONTAINER, type MangaCard, type MangaContainer } from './studio/shapes/schema'
 import { compileBook, type CompiledBook } from './studio/spec/compile'
 import { CompareModal, FloatingBar, LeftLibrary, ReaderModal, SettingsModal, TopBar, type SidebarTab } from './studio/ui/chrome'
 import {
@@ -16,7 +28,26 @@ import {
 	PageContextModal,
 	type ContextMenuTarget,
 } from './studio/ui/contextMenu'
+import { resolveInspectorTab, type CanvasSelectionKind } from './studio/ui/inspectorModel'
+import { buildCommands, CommandPalette, ShortcutsSheet, StageBar, type PagePick } from './studio/ui/shell'
+import { completedStagesFrom, deriveStageStatuses, type StageEvidence } from './studio/ui/stageStatus'
+import type { AppStage } from './studio/library/productionStages'
 import './studio/studio.css'
+
+const TAB_FOR_STAGE: Record<AppStage, SidebarTab> = {
+	1: 'cards',
+	2: 'story',
+	3: 'layout',
+	4: 'camera',
+	5: 'llm',
+}
+const STAGE_FOR_TAB: Record<SidebarTab, AppStage> = {
+	cards: 1,
+	story: 2,
+	layout: 3,
+	camera: 4,
+	llm: 5,
+}
 
 const shapeUtils = [MangaContainerUtil, MangaCardUtil, MangaPromptUtil, MangaBubbleUtil]
 
@@ -34,6 +65,145 @@ export function App() {
 	const [drawerOpen, setDrawerOpen] = useState(false)
 	const [contextMenuTarget, setContextMenuTarget] = useState<ContextMenuTarget | null>(null)
 	const [contextModalPageId, setContextModalPageId] = useState<TLShapeId | null>(null)
+	const [paletteOpen, setPaletteOpen] = useState(false)
+	const [shortcutsOpen, setShortcutsOpen] = useState(false)
+
+	// One reactive sweep over canvas shapes feeds the pipeline list and the
+	// bottom stage bar: which pages exist and which stages show observable output.
+	const canvasModel = useValue(
+		'canvas-model',
+		() => {
+			if (!editor) {
+				return {
+					pages: [] as PagePick[],
+					evidence: {
+						hasAssets: false,
+						hasStoryboard: false,
+						hasLayout: false,
+						hasArt: false,
+						hasLettering: false,
+					} satisfies StageEvidence,
+				}
+			}
+			const shapes = editor.getCurrentPageShapes()
+			const pageShapes = shapes
+				.filter((s): s is MangaContainer => s.type === CONTAINER && s.props.role === 'page')
+				.sort((a, b) => (a.props.pageIndex || 0) - (b.props.pageIndex || 0))
+			const pages: PagePick[] = pageShapes.map((page, idx) => ({
+				id: page.id,
+				index: page.props.pageIndex || idx + 1,
+				title: page.props.title,
+			}))
+			const hasAssets = shapes.some((s): s is MangaCard => s.type === CARD)
+			let hasStoryboard = false
+			let hasLayout = false
+			let hasArt = false
+			for (const page of pageShapes) {
+				const metas = readJson<PanelMeta[]>(page.props.panelsJson, [])
+				if (metas.length > 0) hasStoryboard = true
+				if (page.props.genomeJson) hasLayout = true
+				if (metas.some((m) => m.imageDataUrl)) hasArt = true
+			}
+			const hasLettering = shapes.some((s) => s.type === BUBBLE)
+			return { pages, evidence: { hasAssets, hasStoryboard, hasLayout, hasArt, hasLettering } }
+		},
+		[editor],
+	)
+
+	// Contextual Inspector: a single-shape selection re-drives the active tab.
+	const selectionKind = useValue<CanvasSelectionKind>(
+		'selection-kind',
+		() => {
+			if (!editor) return 'none'
+			const sel = editor.getSelectedShapes()
+			if (sel.length !== 1) return 'none'
+			const shape = sel[0]
+			if (shape.type === CARD) return 'card'
+			if (shape.type === BUBBLE) return 'bubble'
+			if (shape.type === CONTAINER && (shape as MangaContainer).props.role === 'page') return 'page'
+			return 'none'
+		},
+		[editor],
+	)
+
+	useEffect(() => {
+		if (!drawerOpen || selectionKind === 'none') return
+		const next = resolveInspectorTab(selectionKind)
+		// resolveInspectorTab only yields reference tabs for pseudo-selections,
+		// which never arise from a shape selection, so this is always a SidebarTab.
+		if (next === 'cards' || next === 'story' || next === 'layout' || next === 'camera' || next === 'llm') {
+			setActiveTab(next)
+		}
+	}, [selectionKind, drawerOpen])
+
+	const stageStatuses = useMemo(
+		() => deriveStageStatuses({ dirty: [], completed: completedStagesFrom(canvasModel.evidence) }),
+		[canvasModel.evidence],
+	)
+	const activeStage = STAGE_FOR_TAB[activeTab]
+
+	const focusPage = (id: string) => {
+		if (!editor) return
+		editor.select(id as TLShapeId)
+		editor.zoomToSelection({ animation: { duration: 300 } })
+	}
+
+	const openReader = () => {
+		if (editor) setReaderBook(compileBook(editor))
+	}
+	const exportHtml = () => {
+		if (!editor) return
+		const book = compileBook(editor)
+		downloadText(`${book.spec.title}.html`, readerHtml(book), 'text/html;charset=utf-8')
+		setStatus('Exported standalone HTML reader')
+	}
+	const switchTab = (tab: SidebarTab) => {
+		setActiveTab(tab)
+		setDrawerOpen(true)
+	}
+	const extendPage = () => {
+		if (!editor) return
+		const active = selectedPages(editor)[0]
+		const res = extendNextPageFromPage(editor, active?.id)
+		setStatus(res.message)
+	}
+
+	const commands = useMemo(() => {
+		const ctx = {
+			pages: canvasModel.pages,
+			presets: listUniversalPresets().map((p) => ({ id: p.id, title: p.title })),
+			theme,
+			hasEditor: Boolean(editor),
+			focusPage,
+			extendPage,
+			switchTab,
+			toggleDrawer: () => setDrawerOpen((prev) => !prev),
+			toggleTheme: () => setTheme((prev) => (prev === 'light' ? 'dark' : 'light')),
+			openReader,
+			openCompare: () => setCompareOpen(true),
+			openShortcuts: () => setShortcutsOpen(true),
+			openSettings: () => setSettingsOpen(true),
+			exportHtml,
+			applyPreset: (id: string) => {
+				if (!editor) return
+				void Promise.resolve(applyUniversalFiveStagePreset(editor, id)).then((msg) => {
+					if (typeof msg === 'string') setStatus(msg)
+				})
+			},
+			createTextCard: () => {
+				if (!editor) return
+				createTextCardOnCanvas(editor, 'note', 'Reference Card', 'Describe a scene beat, character, world rule or motif.')
+				setStatus('Created text reference card on canvas')
+			},
+			createImageCard: () => {
+				if (!editor) return
+				createImageCardOnCanvas(editor, 'image', 'Visual Reference Card', '#reference', 'Describe the reference art, framing and tone for image-to-image.')
+				setStatus('Created image reference card on canvas')
+			},
+		}
+		return buildCommands(ctx)
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [canvasModel.pages, editor, theme])
 
 	useEffect(() => {
 		document.documentElement.setAttribute('data-theme', theme)
@@ -101,6 +271,36 @@ export function App() {
 		}
 	}, [editor])
 
+	useEffect(() => {
+		const onKeyDown = (event: KeyboardEvent) => {
+			const mod = event.metaKey || event.ctrlKey
+			if (!mod) return
+			const key = event.key.toLowerCase()
+			if (key === 'k') {
+				event.preventDefault()
+				setPaletteOpen((prev) => !prev)
+			} else if (key === '/') {
+				event.preventDefault()
+				setShortcutsOpen((prev) => !prev)
+			} else if (key === '1') {
+				event.preventDefault()
+				setDrawerOpen((prev) => !prev)
+			} else if (key === 'e' && event.shiftKey) {
+				event.preventDefault()
+				exportHtml()
+			} else if (key === 'e') {
+				event.preventDefault()
+				extendPage()
+			} else if (key === 'r') {
+				event.preventDefault()
+				openReader()
+			}
+		}
+		window.addEventListener('keydown', onKeyDown)
+		return () => window.removeEventListener('keydown', onKeyDown)
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [editor])
+
 	const toggleTheme = () => {
 		setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))
 	}
@@ -123,6 +323,7 @@ export function App() {
 				onToggleTheme={toggleTheme}
 				drawerOpen={drawerOpen}
 				onToggleDrawer={() => setDrawerOpen((prev) => !prev)}
+				onOpenPalette={() => setPaletteOpen(true)}
 			/>
 			<div className={`studio-main ${drawerOpen ? '' : 'drawer-closed'}`}>
 				{drawerOpen ? (
@@ -163,6 +364,18 @@ export function App() {
 					/>
 				</main>
 			</div>
+
+			<StageBar
+				statuses={stageStatuses}
+				activeStage={drawerOpen ? activeStage : null}
+				onFocusStage={(stage) => switchTab(TAB_FOR_STAGE[stage])}
+				onRepropagate={() => {
+					if (editor) setStatus(runJevFiveStageCompile(editor))
+				}}
+			/>
+
+			{paletteOpen ? <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} /> : null}
+			{shortcutsOpen ? <ShortcutsSheet onClose={() => setShortcutsOpen(false)} /> : null}
 
 			{editor && contextMenuTarget ? (
 				<CanvasContextMenu

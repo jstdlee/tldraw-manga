@@ -129,6 +129,7 @@ export function TopBar({
 	onToggleTheme,
 	drawerOpen = true,
 	onToggleDrawer,
+	onOpenPalette,
 }: {
 	editor: Editor | null
 	story: string
@@ -142,6 +143,7 @@ export function TopBar({
 	onToggleTheme: () => void
 	drawerOpen?: boolean
 	onToggleDrawer?: () => void
+	onOpenPalette?: () => void
 }) {
 	const settings = loadSettings()
 	const run = async (label: string, fn: (ed: Editor) => Promise<string | void> | string | void) => {
@@ -255,6 +257,17 @@ export function TopBar({
 			<div className="status-pill" title={status}>
 				{status}
 			</div>
+
+			{onOpenPalette ? (
+				<button type="button" className="topbar-search" onClick={onOpenPalette} title="Open the command palette" aria-label="Open command palette">
+					<svg className="tl-icon" width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+						<circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+						<line x1="11" y1="11" x2="14.5" y2="14.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+					</svg>
+					<span>Search commands</span>
+					<kbd>⌘K</kbd>
+				</button>
+			) : null}
 
 			<div className="topbar-right-actions">
 				<button
