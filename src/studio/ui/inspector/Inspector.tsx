@@ -12,7 +12,7 @@ import { type MangaContainer } from '../../shapes/schema'
 import { AssetTab } from './AssetTab'
 import { BalloonTab } from './BalloonTab'
 import { MastersTab } from './MastersTab'
-import { PageTab } from './PageTab'
+import { PageTab, type PipelineInspectorOps } from './PageTab'
 import { PanelTab } from './PanelTab'
 import { TheoryTab } from './TheoryTab'
 
@@ -37,6 +37,7 @@ export function Inspector({
 	onOpenCompare,
 	initialMaster,
 	selectionKind = 'none',
+	pipeline,
 }: {
 	editor: Editor | null
 	page: MangaContainer | null
@@ -50,6 +51,8 @@ export function Inspector({
 	initialMaster?: string | null
 	/** Current canvas selection kind, so the Theory tab scope follows selection. */
 	selectionKind?: CanvasSelectionKind
+	/** Pipeline operator actions + live stage status for the Page tab. */
+	pipeline?: PipelineInspectorOps
 }) {
 	return (
 		<aside className="inspector">
@@ -68,7 +71,7 @@ export function Inspector({
 				))}
 			</div>
 			{activeTab === 'layout' ? (
-				<PageTab editor={editor} page={page} story={story} setStory={setStory} setStatus={setStatus} onOpenCompare={onOpenCompare} />
+				<PageTab editor={editor} page={page} story={story} setStory={setStory} setStatus={setStatus} onOpenCompare={onOpenCompare} pipeline={pipeline} />
 			) : activeTab === 'camera' ? (
 				<PanelTab editor={editor} page={page} setStatus={setStatus} />
 			) : activeTab === 'story' ? (

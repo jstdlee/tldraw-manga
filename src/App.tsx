@@ -12,7 +12,10 @@ import {
 	relayoutPageStage3,
 	selectedPages,
 	spawnBlankPageAtPoint,
+	splitPageTitle,
 } from './studio/editor/pipeline'
+import { runStageOpForPage, runStagesFromForPage } from './studio/editor/stageOps'
+import type { AppStage } from './studio/library/productionStages'
 import { EMPTY_DIRTY_STATE, hasPageDirty } from './studio/pipeline/dirtyStore'
 import { readPageDirty, repropagatePageAsync } from './studio/pipeline/pageMeta'
 import { listUniversalPresets } from './studio/jev/fiveStageEngine'
@@ -38,6 +41,14 @@ import { SourceList } from './studio/ui/sourceList'
 import { buildCommands, CommandPalette, ShortcutsSheet, StageBar, WelcomeSheet, type PagePick } from './studio/ui/shell'
 import { completedStagesFrom, deriveStageStatuses, STAGE_META, type StageEvidence } from './studio/ui/stageStatus'
 import { parseDeepLink } from './studio/ui/deepLink'
+import {
+	loadRecent,
+	loadShowAtLaunch,
+	pushRecent,
+	saveShowAtLaunch,
+	shouldShowWelcome,
+	type RecentEntry,
+} from './studio/ui/welcome'
 import { loadThemePref, nextThemePref, resolveTheme, saveThemePref, tldrawColorScheme, type ResolvedTheme, type ThemePref } from './studio/ui/theme'
 
 const shapeUtils = [MangaContainerUtil, MangaCardUtil, MangaPromptUtil, MangaBubbleUtil]
@@ -69,6 +80,8 @@ export function App() {
 	const [readerBook, setReaderBook] = useState<CompiledBook | null>(null)
 	const [settingsOpen, setSettingsOpen] = useState(false)
 	const [welcomeOpen, setWelcomeOpen] = useState(false)
+	const [showAtLaunch, setShowAtLaunch] = useState(() => loadShowAtLaunch())
+	const [recent, setRecent] = useState<RecentEntry[]>(() => loadRecent())
 	const [activeTab, setActiveTab] = useState<InspectorTab>(deepLink.inspector ?? (deepLink.masterId ? 'masters' : 'layout'))
 	const [themePref, setThemePref] = useState<ThemePref>(() => deepLink.theme ?? loadThemePref())
 	const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => resolveTheme(deepLink.theme ?? loadThemePref()))
@@ -265,6 +278,35 @@ export function App() {
 		setStatus(res.message)
 	}
 
+	// Load a universal preset and remember it in the recent-documents list so it
+	// reappears in the welcome sheet. Used by the welcome sheet and the palette.
+	const loadPreset = (id: string) => {
+		if (!editor) return
+		const msg = applyUniversalFiveStagePreset(editor, id)
+		if (typeof msg === 'string') setStatus(msg)
+		const preset = presetList.find((p) => p.id === id)
+		if (preset) setRecent(pushRecent({ id: preset.id, title: preset.title }))
+	}
+
+	const openWelcome = () => setWelcomeOpen(true)
+
+	// Run one stage's operator action (or a stage plus everything downstream) for
+	// the active page. Nothing here regenerates artwork.
+	const runStage = (stage: AppStage) => {
+		if (!editor) {
+			setStatus('Add a page first to run the pipeline')
+			return
+		}
+		void runStageOpForPage(editor, activePage?.id, stage).then(setStatus)
+	}
+	const runStagesFrom = (stage: AppStage) => {
+		if (!editor) {
+			setStatus('Add a page first to run the pipeline')
+			return
+		}
+		void runStagesFromForPage(editor, activePage?.id, stage).then(setStatus)
+	}
+
 	// Apply the parsed deep link once the editor mounts: load a preset (or show
 	// the welcome sheet on a truly empty document), then honour an inspector tab
 	// and/or a first-panel preselection. Runs synchronously inside onMount.
@@ -272,7 +314,15 @@ export function App() {
 		if (deepLink.presetId) {
 			const msg = applyUniversalFiveStagePreset(mounted, deepLink.presetId)
 			setStatus(msg)
-		} else if (mounted.getCurrentPageShapeIds().size === 0) {
+		}
+		if (
+			shouldShowWelcome({
+				forced: deepLink.forceWelcome,
+				hasPresetDeepLink: Boolean(deepLink.presetId),
+				hasStoredDocument: mounted.getCurrentPageShapeIds().size > 0,
+				showAtLaunch,
+			})
+		) {
 			setWelcomeOpen(true)
 		}
 		if (deepLink.selectFirstPanel) {
@@ -312,6 +362,9 @@ export function App() {
 			hasEditor: Boolean(editor),
 			canRepropagate: hasPageDirty(pageDirty),
 			repropagate,
+			runStage,
+			runPipeline: () => runStagesFrom(1),
+			openWelcome,
 			focusPage,
 			extendPage,
 			switchTab,
@@ -323,12 +376,7 @@ export function App() {
 			openShortcuts: () => setShortcutsOpen(true),
 			openSettings: () => setSettingsOpen(true),
 			exportHtml,
-			applyPreset: (id: string) => {
-				if (!editor) return
-				void Promise.resolve(applyUniversalFiveStagePreset(editor, id)).then((msg) => {
-					if (typeof msg === 'string') setStatus(msg)
-				})
-			},
+			applyPreset: loadPreset,
 			createTextCard: () => {
 				if (!editor) return
 				createTextCardOnCanvas(editor, 'note', 'Reference Card', 'Describe a scene beat, character, world rule or motif.')
@@ -423,6 +471,12 @@ export function App() {
 			} else if (key === '/') {
 				event.preventDefault()
 				setShortcutsOpen((prev) => !prev)
+			} else if (key === ',') {
+				event.preventDefault()
+				setSettingsOpen(true)
+			} else if (key === 'n' && event.shiftKey) {
+				event.preventDefault()
+				setWelcomeOpen(true)
 			} else if (key === '1') {
 				event.preventDefault()
 				setLeftOpen((prev) => !prev)
@@ -453,9 +507,7 @@ export function App() {
 	return (
 		<div className={`studio-shell theme-${resolvedTheme}`} data-theme={resolvedTheme}>
 			<TopBar
-				editor={editor}
 				status={status}
-				setStatus={setStatus}
 				themePref={themePref}
 				onToggleTheme={toggleTheme}
 				leftOpen={leftOpen}
@@ -466,6 +518,7 @@ export function App() {
 				onExport={exportHtml}
 				onOpenSettings={() => setSettingsOpen(true)}
 				onOpenPalette={() => setPaletteOpen(true)}
+				pageLabel={activePage ? `P${activePage.props.pageIndex || 1} · ${splitPageTitle(activePage.props.title).label}` : undefined}
 			/>
 			<div className={`studio-main ${leftOpen ? 'has-left' : ''} ${rightOpen ? 'has-right' : ''}`}>
 				{leftOpen ? <SourceList editor={editor} focusPage={focusPage} openTab={switchTab} setStatus={setStatus} /> : null}
@@ -509,6 +562,7 @@ export function App() {
 						onOpenCompare={() => setCompareOpen(true)}
 						initialMaster={deepLink.masterId}
 						selectionKind={selectionKind}
+						pipeline={{ statuses: stageStatuses, runStage, runFrom: runStagesFrom }}
 					/>
 				) : null}
 			</div>
@@ -554,8 +608,18 @@ export function App() {
 			{welcomeOpen ? (
 				<WelcomeSheet
 					presets={presetList}
+					recent={recent}
+					showAtLaunch={showAtLaunch}
+					onToggleShowAtLaunch={(value) => {
+						setShowAtLaunch(value)
+						saveShowAtLaunch(value)
+					}}
 					onPickPreset={(id) => {
-						if (editor) setStatus(applyUniversalFiveStagePreset(editor, id))
+						loadPreset(id)
+						setWelcomeOpen(false)
+					}}
+					onPickRecent={(id) => {
+						loadPreset(id)
 						setWelcomeOpen(false)
 					}}
 					onBlank={() => {

@@ -14,7 +14,14 @@ describe('parseDeepLink', () => {
 			inspector: null,
 			masterId: null,
 			selectFirstPanel: false,
+			forceWelcome: false,
 		})
+	})
+
+	it('reads the welcome force flag', () => {
+		expect(parseDeepLink('?welcome=1', PRESETS).forceWelcome).toBe(true)
+		expect(parseDeepLink('?welcome=true', PRESETS).forceWelcome).toBe(true)
+		expect(parseDeepLink('', PRESETS).forceWelcome).toBe(false)
 	})
 
 	it('resolves preset=default to the first available preset and implies ephemeral', () => {

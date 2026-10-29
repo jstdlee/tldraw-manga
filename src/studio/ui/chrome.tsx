@@ -10,8 +10,7 @@ import { useEffect, useState } from 'react'
 import { DefaultStylePanel, useEditor, useValue, type Editor } from 'tldraw'
 import { applyProviderPreset, loadSettings, PROVIDER_PRESETS, saveSettings, type ApiSettings, type ProviderId } from '../ai/settings'
 import { ANGLE_LABELS, SCENARIO_LABELS, SHOT_LABELS } from '../demo/book'
-import { applyLayoutChoice, applyUniversalFiveStagePreset, selectedPages } from '../editor/pipeline'
-import { listUniversalPresets } from '../jev/fiveStageEngine'
+import { applyLayoutChoice, selectedPages } from '../editor/pipeline'
 import { downloadBlob, exportPagePng2400, exportPageSvgFile } from '../export/ora'
 import { configFor, generate, sanitize, type Genome } from '../layout/engine'
 import { asScenario, pickLayoutBundle } from '../layout/score'
@@ -19,7 +18,7 @@ import { readJson, readPageParams, type PanelMeta } from '../model'
 import { renderPageSvg, type PageRenderModel } from '../render/pageSvg'
 import { CARD, CONTAINER, BUBBLE, PROMPT } from '../shapes/schema'
 import { type CompiledBook } from '../spec/compile'
-import { IconAuto, IconBook, IconClose, IconDownload, IconGrid, IconMoon, IconSettings, IconSliders, IconSun } from './icons'
+import { IconAuto, IconBook, IconClose, IconDownload, IconGrid, IconLayers, IconMoon, IconSettings, IconSliders, IconSun } from './icons'
 import { themeLabel, type ThemePref } from './theme'
 
 // Our own shape types never expose tldraw style props (color/fill/etc.), so the
@@ -43,18 +42,8 @@ export function ConditionalStylePanel() {
 	return <DefaultStylePanel />
 }
 
-// Display labels for the story-agnostic universal 5-stage presets.
-const UNIVERSAL_PRESET_LABELS: Record<string, string> = {
-	'wutai-lundao': 'Wutai Mountain Debate on the Dao · Song Shan-Shui Ink Wash',
-	'seagull-fries': 'Two Gulls on the Pier · Coastal Watercolor',
-	'noir-watchmaker': 'Rainy Interrogation · Stopped Watch (Seinen Noir)',
-	'shonen-blade': 'Storm Shrine · Shonen Duel',
-}
-
 export function TopBar({
-	editor,
 	status,
-	setStatus,
 	themePref,
 	onToggleTheme,
 	leftOpen,
@@ -65,10 +54,9 @@ export function TopBar({
 	onExport,
 	onOpenSettings,
 	onOpenPalette,
+	pageLabel,
 }: {
-	editor: Editor | null
 	status: string
-	setStatus: (value: string) => void
 	themePref: ThemePref
 	onToggleTheme: () => void
 	leftOpen: boolean
@@ -79,47 +67,31 @@ export function TopBar({
 	onExport: () => void
 	onOpenSettings: () => void
 	onOpenPalette: () => void
+	/** Short label of the active page, e.g. "P2 · Rising Action". */
+	pageLabel?: string
 }) {
 	const settings = loadSettings()
+	const modelOnline = settings.useApi
+	const modelTitle = modelOnline
+		? `Models online · ${settings.model} / ${settings.imageModel} · click for settings (⌘,)`
+		: `Offline engine · click to configure models (⌘,)`
 
 	return (
 		<header className="topbar apple-clean-topbar">
 			<div className="brand-cluster">
 				<button
 					type="button"
-					className={`drawer-toggle-btn ${leftOpen ? 'active' : ''}`}
+					className={`drawer-toggle-btn icon-only ${leftOpen ? 'active' : ''}`}
 					onClick={onToggleLeft}
-					title={leftOpen ? 'Hide the source list' : 'Show the source list'}
+					title={leftOpen ? 'Hide the source list (⌘1)' : 'Show the source list (⌘1)'}
 					aria-label="Toggle source list"
 				>
-					<IconSliders /> Sources
+					<IconLayers />
 				</button>
-				<div className="brand">
+				<div className="doc-title">
 					<strong>Manga Studio</strong>
+					{pageLabel ? <span className="doc-page">{pageLabel}</span> : null}
 				</div>
-				<select
-					className="universal-preset-select"
-					aria-label="Story Preset"
-					title="Switch story and asset preset"
-					value=""
-					onChange={(event) => {
-						const presetId = event.target.value
-						if (!presetId || !editor) return
-						void Promise.resolve(applyUniversalFiveStagePreset(editor, presetId)).then((msg) => {
-							if (typeof msg === 'string') setStatus(msg)
-						})
-						event.currentTarget.value = ''
-					}}
-				>
-					<option value="" disabled>
-						Story Preset
-					</option>
-					{listUniversalPresets().map((preset) => (
-						<option key={preset.id} value={preset.id}>
-							{UNIVERSAL_PRESET_LABELS[preset.id] ?? preset.title}
-						</option>
-					))}
-				</select>
 			</div>
 
 			<button type="button" className="topbar-search" onClick={onOpenPalette} title="Open the command palette" aria-label="Open command palette">
@@ -136,17 +108,20 @@ export function TopBar({
 			</div>
 
 			<div className="topbar-right-actions">
-				<button type="button" onClick={onOpenReader} title="Open the book reader">
+				<button type="button" onClick={onOpenReader} title="Open the book reader (⌘R)">
 					<IconBook /> Reader
 				</button>
-				<button type="button" onClick={onExport} title="Export a standalone HTML reader">
+				<button type="button" onClick={onExport} title="Export a standalone HTML reader (⌘⇧E)">
 					<IconDownload /> Export
 				</button>
-				<button type="button" className="llm-status-pill" onClick={onOpenSettings} title={`Model: ${settings.model} / ${settings.imageModel}`}>
-					<span className="dot" />
-					<span>
-						<IconSettings /> Models
-					</span>
+				<button
+					type="button"
+					className="model-status"
+					onClick={onOpenSettings}
+					title={modelTitle}
+					aria-label={modelOnline ? 'Model settings, online' : 'Model settings, offline engine'}
+				>
+					<span className={`model-dot ${modelOnline ? 'online' : 'offline'}`} aria-hidden="true" />
 				</button>
 				<button
 					type="button"
@@ -159,12 +134,12 @@ export function TopBar({
 				</button>
 				<button
 					type="button"
-					className={`drawer-toggle-btn ${rightOpen ? 'active' : ''}`}
+					className={`drawer-toggle-btn icon-only ${rightOpen ? 'active' : ''}`}
 					onClick={onToggleRight}
-					title={rightOpen ? 'Hide the Inspector' : 'Show the Inspector'}
+					title={rightOpen ? 'Hide the Inspector (⌘2)' : 'Show the Inspector (⌘2)'}
 					aria-label="Toggle Inspector"
 				>
-					<IconSliders /> Inspector
+					<IconSliders />
 				</button>
 			</div>
 		</header>

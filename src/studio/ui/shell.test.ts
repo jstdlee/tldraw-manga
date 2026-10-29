@@ -214,4 +214,29 @@ describe('buildCommands', () => {
 			'Switch to Light Theme',
 		)
 	})
+
+	it('omits the pipeline-operator and welcome commands when their handlers are absent', () => {
+		const commands = buildCommands(baseCtx())
+		expect(commands.some((c) => c.id.startsWith('op:stage:'))).toBe(false)
+		expect(commands.some((c) => c.id === 'op:pipeline:all')).toBe(false)
+		expect(commands.some((c) => c.id === 'view:welcome')).toBe(false)
+		expect(commands.some((c) => c.id === 'masters:open-preset')).toBe(false)
+	})
+
+	it('registers one run command per stage plus full-compile and welcome when wired', () => {
+		const ran: number[] = []
+		const commands = buildCommands({
+			...baseCtx(),
+			runStage: (stage) => ran.push(stage),
+			runPipeline: () => ran.push(0),
+			openWelcome: () => {},
+		})
+		const stageOps = commands.filter((c) => c.id.startsWith('op:stage:'))
+		expect(stageOps).toHaveLength(5)
+		expect(commands.some((c) => c.id === 'op:pipeline:all')).toBe(true)
+		expect(commands.some((c) => c.id === 'view:welcome')).toBe(true)
+		expect(commands.some((c) => c.id === 'masters:open-preset')).toBe(true)
+		commands.find((c) => c.id === 'op:stage:3')?.run?.()
+		expect(ran).toEqual([3])
+	})
 })

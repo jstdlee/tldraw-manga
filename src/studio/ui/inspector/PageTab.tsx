@@ -8,6 +8,9 @@
 
 import { useState } from 'react'
 import { type Editor } from 'tldraw'
+import { STAGE_OPS } from '../../editor/stageOps'
+import type { AppStage } from '../../library/productionStages'
+import type { StageStatus } from '../stageStatus'
 import { bookFromText, PRESET_LABELS, SAMPLE_STORIES } from '../../demo/book'
 import {
 	applyEditorialRemedyOnPage,
@@ -29,6 +32,71 @@ import { IconGrid, IconImage, IconPlay, IconSliders, IconSparkles } from '../ico
 
 const PRESETS = ['seizen', 'std', 'action', 'tobira'] as const
 
+/** Operator actions + live stage status, injected from the shell. */
+export interface PipelineInspectorOps {
+	statuses: Record<AppStage, StageStatus>
+	/** Run a single stage for the active page. */
+	runStage: (stage: AppStage) => void
+	/** Run a stage and everything downstream of it for the active page. */
+	runFrom: (stage: AppStage) => void
+}
+
+const STATUS_WORD: Record<StageStatus, string> = {
+	idle: 'Not started',
+	done: 'Up to date',
+	stale: 'Needs re-propagate',
+	running: 'Running',
+}
+
+/**
+ * Compact "Pipeline" disclosure: one row per stage with a live status dot (from
+ * the factor-graph dirty store), a one-click run of that stage, and a "run from
+ * here forward" action. Folds the useful part of the retired operator-node grid
+ * into the Page inspector. Status / re-propagate live in the bottom StageBar, so
+ * this group only adds the explicit run operators.
+ */
+function PipelineGroup({ ops, hasPage }: { ops: PipelineInspectorOps; hasPage: boolean }) {
+	const [open, setOpen] = useState(true)
+	return (
+		<section className="side-section pipeline-ops">
+			<div className="sec-head">
+				<button type="button" className="disclosure-toggle" aria-expanded={open} onClick={() => setOpen((prev) => !prev)}>
+					<span className={`disclosure-caret ${open ? 'open' : ''}`} aria-hidden="true">▸</span> Pipeline
+				</button>
+				<button type="button" className="link-btn" disabled={!hasPage} onClick={() => ops.runFrom(1)} title="Run every stage for this page">
+					Run All
+				</button>
+			</div>
+			{open ? (
+				<div className="pipe-op-list" role="group" aria-label="Pipeline stage operators">
+					{STAGE_OPS.map((op) => {
+						const status = ops.statuses[op.stage]
+						return (
+							<div key={op.stage} className="pipe-op-row" title={`Stage ${op.stage} · ${STATUS_WORD[status]}`}>
+								<span className={`pipe-op-dot dot-${status}`} aria-hidden="true" />
+								<span className="pipe-op-num">{op.stage}</span>
+								<button type="button" className="pipe-op-run" disabled={!hasPage} onClick={() => ops.runStage(op.stage)} title={op.summary}>
+									{op.title}
+								</button>
+								<button
+									type="button"
+									className="pipe-op-from"
+									disabled={!hasPage}
+									onClick={() => ops.runFrom(op.stage)}
+									title={`Run Stage ${op.stage} and everything downstream`}
+									aria-label={`Run Stage ${op.stage} and downstream`}
+								>
+									→
+								</button>
+							</div>
+						)
+					})}
+				</div>
+			) : null}
+		</section>
+	)
+}
+
 export function PageTab({
 	editor,
 	page,
@@ -36,6 +104,7 @@ export function PageTab({
 	setStory,
 	setStatus,
 	onOpenCompare,
+	pipeline,
 }: {
 	editor: Editor | null
 	page: MangaContainer | null
@@ -43,11 +112,13 @@ export function PageTab({
 	setStory: (value: string) => void
 	setStatus: (value: string) => void
 	onOpenCompare?: () => void
+	pipeline?: PipelineInspectorOps
 }) {
 	const [directive, setDirective] = useState('Heighten contrast and action staging with a pre-climax silent beat')
 
 	return (
 		<div className="inspector-body">
+			{pipeline ? <PipelineGroup ops={pipeline} hasPage={Boolean(editor)} /> : null}
 			{editor && page ? <PageSettings editor={editor} page={page} setStatus={setStatus} onOpenCompare={onOpenCompare} /> : (
 				<section className="side-section">
 					<div className="sec-head">

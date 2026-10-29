@@ -13,7 +13,9 @@ import { rankCommands, type Command, type CommandGroup } from './commandRegistry
 import { APP_STAGES, STAGE_META, hasStaleStage, type StageStatus } from './stageStatus'
 import type { AppStage } from '../library/productionStages'
 import type { InspectorTab } from './inspectorModel'
-import { IconBubble, IconCamera, IconFileText, IconGrid, IconPlus, IconSettings, IconSparkles } from './icons'
+import { STAGE_OPS } from '../editor/stageOps'
+import { IconBubble, IconCamera, IconClose, IconFileText, IconGrid, IconPlus, IconSettings, IconSparkles } from './icons'
+import type { RecentEntry } from './welcome'
 
 // -----------------------------------------------------------------------------
 // Command builder
@@ -38,6 +40,12 @@ export interface CommandContext {
 	/** True when the active page has stale factors that can be re-propagated. */
 	canRepropagate?: boolean
 	repropagate?: () => void
+	/** Run a single stage's operator action for the active page. */
+	runStage?: (stage: AppStage) => void
+	/** Run every stage from stage 1 forward for the active page (full compile). */
+	runPipeline?: () => void
+	/** Open the welcome sheet (preset browser / blank / recent). */
+	openWelcome?: () => void
 	focusPage: (id: string) => void
 	extendPage: () => void
 	switchTab: (tab: InspectorTab) => void
@@ -105,6 +113,30 @@ export function buildCommands(ctx: CommandContext): Command[] {
 			run: ctx.repropagate,
 		})
 	}
+	if (ctx.runPipeline) {
+		commands.push({
+			id: 'op:pipeline:all',
+			title: 'Compile Full Pipeline for Page',
+			subtitle: 'Materialize assets, then run storyboard → layout → lettering',
+			group: 'Pipeline',
+			keywords: ['run', 'all', 'compile', 'everything', 'pipeline', 'build'],
+			disabled: !ctx.hasEditor,
+			run: ctx.runPipeline,
+		})
+	}
+	if (ctx.runStage) {
+		for (const op of STAGE_OPS) {
+			commands.push({
+				id: `op:stage:${op.stage}`,
+				title: `Run Stage ${op.stage} · ${op.title}`,
+				subtitle: op.summary,
+				group: 'Pipeline',
+				keywords: ['run', 'stage', 'operator', 'block', String(op.stage), op.title.toLowerCase()],
+				disabled: !ctx.hasEditor,
+				run: () => ctx.runStage?.(op.stage),
+			})
+		}
+	}
 
 	for (const stage of APP_STAGES) {
 		const info = STAGE_TAB[stage]
@@ -137,6 +169,16 @@ export function buildCommands(ctx: CommandContext): Command[] {
 		},
 	)
 
+	if (ctx.openWelcome) {
+		commands.push({
+			id: 'masters:open-preset',
+			title: 'Open Preset…',
+			subtitle: 'Browse the universal story presets',
+			group: 'Masters',
+			keywords: ['preset', 'open', 'browse', 'library', 'story', 'start'],
+			run: ctx.openWelcome,
+		})
+	}
 	for (const preset of ctx.presets) {
 		commands.push({
 			id: `preset:${preset.id}`,
@@ -195,7 +237,8 @@ export function buildCommands(ctx: CommandContext): Command[] {
 			id: 'view:settings',
 			title: 'Model Settings',
 			group: 'View',
-			keywords: ['api', 'model', 'provider', 'llm', 'vision', 'image'],
+			shortcut: '⌘,',
+			keywords: ['api', 'model', 'provider', 'llm', 'vision', 'image', 'settings'],
 			run: ctx.openSettings,
 		},
 		{
@@ -216,6 +259,18 @@ export function buildCommands(ctx: CommandContext): Command[] {
 			run: ctx.exportHtml,
 		},
 	)
+
+	if (ctx.openWelcome) {
+		commands.push({
+			id: 'view:welcome',
+			title: 'Welcome',
+			subtitle: 'Start from a preset, a blank story, or a recent document',
+			group: 'View',
+			shortcut: '⌘⇧N',
+			keywords: ['welcome', 'start', 'new', 'home', 'getting started', 'first run'],
+			run: ctx.openWelcome,
+		})
+	}
 
 	return commands
 }
@@ -425,6 +480,8 @@ const SHORTCUT_SECTIONS: Array<{ title: string; rows: Array<{ keys: string; labe
 		rows: [
 			{ keys: '⌘K', label: 'Command palette' },
 			{ keys: '⌘/', label: 'Keyboard shortcuts' },
+			{ keys: '⌘⇧N', label: 'Welcome sheet' },
+			{ keys: '⌘,', label: 'Model settings' },
 			{ keys: '⌘1', label: 'Toggle source list' },
 			{ keys: '⌘2', label: 'Toggle Inspector' },
 		],
@@ -457,22 +514,71 @@ export interface WelcomePreset {
 	subtitle: string
 }
 
+interface WelcomeItem {
+	key: string
+	run: () => void
+}
+
 /**
- * Shown on a truly empty document (no persisted work and no `?preset=` deep
- * link). Offers a one-click start from a curated preset or a blank project,
- * plus a tip line pointing at the command palette.
+ * First-run welcome sheet (Apple-style centered sheet over a dimmed canvas).
+ * Three ways in: start from a curated preset, open a blank story, or reopen a
+ * recent document. Fully keyboard-driven (↑/↓ to move, Enter to open, Esc to
+ * dismiss) and remembers the "Show at launch" preference. The Recent section is
+ * hidden when empty.
  */
 export function WelcomeSheet({
 	presets,
+	recent,
+	showAtLaunch,
+	onToggleShowAtLaunch,
 	onPickPreset,
+	onPickRecent,
 	onBlank,
 	onClose,
 }: {
 	presets: WelcomePreset[]
+	recent: RecentEntry[]
+	showAtLaunch: boolean
+	onToggleShowAtLaunch: (value: boolean) => void
 	onPickPreset: (id: string) => void
+	onPickRecent: (id: string) => void
 	onBlank: () => void
 	onClose: () => void
 }) {
+	// Flat, ordered list of every actionable row so ↑/↓/Enter line up with render.
+	const items: WelcomeItem[] = useMemo(() => {
+		const list: WelcomeItem[] = presets.map((preset) => ({ key: `preset:${preset.id}`, run: () => onPickPreset(preset.id) }))
+		list.push({ key: 'blank', run: onBlank })
+		for (const entry of recent) list.push({ key: `recent:${entry.id}`, run: () => onPickRecent(entry.id) })
+		return list
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [presets, recent])
+
+	const [active, setActive] = useState(0)
+	const panelRef = useRef<HTMLDivElement>(null)
+
+	useEffect(() => {
+		panelRef.current?.focus()
+	}, [])
+
+	const onKeyDown = (event: React.KeyboardEvent) => {
+		if (event.key === 'Escape') {
+			event.preventDefault()
+			onClose()
+		} else if (event.key === 'ArrowDown') {
+			event.preventDefault()
+			setActive((prev) => (items.length ? (prev + 1) % items.length : 0))
+		} else if (event.key === 'ArrowUp') {
+			event.preventDefault()
+			setActive((prev) => (items.length ? (prev - 1 + items.length) % items.length : 0))
+		} else if (event.key === 'Enter') {
+			event.preventDefault()
+			items[active]?.run()
+		}
+	}
+
+	const indexOf = (key: string) => items.findIndex((item) => item.key === key)
+
 	return (
 		<div className="modal-backdrop" onClick={onClose}>
 			<div
@@ -480,24 +586,79 @@ export function WelcomeSheet({
 				role="dialog"
 				aria-modal="true"
 				aria-label="Welcome to Manga Studio"
+				tabIndex={-1}
+				ref={panelRef}
+				onKeyDown={onKeyDown}
 				onClick={(event) => event.stopPropagation()}
 			>
+				<button type="button" className="welcome-close" onClick={onClose} title="Close (Esc)" aria-label="Close">
+					<IconClose />
+				</button>
 				<header className="welcome-head">
 					<h2>Manga Studio</h2>
-					<p>A canvas-first manga production desk. Start from a style preset, or open a blank project and build the pipeline page by page.</p>
+					<p>A canvas-first manga production desk — Scott McCloud theory in the loop, page-by-page pipeline, factor-level control.</p>
 				</header>
-				<div className="welcome-presets">
-					{presets.map((preset) => (
-						<button key={preset.id} type="button" className="welcome-card" onClick={() => onPickPreset(preset.id)}>
-							<strong>{preset.title}</strong>
-							<span>{preset.subtitle}</span>
-						</button>
-					))}
-				</div>
-				<div className="welcome-foot">
-					<button type="button" className="welcome-blank" onClick={onBlank}>
-						<IconPlus /> Blank project
+
+				<section className="welcome-section">
+					<h3 className="welcome-label">Start from a preset</h3>
+					<div className="welcome-presets">
+						{presets.map((preset) => {
+							const index = indexOf(`preset:${preset.id}`)
+							return (
+								<button
+									key={preset.id}
+									type="button"
+									className={`welcome-card ${index === active ? 'active' : ''}`}
+									onMouseEnter={() => setActive(index)}
+									onClick={() => onPickPreset(preset.id)}
+								>
+									<strong>{preset.title}</strong>
+									<span>{preset.subtitle}</span>
+								</button>
+							)
+						})}
+					</div>
+				</section>
+
+				<section className="welcome-section">
+					<button
+						type="button"
+						className={`welcome-blank ${indexOf('blank') === active ? 'active' : ''}`}
+						onMouseEnter={() => setActive(indexOf('blank'))}
+						onClick={onBlank}
+					>
+						<IconPlus /> New blank story
+						<span>One empty page with default settings</span>
 					</button>
+				</section>
+
+				{recent.length ? (
+					<section className="welcome-section">
+						<h3 className="welcome-label">Recent</h3>
+						<div className="welcome-recent">
+							{recent.map((entry) => {
+								const index = indexOf(`recent:${entry.id}`)
+								return (
+									<button
+										key={entry.id}
+										type="button"
+										className={`welcome-recent-row ${index === active ? 'active' : ''}`}
+										onMouseEnter={() => setActive(index)}
+										onClick={() => onPickRecent(entry.id)}
+									>
+										{entry.title}
+									</button>
+								)
+							})}
+						</div>
+					</section>
+				) : null}
+
+				<div className="welcome-foot">
+					<label className="welcome-check">
+						<input type="checkbox" checked={showAtLaunch} onChange={(event) => onToggleShowAtLaunch(event.target.checked)} />
+						Show at launch
+					</label>
 					<span className="welcome-tip">
 						Press <kbd>⌘K</kbd> any time for the command palette
 					</span>

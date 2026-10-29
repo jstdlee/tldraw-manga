@@ -2,216 +2,202 @@
 
 # tldraw-manga
 
-**AI multimodal manga storyboard, polygon layout, and optical shot studio built on tldraw 5.5 and Electron (native tldraw Paper/Dark visual language · 100% English)**  
-*Native tldraw Multimodal LLM (Text · Vision · Image) Manga Storyboard, Polygon Layout, Optical Shot Lab & Multi-Chapter Publishing Studio*
+**A canvas-first, macOS-native manga production studio — Scott McCloud comics theory in the loop, a page-by-page five-stage pipeline, and factor-level control over every decision.**
 
-[![Desktop Build & Release](https://github.com/jstdlee/tldraw-manga/actions/workflows/build-desktop.yml/badge.svg)](https://github.com/jstdlee/tldraw-manga/actions/workflows/build-desktop.yml)
-[![Latest Release](https://img.shields.io/github/v/release/jstdlee/tldraw-manga?color=2f80ed&label=Release)](https://github.com/jstdlee/tldraw-manga/releases/latest)
-[![Platform](https://img.shields.io/badge/Platform-Linux%20ARM64%20%7C%20Windows%20x64%20%7C%20Web-2f80ed)](#desktop-download--quick-start)
-[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6)](https://www.typescriptlang.org/)
-[![tldraw](https://img.shields.io/badge/tldraw-5.5-1a1a1a)](https://tldraw.dev)
-[![Multimodal LLM](https://img.shields.io/badge/Multimodal%20LLM-Text%20%C2%B7%20Vision%20%C2%B7%20Image-10b981)](#highlights)
+*Built on React 19 · tldraw 5 · Vite · TypeScript. Story-agnostic and style-agnostic: the engine is generic, the presets are pure data.*
 
-<p align="center">
-  <a href="#highlights">Highlights</a> •
-  <a href="#screenshots-of-the-progressive-manga-workflow">Screenshots</a> •
-  <a href="#desktop-download--quick-start">Desktop Download & Run</a> •
-  <a href="#architecture--directory-layout">Architecture</a> •
-  <a href="#privacy--security">Privacy & Security</a>
-</p>
-
-![tldraw-manga native workbench with layout geometry parameters](docs/screenshots/01-overview-wiring.png)
-
-*▲ Built on the same minimal engineering-drawing visual language as native tldraw 5.5 Paper / Dark themes (`--tl-color-panel`, `--tl-color-background`, 1px hairline dividers, monochrome SVG line icons, zero emoji clutter). Features unfold naturally along the progressive creation stages (`1. Setting Cards → 2. Layout Bench → 3. Panels & Dialogue → 4. Shot Composition → 5. Model Nodes`) and the current canvas selection, keeping the canvas as quiet and restrained as a manga artist's drafting desk.*
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](https://www.typescriptlang.org/)
+[![tldraw](https://img.shields.io/badge/tldraw-5-1a1a1a)](https://tldraw.dev)
+[![Tests](https://img.shields.io/badge/tests-Vitest-6da55f)](https://vitest.dev)
 
 </div>
 
 ---
 
-## Highlights
+## Overview
 
-### 1. Native tldraw Visual Language & Contextual Progressive Disclosure
-- **Native tldraw Paper / Dark dual themes**: fully aligned with tldraw 5.5 color tokens (`--tl-color-panel`, `--tl-color-background`, `--tl-color-muted-2`, `--tl-color-divider`, `--tl-color-text-1`) plus its radius and shadow specs; toggle light/dark from the top bar with live sync to the tldraw canvas.
-- **Silent canvas, on-demand disclosure**: each manga page renders by default as a pristine **B4 manga manuscript sheet** (title, layout tag, panel count, and editor score only); the left inspector and the top context bar reveal exactly the pro controls the current stage needs only once you switch to that stage or select a **setting card / manuscript page / specific panel** on the canvas.
+tldraw-manga turns a manga storyboard into a connected production pipeline you drive directly on an infinite canvas. Every page is a production unit that flows forward (P1 → P2 → P3) and inherits context — settings, named reference assets, continuity — from the page before it. Operations happen in place through grouped, compact, Figma-grade right-click context menus and a contextual Inspector, not through a wall of toolbar buttons.
 
-### 2. Stage 1 · Setting Cards & the Multimodal AI Bench (`1. Setting Cards`)
-- **Text setting cards (`Text Card`)**: one-click **`AI Polish`**, **`AI Regenerate`**, **`Convert to Panel Prompt`**, and custom rewrite directives, plus one-click A/B rollback between the before/after versions.
-- **Image reference cards (`Image Card`) & character three-view locks (`@kanta` / `@mei` / `@boss`)**: **`AI Image Repaint`** (via `/api/image`), **`Vision Reverse-Read`** (via `/api/vision` to extract appearance, composition, and lighting descriptions from a reference image), local reference uploads, and custom repaint directives.
+The engine is deliberately generic. There is no story-specific logic baked into decision-making; universal presets are data that bias the generic engine, and nothing in the pipeline hardcodes a particular series, character, or art style.
 
-### 3. Stage 2 · The Layout Bench, Geometry Params & 6-Axis Editor Prescriptions (`2. Layout Bench`)
-- **4 classic layout presets × 5 aspect ratios × 4 row-range tiers**:
-  - Presets: `Seizen ordered narrative` / `Standard shonen (std)` / `Diagonal action` / `Tobira splash page`;
-  - Aspects: `B4 manga manuscript (0.708)` / `A4 international (0.707)` / `Vertical webtoon (0.500)` / `Four-panel strip (0.480)` / `Widescreen storyboard (1.500)`;
-  - Row ranges: `1–3 rows` / `2–3 rows` / `2–4 rows` / `3–4 rows`.
-- **Live 5-axis geometry tuning**: `Slant`, `Bleed`, `Sub-split`, `Big-panel weight`, `Line width (1.5–6px)`, plus **`Derive tuned variants from this page's genome`**.
-- **36-seed 6-axis editor score (`layoutScore`) with one-click executable prescriptions**:
-  - Real-time scoring on six axes: `panel-count fit / hero-panel emphasis / slant tension / vertical-horizontal rhythm / gaze landing / breakout breathing`;
-  - Weak axes automatically spawn **one-click fix buttons** (e.g., **`Strengthen the final panel's page-turn hook`**, **`Widen the hero-vs-secondary panel area contrast`**, **`Inject slant and bleed dynamism`**, **`Pull the blade lines back to the ordered narrative`**) that recompute and update the canvas page instantly;
-  - Open the **pick-1-of-8 candidate layout workbench** to compare and filter.
-
-### 4. Stage 3 · Emotional Storyboard Kits, Silent Panels & 7 Vector Balloons (`3. Panels & Dialogue`)
-- **6 emotional storyboard kits (`one-click emotional pacing`)**: built-in director strategies — `Establish the scene / Closing pressure / Intimate dialogue / Impact instant / Suspense reveal / Final climax` — that re-sequence the shot scale, camera pitch, focal length, and the visual-climax panel of the whole page in one click.
-- **Silent panels (`Silent Panel`)**: select any panel to toggle it into a silent panel, auto-clearing its dialogue balloons, switching it to an environment empty shot / gaze beat, and recompiling the page.
-- **7 parameterized vector balloons with prosody tags**: plain speech, thought cloud, caption box, dashed whisper, bursting shout, zigzag broadcast, and idiomatic manga onomatopoeia (`WHOOSH—!`, `CLICK!`, `BOOM—!!`, `GLARE—!`), with drag-anywhere tail dots and whole-page AI dialogue polish.
-
-### 5. Stage 4 · Optical Shot Lab, Four-Side Independent Bleed & Composition Guides (`4. Shot Composition`)
-- **Optical Shot Lab**: click any panel in the page (`Panel N`) to control the three physical camera parameters:
-  - **Focal length (`12mm – 200mm`)**, **aperture (`f/1.4 – f/22`)**, **subject distance (`0.5m – 20m`)**;
-  - Real-time physical derivation of **equivalent focal length, horizontal FOV°, derived shot scale (`EWS / WS / MS / MCU / CU / ECU`), DOF blur strength (DOF%), and perspective distortion**, live-driving the in-panel SVG framing zoom and background blur rendering.
-- **In-panel fine framing, four-side independent bleed (`bT / bB / bL / bR`) & vertical sub-splits**:
-  - Push-in zoom (`0.6x–2.4x`), frame tilt (`-25°~+25°`), double-click-drag panning inside the panel;
-  - Independent **top (`bT`) / bottom (`bB`) / left (`bL`) / right (`bR`)** breakout bleed toggles, plus one-click vertical split of the current panel into 2 sub-panels.
-- **Professional composition overlays**: toggle **`B4 safe inner margin (Safe Margin)`**, **`rule-of-thirds grid`**, **`180° axis & eyeline crossing check`**, and the **`right-to-left reading flow overlay`** on demand.
-
-### 6. Stage 5 & Final Export · Multimodal Config, Single-Page PNG/SVG, 5-Layer ORA & the Four-Mode HTML Reader
-- **Three independent multimodal model routes**: Text LLM (`/api/complete`), Vision LLM (`/api/vision`), and Image Gen (`/api/image`), with one-click presets for OpenAI / Google Gemini / OpenRouter / DeepSeek / local Ollama plus a zero-config offline hand-drawn screentone fallback.
-- **Full-spec professional final export**:
-  - **Single-page HD export**: one-click **`2400px print-grade PNG`** or **`lossless vector SVG`** for the current page;
-  - **`.ora` (OpenRaster) 5-layer refinement package**: `ReadingFlow` (flow & composition check layer), `Bubbles` (dialogue balloon layer), `PanelBorders` (polygon border layer), `PanelArt` (panel art layer), `Paper` (manuscript paper base layer) — drag it straight into **Clip Studio Paint / Krita / GIMP** for layered refinement;
-  - **Single-file offline `.html` four-mode reader**: embeds `manga right-to-left spread`, `vertical webtoon scroll`, `guided panel-by-panel zoom`, and `character & world bible` modes.
+The visual language follows the Apple Human Interface Guidelines: a light paper default, an optional true dark mode, the SF Pro system font stack, 13 px controls, hairline dividers, monochrome SVG line icons, and calm 150–200 ms transitions. No neon gradients, no rainbow badges, no decorative emoji in the chrome.
 
 ---
 
-## Screenshots of the Progressive Manga Workflow
+## The Five-Stage Pipeline
 
-### 1 · The Layout Bench (`2. Layout Bench`), 5 geometry sliders, the 6-axis editor score & one-click prescriptions
+Production is organized as five stages. Each stage — and each individual factor inside a stage — is independently adjustable and independently re-runnable, and editing one factor marks everything downstream of it stale without destroying it.
 
-With a manga page selected at the `2. Layout Bench` stage, the left rail precisely presents the 4 layout presets, aspect ratios, 5 geometry sliders, and the **6-axis editor score + one-click fix buttons** (e.g., `Strengthen the final panel's page-turn hook` at the bottom):
+| Stage | Name | What it produces |
+| :---: | :--- | :--- |
+| **1** | Context & Assets | The style bible and the discrete, named reference assets (`@character`, `#environment`, `#prop`, style) used for image-to-image consistency. |
+| **2** | Content & Storyboard | Page and scene content, tension curve, and storyboard specs via the JEV decision engine — iterative polling with progressive filtering convergence and condition-gated factor expansion. |
+| **3** | Layout | The plot-coupled panel layout: a tension-coupled genome solver that sizes rows, column widths and diagonal slant to the beat. |
+| **4** | Art | The asset-locked, pure-art prompt for each panel, with multi-image references. Recompiling a prompt never regenerates existing artwork. |
+| **5** | Lettering | Balloons, lettering and reading flow placed against the current layout. |
 
-![Stage 2: layout workbench with 6-axis editor prescriptions](docs/screenshots/01-overview-wiring.png)
+### Scott McCloud, as decision dimensions
 
----
+McCloud's framework is central and encoded as checklists and decision dimensions rather than decoration: **closure** and the gutter; the **six panel-to-panel transitions** (moment-to-moment, action-to-action, subject-to-subject, scene-to-scene, aspect-to-aspect, non-sequitur); the **seven word-picture combinations** (word-specific, picture-specific, duo-specific, additive, parallel, montage, interdependent); **amplification through simplification** (iconic abstraction); the **five choices of making comics** (moment, frame, image, word, flow); and **time as space** with the infinite canvas.
 
-### 2 · The Setting Card workbench (`1. Setting Cards`), panel optical push-in & the progressive context bar
+### Factor-level editing, stale state, and one-click re-propagation
 
-Selecting a setting card or clicking a specific panel on the canvas makes the left inspector and the floating top bar reveal either the card's AI shortcuts (`AI Polish` / `Vision Reverse-Read` / `AI Image Repaint`) or the current panel's **optical focal length (`12–200mm`), aperture (`f/1.4–f/22`), and silent-panel toggle**:
+The pipeline is a factor graph. When you change one factor — a panel's shot scale, the pacing strategy, a master-style blend — the studio computes its downstream closure and marks exactly those factors (and therefore those stages) stale. The bottom **Stage Bar** reflects each stage's live status: *idle*, *up to date*, *needs re-propagate*, or *running*.
 
-![Stage 1 & 4: setting card AI workbench with per-panel optical linkage](docs/screenshots/02-card-ai-workbench.png)
-
----
-
-### 3 · The pick-1-of-8 candidate layout workbench with 36-seed 6-axis editor scoring
-
-Click **`Score 8 candidates`** and, within milliseconds, the system derives 36 polygon panel plans from the current genome or by global sampling, filters out the Top 8 candidate layouts, and shows each plan's editor score rationale and optimization advice; click any card to apply it losslessly:
-
-![Stage 2: 36-seed 6-axis pick-1-of-8 workbench](docs/screenshots/03-compare-layout-modal.png)
+**Re-propagate** (⌘⇧R, or the Stage Bar button) recomputes only the stale, derivable stages — Stage 3 layout, Stage 4 prompts, Stage 5 lettering — in topological order, one stage at a time with a visible running indicator. User-owned artwork (uploaded images, pan/zoom/rotation) is always preserved; **re-propagation never regenerates images**. A runner that fails leaves its factors stale for a retry rather than clearing them.
 
 ---
 
-### 4 · The built-in multimodal model configuration center (Text · Vision · Image)
+## Shell Layout
 
-Click the model status pill in the top bar or open the `5. Model Nodes` tab to independently configure the **text model (Text LLM)**, **vision model (Vision LLM)**, and **image generation model (Image Model)**, with one-click switching across 5 major provider presets:
+A three-pane macOS shell wraps the canvas:
 
-![Stage 5: built-in multimodal model configuration center](docs/screenshots/04-llm-settings-modal.png)
-
----
-
-### 5 · The whole-book four-mode reader & single-page `2400px PNG / SVG` final export
-
-Click **`Whole-Book Preview`** in the top bar to interactively preview the `manga right-to-left spread`, `vertical webtoon scroll`, `guided panel-by-panel zoom`, and `character & world bible` modes inside the app, or export the current page directly as `2400px PNG`, `single-page SVG`, a `.ora` 5-layer package, or a single-file offline `.html` reader:
-
-![Stage 6: whole-book four-mode preview and final export](docs/screenshots/05-html-reader-export.png)
+- **Top bar** — minimal by design: source-list toggle, document title and active page, a centered command field, the live status line, Reader, Export, a theme cycle, and the Inspector toggle. An unobtrusive status dot opens model settings.
+- **Left source list** (⌘1) — an outline view with three groups: **Pipeline** (the page chain with per-page status and inheritance), **Assets** (the discrete named reference registry grouped by character / environment / prop / style), and **Library** (reference tabs).
+- **Right Inspector** (⌘2) — a single contextual panel, never a stack. Its tab follows the canvas selection and offers six tabs: **Page**, **Panel**, **Balloon**, **Asset**, **Masters**, **Theory**. The Page tab hosts a compact **Pipeline** disclosure that runs any stage operator for the current page — run one stage, or run a stage and everything downstream — each a single click with a live status dot.
+- **Bottom Stage Bar** — the five stage chips with live status and the Re-propagate action.
+- **Command palette** (⌘K) — fuzzy-ranked access to every action: page navigation, the stage operators, preset loading, view toggles, export, and re-propagation.
+- **Welcome sheet** — a restrained first-run sheet (⌘⇧N) offering a curated preset, a new blank story, or a recent document; it remembers its "Show at launch" preference.
 
 ---
 
-## Desktop Download & Quick Start
+## Keyboard Shortcuts
 
-### 1. Download the standalone desktop build (`Release v0.2.0`)
-
-This project ships a GitHub Actions multi-architecture pipeline that automatically builds standalone **Linux ARM64** and **Windows x64** desktop apps (bundling local static assets and the `/api/complete`, `/api/vision`, `/api/image` multimodal proxy services):
-
-| Platform & Arch | Package | Download | Notes |
-| :--- | :--- | :--- | :--- |
-| **Linux ARM64** (`aarch64`) | `.AppImage` | [**tldraw-manga-0.2.0-arm64.AppImage**](https://github.com/jstdlee/tldraw-manga/releases/download/v0.2.0/tldraw-manga-0.2.0-arm64.AppImage) | Single file, no install; run directly after `chmod +x` |
-| **Linux ARM64** (`aarch64`) | `.tar.gz` | [**tldraw-manga-0.2.0-arm64.tar.gz**](https://github.com/jstdlee/tldraw-manga/releases/download/v0.2.0/tldraw-manga-0.2.0-arm64.tar.gz) | Extract and run `./tldraw-manga` |
-| **Windows x64** (`64-bit`) | Portable `.exe` | [**tldraw-manga.0.2.0.exe**](https://github.com/jstdlee/tldraw-manga/releases/download/v0.2.0/tldraw-manga.0.2.0.exe) | Portable single file; double-click to launch |
-| **Windows x64** (`64-bit`) | `.zip` | [**tldraw-manga-0.2.0-win.zip**](https://github.com/jstdlee/tldraw-manga/releases/download/v0.2.0/tldraw-manga-0.2.0-win.zip) | No-install, extract-and-run archive |
-
-> For every release and its checksums, visit the [**GitHub Releases page**](https://github.com/jstdlee/tldraw-manga/releases).
+| Shortcut | Action |
+| :--- | :--- |
+| `⌘K` | Open the command palette |
+| `⌘/` | Keyboard shortcuts sheet |
+| `⌘⇧N` | Open the welcome sheet |
+| `⌘,` | Model settings |
+| `⌘1` | Toggle the left source list |
+| `⌘2` | Toggle the right Inspector |
+| `⌘E` | Extend the pipeline with the next page |
+| `⌘R` | Open the book reader |
+| `⌘⇧E` | Export the standalone HTML reader |
+| `⌘⇧R` | Re-propagate stale stages (images untouched) |
+| Right-click | Grouped context menu for a panel, bubble, page, or the canvas |
 
 ---
 
-### 2. Local web development & running
+## Deep-Link Parameters
 
-Requirements: **Node.js >= 20** (Node 22 / 24 recommended).
+Deep links open the studio in a precise state — used by automated snapshots, shared review links, and the headless renderer. Parsing is pure (`src/studio/ui/deepLink.ts`).
+
+| Parameter | Values | Effect |
+| :--- | :--- | :--- |
+| `ephemeral` | `1` / `true` | Use an in-memory store (no IndexedDB persistence). |
+| `preset` | `<id>` / `default` | Load a universal preset on mount (implies `ephemeral`); `default` resolves to the first preset. |
+| `theme` | `light` / `dark` / `auto` | Initial appearance, overriding the stored preference. |
+| `inspector` | `page` / `panel` / `balloon` / `asset` / `masters` / `theory` | Open that Inspector tab on mount. |
+| `master` | `<id>` | Open the Masters tab with that master pre-selected. |
+| `select` | `first-panel` | Preselect the first page's first panel. |
+| `welcome` | `1` / `true` | Force the welcome sheet open (for screenshots). |
+
+---
+
+## Knowledge Library
+
+A story-agnostic, well-researched knowledge layer lives in `src/studio/library/` and biases the generic engine without ever changing output when unused. All lists below are generated from the data files.
+
+### Masters (24)
+
+Osamu Tezuka · Akira Toriyama · Takehiko Inoue · Katsuhiro Otomo · Naoki Urasawa · Kentaro Miura · Hirohiko Araki · Eiichiro Oda · Rumiko Takahashi · Moebius (Jean Giraud) · Hergé · Frank Miller · Jack Kirby · Will Eisner · Chris Ware · Taiyo Matsumoto · Inio Asano · Tsutomu Nihei · Junji Ito · Hayao Miyazaki · He Youzhi · Goseki Kojima · Hiroaki Samura · Yoshihiro Togashi
+
+### Panel Layouts (14)
+
+4-Koma Strip · 3-Tier Grid · 6-Panel Grid · Splash Page · Double-Page Spread · Diagonal Action Cut · Inset Panel · Broken-Border Panel · Borderless Bleed · Vertical Webtoon Stack · Staircase · Widescreen Strip · Kakekomi Irregular · Eisner Open Panel
+
+### Genres (13)
+
+Shonen · Seinen · Shojo · Josei · Gekiga · Horror Manga · Sports Manga · Franco-Belgian Bande Dessinée · American Superhero · Alternative / Indie Comics · Webtoon Vertical Scroll · Chinese Lianhuanhua · Chinese Ink Wash (Shuimo) Comics
+
+### Lettering & Balloons (12)
+
+Speech Balloon · Thought Cloud · Whisper Balloon · Shout / Burst Balloon · Electronic / Radio Balloon · Narration Caption Box · Off-Panel Balloon · Linked Balloons · Monologue Box · Integrated Hand-Lettered Onomatopoeia · Western Block SFX · Ink-Brush SFX
+
+### Tone & Line Styles (10)
+
+Ligne Claire · Feathered Hatching · Cross-Hatching · Gekiga Heavy Blacks · Dot Screentone · Gradient Tone · Ink Wash · Speed Lines · Focus Lines · Beta Flat Black
+
+### Pacing Strategies (8)
+
+Decompression · Compression · Ma (Silent Beat) · Reveal / Page-Turn · Crescendo · Cooldown · Comedic Beat Timing · Action Rhythm
+
+### Production Stages (11)
+
+Concept & Name (Plot Draft) · Script · Thumbnails (Nemu) · Storyboard · Layout & Pencils · Inks · Screentone · Flats & Coloring · Lettering · Finishing & QA · Export & Delivery
+
+### Theory Frameworks (7 frameworks · 20 items)
+
+Frameworks: McCloud · Eisner · Kishōtenketsu · Ma · Flow · Composition · Montage.
+
+Items: Closure · Six Panel-to-Panel Transitions · Seven Word-Picture Combinations · Amplification Through Simplification · Five Choices of Making Comics · Time as Space · Infinite Canvas · Masking Effect · Sequential Art · Timing · Panel as Container / Frame as Device · Kishōtenketsu · Ma (Negative-Space Beat) · 180-Degree Rule · Reading Flow (Z-Path) · Juxtaposition (Kuleshov-like) · Page-Turn Reveal · Gutter Width as Time · Establishing Shot · Rule of Thirds / Focal Hierarchy
+
+---
+
+## Development
+
+Requirements: **Node.js ≥ 20** (Node 22 / 24 recommended).
 
 ```bash
-# 1. Clone the repo and install dependencies
-git clone https://github.com/jstdlee/tldraw-manga.git
-cd tldraw-manga
-npm install
-
-# 2. Start the local dev server
-npm run dev
+npm install        # Install dependencies
+npm run dev        # Start the Vite dev server
+npm run lint       # Run oxlint static checks
+npm test           # Run the Vitest unit suite
+npm run build      # tsc -b (strict) + production Vite build to dist/
 ```
 
-Common quality checks and build commands:
+Electron desktop development and packaging:
 
 ```bash
-npm run lint     # Run oxlint static checks
-npm test         # Run Vitest unit tests (panel geometry, export package integrity, and Text/Vision/Image route tests)
-npm run build    # TypeScript type check + production frontend build (dist/)
+npm run electron:dev        # Vite + the local multimodal API proxy, in Electron
+npm run dist:linux-arm64    # Build the Linux ARM64 desktop package (release/)
+npm run dist:win-x64        # Build the Windows x64 desktop package (release/)
+npm run dist:all            # Build both in one shot
 ```
 
 ---
 
-### 3. Electron desktop development & cross-platform packaging
-
-```bash
-# Start the Electron desktop dev environment (auto-launches Vite and the local multimodal API proxy)
-npm run electron:dev
-
-# Build the Linux ARM64 desktop package (output in release/)
-npm run dist:linux-arm64
-
-# Build the Windows x64 desktop package (output in release/)
-npm run dist:win-x64
-
-# Build both Linux ARM64 and Windows x64 in one shot
-npm run dist:all
-```
-
----
-
-## Architecture & Directory Layout
+## Architecture
 
 ```text
-tldraw-manga/
-├── electron/
-│   ├── main.mjs                  # Electron main process: embedded loopback HTTP server and /api/* multimodal proxy
-│   └── preload.cjs               # Secure context bridge (contextIsolation: true)
-├── server/
-│   ├── apiHandler.mjs            # Text (/api/complete), vision (/api/vision), and image-gen (/api/image) local proxy with offline fallback
-│   └── apiPlugin.ts              # Vite dev & preview middleware mount
-├── src/
-│   ├── App.tsx                   # Native tldraw dual-theme studio shell and component mounting
-│   └── studio/
-│       ├── demo/book.ts          # "The Seagull Fries Heist": full script, setting cards, image reference cards, and onomatopoeia
-│       ├── editor/pipeline.ts    # Setting-card/panel-page AI pipelines, emotional storyboard strategies, one-click editor fixes, and optical linkage
-│       ├── layout/
-│       │   ├── engine.ts         # Deterministic polygon panel generation, 5 aspect ratios, four-side bleed, vertical sub-splits, and genome mutation
-│       │   └── score.ts          # 6-axis editor score (layoutScore) and one-click executable fix prescriptions
-│       ├── optics/
-│       │   └── lens.ts           # Optical Shot Lab: focal length (12-200mm) / aperture / subject distance → FOV / shot scale / DOF physical derivation
-│       ├── render/
-│       │   ├── illustrator.ts    # Zero-key offline black-and-white screentone, character three-view, and optical DOF blur rendering engine
-│       │   ├── bubbles.ts        # 7 parameterized vector balloons, tail paths, and manga onomatopoeia rendering
-│       │   └── pageSvg.ts        # Manuscript SVG composition (with <clipPath> frame matrices, four-side bleed, and composition guides)
-│       ├── shapes/               # Custom tldraw shapes: MangaContainer / MangaCard / MangaBubble / MangaPrompt
-│       ├── spec/compile.ts       # Auto-compile ComicsSpec v1 JSON along the canvas wiring topology
-│       ├── export/
-│       │   ├── htmlReader.ts     # Single-file, multi-chapter, interactive four-mode HTML reader generator
-│       │   └── ora.ts            # OpenRaster (.ora) 5-layer refinement package, 2400px PNG, and SVG exporter
-│       └── ui/
-│           ├── icons.tsx        # 16×16 1.5px monochrome SVG line icon set (zero emoji)
-│           └── chrome.tsx       # Progressive 5-stage workbench, context inspector, pick-1-of-8 candidate modal, and four-mode preview modal
-└── .github/workflows/
-    └── build-desktop.yml         # GitHub Actions auto-test, cross-platform build, and Release publishing pipeline
+src/
+├── App.tsx                         # Studio shell: panes, deep-link mount, command context, theme
+└── studio/
+    ├── editor/
+    │   ├── pipeline.ts             # Page pipeline, asset registry, stage runners, context inheritance
+    │   └── stageOps.ts             # Per-page operator actions (run stage N / run from here forward)
+    ├── jev/fiveStageEngine.ts      # JEV five-stage decision engine and universal preset data
+    ├── library/                    # Story-agnostic knowledge: masters, layouts, genres, lettering,
+    │                               #   tones, pacing, production stages, theory, blend
+    ├── pipeline/
+    │   ├── factorGraph.ts          # The factor dependency graph and downstream closure
+    │   ├── dirtyStore.ts           # Serializable per-page stale/running state
+    │   ├── repropagate.ts          # Pure topological re-propagation executor (sync + async)
+    │   ├── pageMeta.ts             # Bridge between the pure stores and a tldraw page's meta
+    │   ├── masterFactors.ts        # Master-style blend → per-panel JEV factor values
+    │   └── panelFactors.ts         # Per-panel factor source / lock state
+    ├── layout/                     # Deterministic polygon layout engine and six-axis editorial score
+    ├── optics/shotLab.ts           # Focal length / aperture / distance → FOV, shot scale, DOF
+    ├── render/                     # Offline screentone illustrator, vector balloons, page SVG
+    ├── shapes/                     # Custom tldraw shapes: container, card, bubble, prompt
+    ├── spec/compile.ts             # Compile the canvas into a ComicsSpec book model
+    ├── export/                     # Standalone HTML reader, ORA package, PNG / SVG exporters
+    └── ui/
+        ├── chrome.tsx              # Top bar, canvas chrome overrides, Compare / Reader / Settings modals
+        ├── shell.tsx               # Command palette, Stage Bar, shortcuts sheet, welcome sheet, command builder
+        ├── sourceList.tsx          # Left source list (Pipeline / Assets / Library)
+        ├── inspector/              # The six Inspector tabs + factor-editing widgets
+        ├── commandRegistry.ts      # Pure fuzzy ranking for the command palette
+        ├── stageStatus.ts          # Derive the five stage-bar statuses from the dirty set
+        ├── deepLink.ts             # Pure deep-link parsing
+        ├── welcome.ts              # Pure welcome-sheet decision + recent-document store
+        └── theme.ts                # Light / Dark / Auto appearance preference
 ```
 
 ---
 
 ## Privacy & Security
 
-- **Zero cloud telemetry**: canvas state stays in the browser or desktop app's local IndexedDB; exported `.html`, `.ora`, `.png`, `.svg`, and `.json` files are generated entirely on your machine.
-- **Keys never touch disk or leave the loopback**: Text / Vision / Image API keys entered in the UI live only in local `localStorage` and are sent only to the loopback interface (`127.0.0.1`'s `/api/complete`, `/api/vision`, and `/api/image`); you can also inject them via system environment variables (`OPENAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `LOCAL_LLM_BASE_URL`) — they never pass through any third-party relay server.
+- **Local-first.** Canvas state stays in the browser or desktop app's IndexedDB; exported `.html`, `.ora`, `.png`, `.svg`, and `.json` files are generated entirely on your machine.
+- **Keys stay on the loopback.** Text / Vision / Image API keys entered in the UI live only in local storage and are sent only to the local `/api/*` proxy; they can also be injected via environment variables and never pass through a third-party relay. With no key configured, a zero-config offline engine and screentone renderer take over.
