@@ -74,14 +74,19 @@ export function MastersTab({
 	editor,
 	page,
 	setStatus,
+	initialMaster,
 }: {
 	editor: Editor | null
 	page: MangaContainer | null
 	setStatus: (value: string) => void
+	/** Master id to pre-select on first render (deep link ?master=<id>). */
+	initialMaster?: string | null
 }) {
 	const [query, setQuery] = useState('')
 	const [region, setRegion] = useState<string>('all')
-	const [selectedId, setSelectedId] = useState<MasterId | null>(null)
+	const [selectedId, setSelectedId] = useState<MasterId | null>(() =>
+		initialMaster && MASTERS.some((m) => m.id === initialMaster) ? (initialMaster as MasterId) : null,
+	)
 	const [blendWeight, setBlendWeight] = useState(0.5)
 
 	const style = readPageStyleFromMeta(page?.meta)

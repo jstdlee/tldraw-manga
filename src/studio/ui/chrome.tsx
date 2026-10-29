@@ -18,7 +18,8 @@ import { asScenario, pickLayoutBundle } from '../layout/score'
 import { readJson, readPageParams, type PanelMeta } from '../model'
 import { renderPageSvg, type PageRenderModel } from '../render/pageSvg'
 import { type CompiledBook } from '../spec/compile'
-import { IconBook, IconClose, IconDownload, IconGrid, IconMoon, IconSettings, IconSliders, IconSun } from './icons'
+import { IconAuto, IconBook, IconClose, IconDownload, IconGrid, IconMoon, IconSettings, IconSliders, IconSun } from './icons'
+import { themeLabel, type ThemePref } from './theme'
 
 // Display labels for the story-agnostic universal 5-stage presets.
 const UNIVERSAL_PRESET_LABELS: Record<string, string> = {
@@ -32,7 +33,7 @@ export function TopBar({
 	editor,
 	status,
 	setStatus,
-	theme,
+	themePref,
 	onToggleTheme,
 	leftOpen,
 	onToggleLeft,
@@ -46,7 +47,7 @@ export function TopBar({
 	editor: Editor | null
 	status: string
 	setStatus: (value: string) => void
-	theme: 'light' | 'dark'
+	themePref: ThemePref
 	onToggleTheme: () => void
 	leftOpen: boolean
 	onToggleLeft: () => void
@@ -125,8 +126,14 @@ export function TopBar({
 						<IconSettings /> Models
 					</span>
 				</button>
-				<button type="button" onClick={onToggleTheme} title="Toggle light / dark theme">
-					{theme === 'light' ? <IconMoon /> : <IconSun />}
+				<button
+					type="button"
+					className="theme-toggle-btn"
+					onClick={onToggleTheme}
+					title={`Appearance: ${themeLabel(themePref)} · click to cycle Light / Dark / Auto`}
+					aria-label={`Appearance ${themePref}, cycle light, dark or auto`}
+				>
+					{themePref === 'auto' ? <IconAuto /> : themePref === 'light' ? <IconSun /> : <IconMoon />}
 				</button>
 				<button
 					type="button"

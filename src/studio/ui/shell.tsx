@@ -13,7 +13,7 @@ import { rankCommands, type Command, type CommandGroup } from './commandRegistry
 import { APP_STAGES, STAGE_META, hasStaleStage, type StageStatus } from './stageStatus'
 import type { AppStage } from '../library/productionStages'
 import type { InspectorTab } from './inspectorModel'
-import { IconBubble, IconCamera, IconFileText, IconGrid, IconSettings, IconSparkles } from './icons'
+import { IconBubble, IconCamera, IconFileText, IconGrid, IconPlus, IconSettings, IconSparkles } from './icons'
 
 // -----------------------------------------------------------------------------
 // Command builder
@@ -446,6 +446,66 @@ const SHORTCUT_SECTIONS: Array<{ title: string; rows: Array<{ keys: string; labe
 		],
 	},
 ]
+
+// -----------------------------------------------------------------------------
+// First-run welcome sheet
+// -----------------------------------------------------------------------------
+
+export interface WelcomePreset {
+	id: string
+	title: string
+	subtitle: string
+}
+
+/**
+ * Shown on a truly empty document (no persisted work and no `?preset=` deep
+ * link). Offers a one-click start from a curated preset or a blank project,
+ * plus a tip line pointing at the command palette.
+ */
+export function WelcomeSheet({
+	presets,
+	onPickPreset,
+	onBlank,
+	onClose,
+}: {
+	presets: WelcomePreset[]
+	onPickPreset: (id: string) => void
+	onBlank: () => void
+	onClose: () => void
+}) {
+	return (
+		<div className="modal-backdrop" onClick={onClose}>
+			<div
+				className="modal-box welcome-sheet"
+				role="dialog"
+				aria-modal="true"
+				aria-label="Welcome to Manga Studio"
+				onClick={(event) => event.stopPropagation()}
+			>
+				<header className="welcome-head">
+					<h2>Manga Studio</h2>
+					<p>A canvas-first manga production desk. Start from a style preset, or open a blank project and build the pipeline page by page.</p>
+				</header>
+				<div className="welcome-presets">
+					{presets.map((preset) => (
+						<button key={preset.id} type="button" className="welcome-card" onClick={() => onPickPreset(preset.id)}>
+							<strong>{preset.title}</strong>
+							<span>{preset.subtitle}</span>
+						</button>
+					))}
+				</div>
+				<div className="welcome-foot">
+					<button type="button" className="welcome-blank" onClick={onBlank}>
+						<IconPlus /> Blank project
+					</button>
+					<span className="welcome-tip">
+						Press <kbd>⌘K</kbd> any time for the command palette
+					</span>
+				</div>
+			</div>
+		</div>
+	)
+}
 
 export function ShortcutsSheet({ onClose }: { onClose: () => void }) {
 	return (

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Tldraw, useValue, type Editor, type TLShapeId } from 'tldraw'
 import 'tldraw/tldraw.css'
 import { SEAGULL_STORY } from './studio/demo/book'
@@ -10,8 +10,8 @@ import {
 	recompilePromptsStage4,
 	relayoutLetteringStage5,
 	relayoutPageStage3,
-	seedDefaultIfEmpty,
 	selectedPages,
+	spawnBlankPageAtPoint,
 } from './studio/editor/pipeline'
 import { EMPTY_DIRTY_STATE, hasPageDirty } from './studio/pipeline/dirtyStore'
 import { readPageDirty, repropagatePage } from './studio/pipeline/pageMeta'
@@ -35,24 +35,39 @@ import {
 import { Inspector } from './studio/ui/inspector/Inspector'
 import { resolveInspectorTab, type CanvasSelectionKind, type InspectorTab } from './studio/ui/inspectorModel'
 import { SourceList } from './studio/ui/sourceList'
-import { buildCommands, CommandPalette, ShortcutsSheet, StageBar, type PagePick } from './studio/ui/shell'
+import { buildCommands, CommandPalette, ShortcutsSheet, StageBar, WelcomeSheet, type PagePick } from './studio/ui/shell'
 import { completedStagesFrom, deriveStageStatuses, STAGE_META, type StageEvidence } from './studio/ui/stageStatus'
+import { parseDeepLink } from './studio/ui/deepLink'
+import { loadThemePref, nextThemePref, resolveTheme, saveThemePref, tldrawColorScheme, type ResolvedTheme, type ThemePref } from './studio/ui/theme'
 
 const shapeUtils = [MangaContainerUtil, MangaCardUtil, MangaPromptUtil, MangaBubbleUtil]
 
 export function App() {
+	// Deep-link config is parsed once from the URL. It decides the store mode,
+	// an optional preset to load, the initial appearance, and the opening
+	// Inspector tab / selection. See studio/ui/deepLink.ts.
+	const presetList = useMemo(() => listUniversalPresets(), [])
+	const deepLink = useMemo(
+		() => parseDeepLink(typeof window === 'undefined' ? '' : window.location.search, presetList.map((p) => p.id)),
+		[presetList],
+	)
+	const persistenceKey = deepLink.ephemeral ? undefined : 'tldraw-manga-v6'
+
 	const [editor, setEditor] = useState<Editor | null>(null)
 	const [story, setStory] = useState(SEAGULL_STORY)
 	const [status, setStatus] = useState('Ready · right-click any panel, bubble, page or the canvas for the context menu · use the source list or the Inspector to drive the pipeline')
 	const [compareOpen, setCompareOpen] = useState(false)
 	const [readerBook, setReaderBook] = useState<CompiledBook | null>(null)
 	const [settingsOpen, setSettingsOpen] = useState(false)
-	const [activeTab, setActiveTab] = useState<InspectorTab>('layout')
-	const [theme, setTheme] = useState<'light' | 'dark'>('light')
+	const [welcomeOpen, setWelcomeOpen] = useState(false)
+	const [activeTab, setActiveTab] = useState<InspectorTab>(deepLink.inspector ?? (deepLink.masterId ? 'masters' : 'layout'))
+	const [themePref, setThemePref] = useState<ThemePref>(() => deepLink.theme ?? loadThemePref())
+	const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => resolveTheme(deepLink.theme ?? loadThemePref()))
 	// Page-first workspace: the left source list opens by default; the right
 	// Inspector stays collapsed so the canvas opens wide (Cmd-1 / Cmd-2 toggle).
+	// A deep link that targets the Inspector opens it immediately.
 	const [leftOpen, setLeftOpen] = useState(true)
-	const [rightOpen, setRightOpen] = useState(false)
+	const [rightOpen, setRightOpen] = useState(Boolean(deepLink.inspector || deepLink.masterId))
 	const [contextMenuTarget, setContextMenuTarget] = useState<ContextMenuTarget | null>(null)
 	const [contextModalPageId, setContextModalPageId] = useState<TLShapeId | null>(null)
 	const [paletteOpen, setPaletteOpen] = useState(false)
@@ -133,8 +148,18 @@ export function App() {
 		[editor],
 	)
 
+	// A deep link can pin the opening Inspector tab (e.g. ?inspector=masters).
+	// Loading a preset auto-selects its first page, which would otherwise yank the
+	// tab to Page via the selection reducer below. We let the deep-link tab win
+	// that first programmatic selection, then hand control back to the user.
+	const honorDeepLinkTab = useRef(Boolean(deepLink.inspector || deepLink.masterId || deepLink.selectFirstPanel))
+
 	useEffect(() => {
 		if (!rightOpen || selectionKind === 'none') return
+		if (honorDeepLinkTab.current) {
+			honorDeepLinkTab.current = false
+			return
+		}
 		setActiveTab(resolveInspectorTab(selectionKind))
 	}, [selectionKind, rightOpen])
 
@@ -209,11 +234,38 @@ export function App() {
 		setStatus(res.message)
 	}
 
+	// Apply the parsed deep link once the editor mounts: load a preset (or show
+	// the welcome sheet on a truly empty document), then honour an inspector tab
+	// and/or a first-panel preselection. Runs synchronously inside onMount.
+	const applyDeepLinkOnMount = (mounted: Editor) => {
+		if (deepLink.presetId) {
+			const msg = applyUniversalFiveStagePreset(mounted, deepLink.presetId)
+			setStatus(msg)
+		} else if (mounted.getCurrentPageShapeIds().size === 0) {
+			setWelcomeOpen(true)
+		}
+		if (deepLink.selectFirstPanel) {
+			const firstPage = mounted
+				.getCurrentPageShapes()
+				.filter((s): s is MangaContainer => s.type === CONTAINER && (s as MangaContainer).props.role === 'page')
+				.sort((a, b) => (a.props.pageIndex || 0) - (b.props.pageIndex || 0))[0]
+			if (firstPage) {
+				mounted.updateShape<MangaContainer>({ id: firstPage.id, type: CONTAINER, props: { selectedPanel: 0 } })
+				mounted.select(firstPage.id)
+				mounted.zoomToSelection({ animation: { duration: 200 } })
+				if (!deepLink.inspector && !deepLink.masterId) {
+					setActiveTab('camera')
+					setRightOpen(true)
+				}
+			}
+		}
+	}
+
 	const commands = useMemo(() => {
 		const ctx = {
 			pages: canvasModel.pages,
-			presets: listUniversalPresets().map((p) => ({ id: p.id, title: p.title })),
-			theme,
+			presets: presetList.map((p) => ({ id: p.id, title: p.title })),
+			theme: resolvedTheme,
 			hasEditor: Boolean(editor),
 			canRepropagate: hasPageDirty(pageDirty),
 			repropagate,
@@ -222,7 +274,7 @@ export function App() {
 			switchTab,
 			toggleDrawer: () => setRightOpen((prev) => !prev),
 			toggleSidebar: () => setLeftOpen((prev) => !prev),
-			toggleTheme: () => setTheme((prev) => (prev === 'light' ? 'dark' : 'light')),
+			toggleTheme: () => setThemePref((prev) => nextThemePref(prev)),
 			openReader,
 			openCompare: () => setCompareOpen(true),
 			openShortcuts: () => setShortcutsOpen(true),
@@ -247,14 +299,26 @@ export function App() {
 		}
 		return buildCommands(ctx)
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [canvasModel.pages, editor, theme, pageDirty, activePage])
+	}, [canvasModel.pages, editor, resolvedTheme, pageDirty, activePage])
+
+	// Resolve the preference to a concrete theme. In Auto mode, track the OS
+	// appearance live so the canvas and chrome follow a system theme switch.
+	useEffect(() => {
+		setResolvedTheme(resolveTheme(themePref))
+		saveThemePref(themePref)
+		if (themePref !== 'auto' || typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+		const mq = window.matchMedia('(prefers-color-scheme: dark)')
+		const onChange = () => setResolvedTheme(resolveTheme('auto'))
+		mq.addEventListener('change', onChange)
+		return () => mq.removeEventListener('change', onChange)
+	}, [themePref])
 
 	useEffect(() => {
-		document.documentElement.setAttribute('data-theme', theme)
+		document.documentElement.setAttribute('data-theme', resolvedTheme)
 		if (editor) {
-			editor.user.updateUserPreferences({ colorScheme: theme })
+			editor.user.updateUserPreferences({ colorScheme: tldrawColorScheme(themePref) })
 		}
-	}, [editor, theme])
+	}, [editor, resolvedTheme, themePref])
 
 	useEffect(() => {
 		if (!editor) return
@@ -341,17 +405,15 @@ export function App() {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [editor])
 
-	const toggleTheme = () => {
-		setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))
-	}
+	const toggleTheme = () => setThemePref((prev) => nextThemePref(prev))
 
 	return (
-		<div className={`studio-shell theme-${theme}`} data-theme={theme}>
+		<div className={`studio-shell theme-${resolvedTheme}`} data-theme={resolvedTheme}>
 			<TopBar
 				editor={editor}
 				status={status}
 				setStatus={setStatus}
-				theme={theme}
+				themePref={themePref}
 				onToggleTheme={toggleTheme}
 				leftOpen={leftOpen}
 				onToggleLeft={() => setLeftOpen((prev) => !prev)}
@@ -377,7 +439,7 @@ export function App() {
 					}}
 				>
 					<Tldraw
-						persistenceKey="tldraw-manga-v6"
+						persistenceKey={persistenceKey}
 						shapeUtils={shapeUtils}
 						components={{
 							InFrontOfTheCanvas: () => <FloatingBar />,
@@ -385,8 +447,8 @@ export function App() {
 						onMount={(mounted) => {
 							;(window as unknown as { __MANGA_EDITOR__?: Editor }).__MANGA_EDITOR__ = mounted
 							setEditor(mounted)
-							mounted.user.updateUserPreferences({ colorScheme: theme })
-							seedDefaultIfEmpty(mounted)
+							mounted.user.updateUserPreferences({ colorScheme: tldrawColorScheme(themePref) })
+							applyDeepLinkOnMount(mounted)
 						}}
 					/>
 				</main>
@@ -400,6 +462,7 @@ export function App() {
 						setStory={setStory}
 						setStatus={setStatus}
 						onOpenCompare={() => setCompareOpen(true)}
+						initialMaster={deepLink.masterId}
 					/>
 				) : null}
 			</div>
@@ -442,6 +505,23 @@ export function App() {
 			{compareOpen ? <CompareModal editor={editor} onClose={() => setCompareOpen(false)} /> : null}
 			{readerBook ? <ReaderModal book={readerBook} onClose={() => setReaderBook(null)} /> : null}
 			{settingsOpen ? <SettingsModal onClose={() => setSettingsOpen(false)} /> : null}
+			{welcomeOpen ? (
+				<WelcomeSheet
+					presets={presetList}
+					onPickPreset={(id) => {
+						if (editor) setStatus(applyUniversalFiveStagePreset(editor, id))
+						setWelcomeOpen(false)
+					}}
+					onBlank={() => {
+						if (editor) {
+							spawnBlankPageAtPoint(editor)
+							setStatus('Started a blank project · right-click the page to build the pipeline')
+						}
+						setWelcomeOpen(false)
+					}}
+					onClose={() => setWelcomeOpen(false)}
+				/>
+			) : null}
 		</div>
 	)
 }

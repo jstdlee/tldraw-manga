@@ -173,6 +173,15 @@ export function IconMoon(props: IconProps) {
 	)
 }
 
+export function IconAuto(props: IconProps) {
+	return (
+		<BaseIcon {...props}>
+			<circle cx="8" cy="8" r="5.6" />
+			<path d="M8 2.4a5.6 5.6 0 0 1 0 11.2Z" fill="currentColor" stroke="none" />
+		</BaseIcon>
+	)
+}
+
 export function IconCompare(props: IconProps) {
 	return (
 		<BaseIcon {...props}>

@@ -35,6 +35,7 @@ export function Inspector({
 	setStory,
 	setStatus,
 	onOpenCompare,
+	initialMaster,
 }: {
 	editor: Editor | null
 	page: MangaContainer | null
@@ -44,6 +45,8 @@ export function Inspector({
 	setStory: (value: string) => void
 	setStatus: (value: string) => void
 	onOpenCompare?: () => void
+	/** Master id to pre-select when the Masters tab first opens (deep link). */
+	initialMaster?: string | null
 }) {
 	return (
 		<aside className="inspector">
@@ -70,7 +73,7 @@ export function Inspector({
 			) : activeTab === 'cards' ? (
 				<AssetTab editor={editor} setStatus={setStatus} />
 			) : activeTab === 'masters' ? (
-				<MastersTab editor={editor} page={page} setStatus={setStatus} />
+				<MastersTab editor={editor} page={page} setStatus={setStatus} initialMaster={initialMaster} />
 			) : (
 				<TheoryTab editor={editor} page={page} setStatus={setStatus} />
 			)}
